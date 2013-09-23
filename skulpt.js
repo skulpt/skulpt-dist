@@ -8575,7 +8575,7 @@ Sk.builtin.list.prototype['count'] = new Sk.builtin.func(function(self, item)
             count += 1;
         }
     }
-    return count;
+    return new Sk.builtin.nmber(count, Sk.builtin.nmber.int$);
 });
 
 Sk.builtin.list.prototype['reverse'] = new Sk.builtin.func(Sk.builtin.list.prototype.list_reverse_);
@@ -8586,7 +8586,8 @@ Sk.builtin.list.prototype['sort'] = new Sk.builtin.func(Sk.builtin.list.prototyp
 // See issue 45 on github as to possible alternate approaches to this and
 // why this was chosen - csev
 Sk.builtin.list.prototype['sort'].func_code['co_varnames']=['__self__','cmp', 'key', 'reverse'];
-goog.exportSymbol("Sk.builtin.list", Sk.builtin.list);var interned = {};
+goog.exportSymbol("Sk.builtin.list", Sk.builtin.list);
+var interned = {};
 
 /**
  * @constructor
@@ -9054,9 +9055,9 @@ Sk.builtin.str.prototype['count'] = new Sk.builtin.func(function(self, pat, star
     var slice = self.v.slice(start,end);
     var ctl = slice.match(m)
     if (! ctl) {
-        return 0;
+        return  new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
     } else {
-        return ctl.length;
+        return new Sk.builtin.nmber(ctl.length, Sk.builtin.nmber.int$);
     }
     
 });
@@ -9730,7 +9731,7 @@ Sk.builtin.tuple.prototype['count'] = new Sk.builtin.func(function(self, item)
             count += 1;
         }
     }
-    return count;
+    return  new Sk.builtin.nmber(count, Sk.builtin.nmber.int$);
 });
 
 goog.exportSymbol("Sk.builtin.tuple", Sk.builtin.tuple);
