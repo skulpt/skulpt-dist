@@ -11787,7 +11787,7 @@ Sk.builtin.nmber.prototype.nb$divide = function(other)
 			else
 				return new Sk.builtin.nmber(-Infinity, Sk.builtin.nmber.float$);
 
-		if (this.skType === Sk.builtin.nmber.float$) {  // float / long --> float
+		if (this.skType === Sk.builtin.nmber.float$ || Sk.python3) {  // float / long --> float
 			result = new Sk.builtin.nmber(this.v / parseFloat(other.str$(10, true)), Sk.builtin.nmber.float$);
 		} else {	//	int - long --> long
 			var thisAsLong = new Sk.builtin.lng(this.v);
@@ -12236,7 +12236,8 @@ Sk.builtin.nmber.prototype.str$ = function(base, sign)
 	return tmp;
 };
 
-goog.exportSymbol("Sk.builtin.nmber", Sk.builtin.nmber);// long aka "bignumber" implementation
+goog.exportSymbol("Sk.builtin.nmber", Sk.builtin.nmber);
+// long aka "bignumber" implementation
 //
 //  Using javascript BigInteger by Tom Wu
 /**
