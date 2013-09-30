@@ -6692,7 +6692,7 @@ Sk.misceval.asIndex = function(o)
     if (typeof o === "number") return o;
 	if (o.constructor === Sk.builtin.nmber) return o.v;
 	if (o.constructor === Sk.builtin.lng) return o.tp$index();
-    goog.asserts.fail("todo;");
+    goog.asserts.fail("todo asIndex;");
 };
 
 /**
@@ -6802,8 +6802,8 @@ Sk.misceval.richCompareBool = function(v, w, op)
     // v and w must be Python objects. will return Javascript true or false for internal use only
     // if you want to return a value from richCompareBool to Python you must wrap as Sk.builtin.bool first
 
-    goog.asserts.assert((v !== null) && (v !== undefined), "passed undefined or null parameter to Sk.misceval.richCompareBool");
-    goog.asserts.assert((w !== null) && (w !== undefined), "passed undefined or null parameter to Sk.misceval.richCompareBool");
+    goog.asserts.assert((v !== null) && (v !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
+    goog.asserts.assert((w !== null) && (w !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
 
     var v_type = new Sk.builtin.type(v);
     var w_type = new Sk.builtin.type(w);
@@ -7024,7 +7024,7 @@ Sk.misceval.richCompareBool = function(v, w, op)
             return v.v !== w.v;
         return v !== w;
     }
-
+    
     var vname = Sk.abstr.typeName(v);
     var wname = Sk.abstr.typeName(w);
     throw new Sk.builtin.ValueError("don't know how to compare '" + vname + "' and '" + wname + "'");
@@ -8320,9 +8320,17 @@ Sk.builtin.list.prototype.list_ass_subscript_ = function(index, value)
     }
     else if (index instanceof Sk.builtin.slice)
     {
-        var step = index.step !== null ? index.step : 1;
+	    var start = Sk.builtin.asnum$(index.start), 
+	        stop  = Sk.builtin.asnum$(index.stop),
+	        step  = Sk.builtin.asnum$(index.step);
+        step = step === null ? 1 : step;
+        if (((start !== null) && !Sk.builtin.checkInt(start))
+            || ((stop !== null) && !Sk.builtin.checkInt(stop))
+            || ((step !== null) && !Sk.builtin.checkInt(step))) {
+            throw new Sk.builtin.TypeError("slice indices must be integers or None");
+        }
         if (step === 1)
-            this.list_ass_slice_(index.start, index.stop, value);
+            this.list_ass_slice_(start, stop, value);
         else
         {
             var tosub = [];
@@ -8355,13 +8363,21 @@ Sk.builtin.list.prototype.list_del_subscript_ = function(index)
     }
     else if (index instanceof Sk.builtin.slice)
     {
-        if (index.step === 1)
-            this.list_del_slice_(index.start, index.stop);
+	    var start = Sk.builtin.asnum$(index.start), 
+	        stop  = Sk.builtin.asnum$(index.stop),
+	        step  = Sk.builtin.asnum$(index.step);
+        step = step === null ? 1 : step;
+        if (((start !== null) && !Sk.builtin.checkInt(start))
+            || ((stop !== null) && !Sk.builtin.checkInt(stop))
+            || ((step !== null) && !Sk.builtin.checkInt(step))) {
+            throw new Sk.builtin.TypeError("slice indices must be integers or None");
+        }
+        if (step === 1)
+            this.list_del_slice_(start, stop);
         else
         {
             var self = this;
             var dec = 0; // offset of removal for next index (because we'll have removed, but the iterator is giving orig indices)
-            var step = index.step === null ? 1 : index.step;
             var offdir = step > 0 ? 1 : 0;
             index.sssiter$(this, function(i, wrt)
                            {
@@ -13013,39 +13029,34 @@ Sk.builtin.float_.prototype.tp$name = "float";
 Sk.builtin.float_.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj('float', Sk.builtin.float_);
 /**
  * @constructor
- * @param {null|number} start
- * @param {null|number=} stop
- * @param {null|number=} step
+ * @param {Object} start
+ * @param {Object=} stop
+ * @param {Object=} step
  */
 Sk.builtin.slice = function slice(start, stop, step)
 {
-	start = Sk.builtin.asnum$(start);
-	stop  = Sk.builtin.asnum$(stop);
-	step  = Sk.builtin.asnum$(step);
     if (!(this instanceof Sk.builtin.slice)) return new Sk.builtin.slice(start, stop, step);
 
     if (stop === undefined && step === undefined)
     {
         stop = start;
-        start = null;
+        start = Sk.builtin.none.none$;
     }
-    if (!start) start = null;
-    if (stop === undefined) stop = null;
-    if (step === undefined) step = null;
+    if (stop === undefined) stop = Sk.builtin.none.none$;
+    if (step === undefined) step = Sk.builtin.none.none$;
     this.start = start;
     this.stop = stop;
     this.step = step;
-    
-    if (((this.start !== null) && !Sk.builtin.checkInt(this.start))
-        || ((this.stop !== null) && !Sk.builtin.checkInt(this.stop))
-        || ((this.step !== null) && !Sk.builtin.checkInt(this.step))) {
-        throw new Sk.builtin.TypeError("slice indices must be integers or None");
-    }
+
+    this.__class__ = Sk.builtin.slice;
 
     return this;
 };
 
-Sk.builtin.slice.prototype.tp$str = function()
+Sk.builtin.slice.prototype.tp$name = 'slice';
+Sk.builtin.slice.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj('slice', Sk.builtin.slice);
+
+Sk.builtin.slice.prototype['$r'] = function()
 {
     var a = Sk.builtin.repr(this.start).v;
     var b = Sk.builtin.repr(this.stop).v;
@@ -13053,11 +13064,50 @@ Sk.builtin.slice.prototype.tp$str = function()
     return new Sk.builtin.str("slice(" + a + ", " + b + ", " + c + ")");
 };
 
+// todo;this is currently the only way I can find to make the start, step and stop attributes accessible, but I'm not sure it's the best.
+Sk.builtin.slice.prototype.tp$getattr = function(name)
+{
+    // Maybe not very pretty, but very direct, and I don't think there is much you would be able to access in this way that you shouldn't.
+    // todo;Should we call the generic get attribute function? (If so, Closure needs to be told it's okay.)
+    return this[name];// || Sk.builtin.object.prototype.GenericGetAttr.call(this, name);
+};
+
+Sk.builtin.slice.prototype.tp$richcompare = function(w, op)
+{
+    // w not a slice
+    if (!w.__class__ || w.__class__ != Sk.builtin.slice)
+    {
+        // shortcuts for eq/not
+        if (op === 'Eq') return false;
+        if (op === 'NotEq') return true;
+
+        // todo; other types should have an arbitrary order
+        return false;
+    }
+
+    // This is how CPython does it
+    var t1, t2;
+    t1 = new Sk.builtin.tuple([this.start,this.stop,this.step]);
+    t2 = new Sk.builtin.tuple([w.start,w.stop,w.step]);
+    
+    return t1.tp$richcompare(t2, op);
+};
+
 Sk.builtin.slice.prototype.indices = function(length)
 {
+	var start = Sk.builtin.asnum$(this.start), 
+	    stop  = Sk.builtin.asnum$(this.stop),
+	    step  = Sk.builtin.asnum$(this.step);
+
+    if (((start !== null) && !Sk.builtin.checkInt(start))
+        || ((stop !== null) && !Sk.builtin.checkInt(stop))
+        || ((step !== null) && !Sk.builtin.checkInt(step))) {
+        throw new Sk.builtin.TypeError("slice indices must be integers or None");
+    }
+
 	length = Sk.builtin.asnum$(length);
     // this seems ugly, better way?
-    var start = this.start, stop = this.stop, step = this.step, i;
+    var i;
     if (step === null) step = 1;
     if (step > 0)
     {
@@ -13094,7 +13144,7 @@ Sk.builtin.slice.prototype.indices = function(length)
 };
 
 Sk.builtin.slice.prototype.sssiter$ = function(wrt, f)
-{
+{   
 	var wrtv = Sk.builtin.asnum$(wrt);
     var sss = this.indices(typeof wrtv === "number" ? wrtv : wrt.v.length);
     if (sss[2] > 0)
@@ -20593,10 +20643,20 @@ Compiler.prototype.ccall = function(e)
 Compiler.prototype.cslice = function(s)
 {
     goog.asserts.assert(s instanceof Slice);
-    var low = s.lower ? this.vexpr(s.lower) : 'null';
-    var high = s.upper ? this.vexpr(s.upper) : 'null';
-    var step = s.step ? this.vexpr(s.step) : 'null';
+    var low = s.lower ? this.vexpr(s.lower) : s.step ? 'Sk.builtin.none.none$' : 'new Sk.builtin.nmber(0)'; // todo;ideally, these numbers would be constants
+    var high = s.upper ? this.vexpr(s.upper) : s.step ? 'Sk.builtin.none.none$' : 'new Sk.builtin.nmber(2147483647)';
+    var step = s.step ? this.vexpr(s.step) : 'Sk.builtin.none.none$';
     return this._gr('slice', "new Sk.builtins['slice'](", low, ",", high, ",", step, ")");
+};
+
+Compiler.prototype.eslice = function(dims)
+{
+    goog.asserts.assert(dims instanceof Array);
+    var dimSubs = [], subs;
+    for(var i = 0; i < dims.length; i++) {
+        dimSubs.push(this.vslicesub(dims[i]));
+    }
+    return this._gr('extslice', "new Sk.builtins['tuple']([", dimSubs, "])");
 };
 
 Compiler.prototype.vslicesub = function(s)
@@ -20616,8 +20676,10 @@ Compiler.prototype.vslicesub = function(s)
             subs = this.cslice(s);
             break;
         case Ellipsis:
+            goog.asserts.fail("todo compile.js Ellipsis;");
+            break;
         case ExtSlice:
-            goog.asserts.fail("todo;");
+            subs = this.eslice(s.dims);
             break;
         default:
             goog.asserts.fail("invalid subscript kind");
@@ -20752,7 +20814,7 @@ Compiler.prototype.vexpr = function(e, data, augstoreval)
                     out("Sk.abstr.sattr(", val, ",'", mangled, "',", data, ");");
                     break;
                 case Del:
-                    goog.asserts.fail("todo;");
+                    goog.asserts.fail("todo Del;");
                     break;
                 case Param:
                 default:
