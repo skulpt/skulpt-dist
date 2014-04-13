@@ -4562,7 +4562,7 @@ Sk.builtin.len = function len(item)
 
     if (item.sq$length)
         return new Sk.builtin.nmber(item.sq$length(), Sk.builtin.nmber.int$);
-    
+
     if (item.mp$length)
         return new Sk.builtin.nmber(item.mp$length(), Sk.builtin.nmber.int$);
 
@@ -4691,7 +4691,7 @@ Sk.builtin.zip = function zip()
 {
     if (arguments.length === 0)
     {
-        return new Sk.builtin.list([]);        
+        return new Sk.builtin.list([]);
     }
 
     var iters = [];
@@ -4703,7 +4703,7 @@ Sk.builtin.zip = function zip()
         }
         else
         {
-            throw "TypeError: argument " + i + " must support iteration";    
+            throw "TypeError: argument " + i + " must support iteration";
         }
     }
     var res = [];
@@ -4723,7 +4723,7 @@ Sk.builtin.zip = function zip()
         }
         if (!done)
         {
-            res.push(new Sk.builtin.tuple(tup));    
+            res.push(new Sk.builtin.tuple(tup));
         }
     }
     return new Sk.builtin.list(res);
@@ -4853,7 +4853,7 @@ Sk.builtin.dir = function dir(x)
     }
 
     // Add all attributes
-    if (x['$d']) 
+    if (x['$d'])
     {
         if (x['$d'].tp$iter)
         {
@@ -4897,7 +4897,7 @@ Sk.builtin.dir = function dir(x)
             }
         }
     }
-        
+
     // Sort results
     names.sort(function(a, b) { return (a.v > b.v) - (a.v < b.v); });
 
@@ -4943,7 +4943,7 @@ Sk.builtin.isinstance = function isinstance(obj, type)
     }
 
     if (type === Sk.builtin.float_.prototype.ob$type) {
-        return (obj.tp$name === 'number') && (obj.skType === Sk.builtin.nmber.float$); 
+        return (obj.tp$name === 'number') && (obj.skType === Sk.builtin.nmber.float$);
     }
 
     if (type === Sk.builtin.none.prototype.ob$type) {
@@ -5170,23 +5170,23 @@ Sk.builtin.reduce = function reduce(fun, seq, initializer) {
 	return accum_value;
 }
 
-Sk.builtin.filter = function filter(fun, iterable) { 
+Sk.builtin.filter = function filter(fun, iterable) {
 	Sk.builtin.pyCheckArgs("filter", arguments, 2, 2);
-	
+
 	//todo: need to find a proper way to tell what type it is.
 	if (iterable.tp$iter === undefined){
 		throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iterable) + "' object is not iterable");
 	}
-	
+
 	//simulate default identity function
 	if (fun instanceof Sk.builtin.none) {
 		fun = function (x) { return Sk.builtin.bool(x); };
 	}
-	
+
 	var ctor = function () { return []; }
-	var add = function (iter, item) { iter.push(item); return iter; } 
+	var add = function (iter, item) { iter.push(item); return iter; }
 	var ret = function (iter) { return new Sk.builtin.list(iter); }
-	
+
 	if (iterable.__class__ === Sk.builtin.str){
 		ctor = function () { return new Sk.builtin.str(''); }
 		add = function (iter, item) { return iter.sq$concat(item); }
@@ -5194,22 +5194,22 @@ Sk.builtin.filter = function filter(fun, iterable) {
 	} else if (iterable.__class__ === Sk.builtin.tuple) {
 		ret = function (iter) { return new Sk.builtin.tuple(iter); }
 	}
-	
+
 	var iter = iterable.tp$iter(),
 		next = iter.tp$iternext(),
 		retval = ctor();
-	
+
 	if (next === undefined){
 		return ret(retval);
 	}
-	
+
 	while (next !== undefined){
 		if (Sk.misceval.isTrue(Sk.misceval.callsim(fun, next))){
 			retval = add(retval, next);
 		}
 		next = iter.tp$iternext();
 	}
-	
+
 	return ret(retval);
 }
 
@@ -5304,7 +5304,7 @@ Sk.builtin.sorted = function sorted(iterable, cmp, key, reverse) {
 	var compare_func;
 	var list;
 	if (key !== undefined && !(key instanceof Sk.builtin.none)) {
-		if (cmp instanceof Sk.builtin.none) {
+		if (cmp instanceof Sk.builtin.none || cmp === undefined) {
 			compare_func = function(a,b){
 			    return Sk.misceval.richCompareBool(a[0], b[0], "Lt") ? new Sk.builtin.nmber(-1, Sk.builtin.nmber.int$) : new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
 			};
@@ -5334,11 +5334,11 @@ Sk.builtin.sorted = function sorted(iterable, cmp, key, reverse) {
 	else {
 		list.list_sort_(list);
 	}
-	
+
 	if (reverse) {
 		list.list_reverse_(list);
 	}
-	
+
 	if (key !== undefined && !(key instanceof Sk.builtin.none)) {
 		var iter = list.tp$iter();
 		var next = iter.tp$iternext()
@@ -5349,10 +5349,12 @@ Sk.builtin.sorted = function sorted(iterable, cmp, key, reverse) {
 		}
 		list = new Sk.builtin.list(arr);
 	}
-	
+
 	return list;
 }
-
+Sk.builtin.sorted.co_varnames = ['cmp', 'key', 'reverse'];
+Sk.builtin.sorted.$defaults = [Sk.builtin.none, Sk.builtin.none, false];
+Sk.builtin.sorted.co_numargs = 4;
 
 Sk.builtin.bytearray = function bytearray() { throw new Sk.builtin.NotImplementedError("bytearray is not yet implemented")}
 Sk.builtin.callable = function callable() { throw new Sk.builtin.NotImplementedError("callable is not yet implemented")}
@@ -6769,7 +6771,7 @@ Sk.misceval.arrayFromArguments = function(args)
     {
         // this is a Sk.builtin.str
         var res = [];
-        for (var it = arg.tp$iter(), i = it.tp$iternext(); 
+        for (var it = arg.tp$iter(), i = it.tp$iternext();
              i !== undefined; i = it.tp$iternext())
         {
             res.push(i);
@@ -7030,7 +7032,7 @@ Sk.misceval.richCompareBool = function(v, w, op)
             return v.v !== w.v;
         return v !== w;
     }
-    
+
     var vname = Sk.abstr.typeName(v);
     var wname = Sk.abstr.typeName(w);
     throw new Sk.builtin.ValueError("don't know how to compare '" + vname + "' and '" + wname + "'");
@@ -7265,12 +7267,40 @@ Sk.misceval.apply = function(func, kwdict, varargseq, kws, args)
                 args.push(i);
             }
         }
-	   
+
         if (kwdict)
         {
             goog.asserts.fail("kwdict not implemented;");
         }
-        goog.asserts.assert(((kws === undefined) || (kws.length === 0)));
+        //goog.asserts.assert(((kws === undefined) || (kws.length === 0)));
+        //print('kw args location: '+ kws + ' args ' + args.length)
+        if(kws !== undefined && kws.length > 0 ) {
+            if (!func.co_varnames) {
+                throw new Sk.builtin.ValueError("Keyword arguments are not supported by this function")
+            }
+    
+            //number of positionally placed optional parameters
+            var numNonOptParams = func.co_numargs - func.co_varnames.length;
+            var numPosParams = args.length - numNonOptParams;
+            
+            //add defaults
+            args = args.concat(func.$defaults.slice(numPosParams));
+            
+            for(var i = 0; i < kws.length; i = i + 2) {
+                var kwix = func.co_varnames.indexOf(kws[i]);
+                
+                if(kwix === -1) {
+                    throw new Sk.builtin.TypeError("'" + kws[i] + "' is an invalid keyword argument for this function");
+                } 
+                
+                if (kwix < numPosParams) {
+                    throw new Sk.builtin.TypeError("Argument given by name ('" + kws[i] + "') and position (" + (kwix + numNonOptParams + 1) + ")");
+                }
+                
+                args[kwix + numNonOptParams] = kws[i + 1];  
+            }  
+        }
+        //append kw args to args, filling in the default value where none is provided.
         return func.apply(null, args);
     }
     else
