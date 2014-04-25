@@ -5014,13 +5014,14 @@ Sk.builtin.hash = function hash(value)
     }
     else if (value instanceof Sk.builtin.bool)
     {
-	if (value.v)
-	    return new Sk.builtin.nmber(1, Sk.builtin.nmber.int$);
-	return new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
+	   if (value.v){
+	       return new Sk.builtin.nmber(1, Sk.builtin.nmber.int$);
+       }
+	   return new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
     }
     else if (value instanceof Sk.builtin.none)
     {
-	return new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
+	   return new Sk.builtin.nmber(0, Sk.builtin.nmber.int$);
     }
     else if (value instanceof Object)
     {
@@ -5034,7 +5035,7 @@ Sk.builtin.hash = function hash(value)
     else if (typeof value === "number" || value === null
              || value === true || value === false)
     {
-	throw new Sk.builtin.TypeError("unsupported Javascript type");
+	   throw new Sk.builtin.TypeError("unsupported Javascript type");
     }
 
     return new Sk.builtin.str((typeof value) + ' ' + String(value));
@@ -9776,7 +9777,8 @@ Sk.builtin.tuple.prototype.tp$hash = function()
     var len = this.v.length;
     for (var i = 0; i < len; ++i)
     {
-        var y = Sk.builtin.hash(this.v[i]);
+        //hash returns a skulpt number nowadays
+        var y = Sk.builtin.hash(this.v[i]).v;
         if (y === -1) return new Sk.builtin.nmber(-1, Sk.builtin.nmber.int$);
         x = (x ^ y) * mult;
         mult += 82520 + len + len;
@@ -9923,22 +9925,20 @@ goog.exportSymbol("Sk.builtin.tuple", Sk.builtin.tuple);
  * @constructor
  * @param {Array.<Object>} L
  */
-Sk.builtin.dict = function dict(L)
-{
-    if (!(this instanceof Sk.builtin.dict)) return new Sk.builtin.dict(L);
+Sk.builtin.dict = function dict(L) {
+    if (!(this instanceof Sk.builtin.dict)) {
+        return new Sk.builtin.dict(L);
+    }
 
-    if (L === undefined)
-    {
+    if (L === undefined) {
         L = [];
     }
 
     this.size = 0;
 
-    if (Object.prototype.toString.apply(L) === '[object Array]')
-    {
+    if (Object.prototype.toString.apply(L) === '[object Array]') {
         // Handle dictionary literals
-        for (var i = 0; i < L.length; i += 2)
-        {
+        for (var i = 0; i < L.length; i += 2) {
             this.mp$ass_subscript(L[i], L[i+1]);
         }
     }
@@ -9946,8 +9946,7 @@ Sk.builtin.dict = function dict(L)
         // Handle calls of type "dict(mapping)" from Python code
         for (var it = L.tp$iter(), k = it.tp$iternext();
              k !== undefined;
-             k = it.tp$iternext())
-        {
+             k = it.tp$iternext()) {
             var v = L.mp$subscript(k);
             if (v === undefined)
             {
@@ -9988,38 +9987,19 @@ var kf = Sk.builtin.hash;
 
 Sk.builtin.dict.prototype.key$lookup = function(bucket, key)
 {
-    var item;
-    var eq;
-    var i;
-
-    for (i=0; i<bucket.items.length; i++)
+    if (Sk.misceval.richCompareBool(bucket.$hash, kf(key), 'Eq'))
     {
-        item = bucket.items[i];
-        eq = Sk.misceval.richCompareBool(item.lhs, key, 'Eq');
-        if (eq)
-        {
-            return item;
-        }
+        return bucket.items[0];
     }
-    return null;
+    return undefined;
 }   
 
 Sk.builtin.dict.prototype.key$pop = function(bucket, key)
-{
-    var item;
-    var eq;
-    var i;
-
-    for (i=0; i<bucket.items.length; i++)
+{       
+    if (Sk.misceval.richCompareBool(bucket.$hash, kf(key), 'Eq'))
     {
-        item = bucket.items[i];
-        eq = Sk.misceval.richCompareBool(item.lhs, key, 'Eq');
-        if (eq)
-        {
-            bucket.items.splice(i, 1);
-            this.size -= 1;
-            return item;
-        }
+        this.size -= 1;
+        return bucket.items.pop();
     }
     return undefined;    
 }
@@ -10085,10 +10065,11 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function(key, w)
     }
 
     item = this.key$lookup(bucket, key);
+
     if (item) {
         item.rhs = w;
         return;
-    };
+    }
 
     // Not found in dictionary
     bucket.items.push({lhs: key, rhs: w});
@@ -11768,7 +11749,9 @@ Sk.builtin.nmber.prototype.tp$index = function()
 
 Sk.builtin.nmber.prototype.tp$hash = function()
 {
-    return this.v;
+    //the hash of all numbers should be an int and since javascript doesn't really 
+    //care every number can be an int.
+    return new Sk.builtin.nmber(this.v, Sk.builtin.nmber.int$);
 };
 
 Sk.builtin.nmber.prototype.tp$name = "number";
@@ -12529,7 +12512,7 @@ Sk.builtin.lng.prototype.tp$index = function()
 
 Sk.builtin.lng.prototype.tp$hash = function()
 {
-    return this.tp$index();
+    return new Sk.builtin.nmber(this.tp$index(), Sk.builtin.nmber.int$);
 };
 
 Sk.builtin.lng.prototype.tp$name = "long";
