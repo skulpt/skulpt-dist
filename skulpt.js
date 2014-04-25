@@ -9777,7 +9777,6 @@ Sk.builtin.tuple.prototype.tp$hash = function()
     var len = this.v.length;
     for (var i = 0; i < len; ++i)
     {
-        //hash returns a skulpt number nowadays
         var y = Sk.builtin.hash(this.v[i]).v;
         if (y === -1) return new Sk.builtin.nmber(-1, Sk.builtin.nmber.int$);
         x = (x ^ y) * mult;
@@ -9925,20 +9924,22 @@ goog.exportSymbol("Sk.builtin.tuple", Sk.builtin.tuple);
  * @constructor
  * @param {Array.<Object>} L
  */
-Sk.builtin.dict = function dict(L) {
-    if (!(this instanceof Sk.builtin.dict)) {
-        return new Sk.builtin.dict(L);
-    }
+Sk.builtin.dict = function dict(L)
+{
+    if (!(this instanceof Sk.builtin.dict)) return new Sk.builtin.dict(L);
 
-    if (L === undefined) {
+    if (L === undefined)
+    {
         L = [];
     }
 
     this.size = 0;
 
-    if (Object.prototype.toString.apply(L) === '[object Array]') {
+    if (Object.prototype.toString.apply(L) === '[object Array]')
+    {
         // Handle dictionary literals
-        for (var i = 0; i < L.length; i += 2) {
+        for (var i = 0; i < L.length; i += 2)
+        {
             this.mp$ass_subscript(L[i], L[i+1]);
         }
     }
@@ -9946,7 +9947,8 @@ Sk.builtin.dict = function dict(L) {
         // Handle calls of type "dict(mapping)" from Python code
         for (var it = L.tp$iter(), k = it.tp$iternext();
              k !== undefined;
-             k = it.tp$iternext()) {
+             k = it.tp$iternext())
+        {
             var v = L.mp$subscript(k);
             if (v === undefined)
             {
@@ -9987,19 +9989,39 @@ var kf = Sk.builtin.hash;
 
 Sk.builtin.dict.prototype.key$lookup = function(bucket, key)
 {
-    if (Sk.misceval.richCompareBool(bucket.$hash, kf(key), 'Eq'))
+    var item;
+    var eq;
+    var i;
+
+    for (i=0; i<bucket.items.length; i++)
     {
-        return bucket.items[0];
+        item = bucket.items[i];
+        eq = Sk.misceval.richCompareBool(item.lhs, key, 'Eq');
+        if (eq)
+        {
+            return item;
+        }
     }
-    return undefined;
+    
+    return null;
 }   
 
 Sk.builtin.dict.prototype.key$pop = function(bucket, key)
-{       
-    if (Sk.misceval.richCompareBool(bucket.$hash, kf(key), 'Eq'))
+{
+    var item;
+    var eq;
+    var i;
+
+    for (i=0; i<bucket.items.length; i++)
     {
-        this.size -= 1;
-        return bucket.items.pop();
+        item = bucket.items[i];
+        eq = Sk.misceval.richCompareBool(item.lhs, key, 'Eq');
+        if (eq)
+        {
+            bucket.items.splice(i, 1);
+            this.size -= 1;
+            return item;
+        }
     }
     return undefined;    
 }
@@ -10065,7 +10087,6 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function(key, w)
     }
 
     item = this.key$lookup(bucket, key);
-
     if (item) {
         item.rhs = w;
         return;
