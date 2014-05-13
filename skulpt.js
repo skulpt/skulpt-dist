@@ -5426,7 +5426,11 @@ Sk.builtin.issubclass = function issubclass(c1, c2) {
     {
         if (klass === base) return true;
         if (klass['$d'] === undefined) return false;
-        var bases = klass['$d'].mp$subscript(Sk.builtin.type.basesStr_);
+        if (klass['$d'].mp$subscript) {
+            var bases = klass['$d'].mp$subscript(Sk.builtin.type.basesStr_);
+        } else {
+            return false;
+        }
         for (var i = 0; i < bases.v.length; ++i)
         {
             if (issubclass_internal(bases.v[i], base))
@@ -22406,10 +22410,11 @@ Compiler.prototype.cmod = function(mod)
 
     var entryBlock = this.newBlock('module entry');
     this.u.prefixCode = "var " + modf + "=(function($modname){";
-    this.u.varDeclsCode = "if (Sk.retainGlobals) {" + 
+    this.u.varDeclsCode = "var $gbl = {};" +
+                         "if (Sk.retainGlobals) {" + 
 						  "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl }" + 
-						  "    else { Sk.globals = $gbl = {}; }" +
-						  "} else { Sk.globals = $gbl = {}; }" +
+						  "    else { Sk.globals = $gbl; }" +
+						  "} else { Sk.globals = $gbl; }" +
 						  "var $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname;" ;
 
     // Add the try block that pops the try/except stack if one exists
@@ -22664,7 +22669,6 @@ Sk.importModuleInternal_ = function(name, dumpJS, modname, suppliedPyBody)
 //		Sk.debugout(finalcode);
 
     var modlocs = goog.global['eval'](finalcode);
-
     // pass in __name__ so the module can set it (so that the code can access
     // it), but also set it after we're done so that builtins don't have to
     // remember to do it.
@@ -22725,9 +22729,16 @@ Sk.importMainWithBody = function(name, dumpJS, body)
 
 Sk.builtin.__import__ = function(name, globals, locals, fromlist)
 {
+    // Save the Sk.globals variable importModuleInternal_ may replace it when it compiles
+    // a Python language module.  for some reason, __name__ gets overwritten.
+    var saveSk = Sk.globals;
     var ret = Sk.importModuleInternal_(name);
-    if (!fromlist || fromlist.length === 0)
+    if (saveSk !== Sk.globals) {
+        Sk.globals = saveSk;
+    }
+    if (!fromlist || fromlist.length === 0) {
         return ret;
+    }
     // if there's a fromlist we want to return the actual module, not the
     // toplevel namespace
     ret = Sk.sysmodules.mp$subscript(name);
@@ -22735,10 +22746,16 @@ Sk.builtin.__import__ = function(name, globals, locals, fromlist)
     return ret;
 };
 
-Sk.importStar = function(module,loc) {
+Sk.importStar = function(module,loc,global) {
+    // from the global scope, globals and locals can be the same.  So the loop below
+    // could accidentally overwrite __name__, erasing __main__.
+    var nn = global['__name__'];
     var props = Object['getOwnPropertyNames'](module['$d'])
     for(var i in props) {
         loc[props[i]] = module['$d'][props[i]];
+    }
+    if (global['__name__'] !== nn) {
+        global['__name__'] = nn;
     }
 }
 
