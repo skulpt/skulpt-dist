@@ -13765,6 +13765,7 @@ Sk.builtin.generator = function(code, globals, args, closure, closure2)
     this['gi$resumeat'] = 0;
     this['gi$sentvalue'] = undefined;
     this['gi$locals'] = {};
+    this['gi$cells'] = {};
     if (args.length > 0)
     {
         // store arguments into locals because they have to be maintained
@@ -13806,7 +13807,7 @@ Sk.builtin.generator.prototype.tp$iternext = function(yielded)
     //print("ret", JSON.stringify(ret));
     this.gi$running = false;
     goog.asserts.assert(ret !== undefined);
-    if (ret !== null)
+    if (ret !== Sk.builtin.none.none$)
     {
         // returns a pair: resume target and yielded value
         this['gi$resumeat'] = ret[0];
@@ -21721,7 +21722,16 @@ Compiler.prototype.buildcodeobj = function(n, coname, decorator_list, args, call
     }
     var cells = "";
     if (hasCell)
-        cells = ",$cell={}";
+    {
+        if (isGenerator)
+        {
+            cells = ",$cell=$gen.gi$cells";
+        }
+        else
+        {
+            cells = ",$cell={}";
+        }
+    }
 
     // note special usage of 'this' to avoid having to slice globals into
     // all function invocations in call
