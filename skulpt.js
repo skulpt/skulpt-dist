@@ -4579,6 +4579,12 @@ Sk.builtin.min = function min()
 
     var args = Sk.misceval.arrayFromArguments(arguments);
     var lowest = args[0];
+
+    if (lowest === undefined)
+    {
+        throw new Sk.builtin.ValueError("min() arg is an empty sequence");
+    }
+
     for (var i = 1; i < args.length; ++i)
     {
         if (Sk.misceval.richCompareBool(args[i], lowest, 'Lt'))
@@ -4593,6 +4599,12 @@ Sk.builtin.max = function max()
 
     var args = Sk.misceval.arrayFromArguments(arguments);
     var highest = args[0];
+
+    if (highest === undefined)
+    {
+        throw new Sk.builtin.ValueError("max() arg is an empty sequence");
+    }
+
     for (var i = 1; i < args.length; ++i)
     {
         if (Sk.misceval.richCompareBool(args[i], highest, 'Gt'))
@@ -6883,9 +6895,15 @@ Sk.misceval.arrayFromArguments = function(args)
         // this is a Sk.builtin.list
         arg = Sk.builtin.dict.prototype['keys'].func_code(arg);
     }
-    else if ( arg instanceof Sk.builtin.str )
+
+    // shouldn't else if here as the above may output lists to arg.
+    if ( arg instanceof Sk.builtin.list || arg instanceof Sk.builtin.tuple )
     {
-        // this is a Sk.builtin.str
+        return arg.v;
+    }
+    else if ( arg.tp$iter !== undefined )
+    {
+        // handle arbitrary iterable (strings, generators, etc.)
         var res = [];
         for (var it = arg.tp$iter(), i = it.tp$iternext();
              i !== undefined; i = it.tp$iternext())
@@ -6895,12 +6913,7 @@ Sk.misceval.arrayFromArguments = function(args)
         return res;
     }
 
-    // shouldn't else if here as the above may output lists to arg.
-    if ( arg instanceof Sk.builtin.list || arg instanceof Sk.builtin.tuple )
-    {
-        return arg.v;
-    }
-    return args;
+    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(arg) + "' object is not iterable");
 };
 goog.exportSymbol("Sk.misceval.arrayFromArguments", Sk.misceval.arrayFromArguments);
 
@@ -9984,6 +9997,13 @@ Sk.builtin.tuple.prototype.tp$richcompare = function(w, op)
 
 Sk.builtin.tuple.prototype.sq$concat = function(other)
 {
+    if (other.__class__ != Sk.builtin.tuple)
+    {
+        var msg = 'can only concatenate tuple (not "';
+        msg += Sk.abstr.typeName(other) + '") to tuple';
+        throw new Sk.builtin.TypeError(msg);
+    }
+
     return new Sk.builtin.tuple(this.v.concat(other.v));
 };
 
