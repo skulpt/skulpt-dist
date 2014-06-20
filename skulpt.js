@@ -4424,8 +4424,8 @@ Sk.builtin.asnum$ = function(a) {
 	    return a.toInt$();
 	}
 	if (a.constructor === Sk.builtin.biginteger) {
-	    if ((a.trueCompare(new Sk.builtin.biginteger(Sk.builtin.lng.threshold$)) > 0)
-		|| (a.trueCompare(new Sk.builtin.biginteger(-Sk.builtin.lng.threshold$)) < 0)) {
+	    if ((a.trueCompare(new Sk.builtin.biginteger(Sk.builtin.nmber.threshold$)) > 0)
+		|| (a.trueCompare(new Sk.builtin.biginteger(-Sk.builtin.nmber.threshold$)) < 0)) {
 		return a.toString();
 	    }
 	    return a.intValue();
@@ -4532,21 +4532,21 @@ Sk.builtin.asnum$nofloat = function(a) {
 }
 goog.exportSymbol("Sk.builtin.asnum$nofloat", Sk.builtin.asnum$nofloat);
 
-Sk.builtin.round = function round(number, ndigits)
-{
+Sk.builtin.round = function round(number, ndigits) {
     var result, multiplier;
-
     Sk.builtin.pyCheckArgs("round", arguments, 1, 2);
+    
     if (!Sk.builtin.checkNumber(number)) {
-	throw new Sk.builtin.TypeError("a float is required");
+        throw new Sk.builtin.TypeError("a float is required");
     }
+    
     if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
-    };
+    }
 
     if (ndigits === undefined) {
         ndigits = 0;
-    };
+    }
 
     number = Sk.builtin.asnum$(number);
     ndigits = Sk.misceval.asIndex(ndigits);
@@ -5284,8 +5284,9 @@ Sk.builtin.hasattr = function hasattr(obj,attr) {
 Sk.builtin.pow = function pow(a, b, c) {
     Sk.builtin.pyCheckArgs("pow", arguments, 2, 3);
 
-    if (c instanceof Sk.builtin.none)
+    if (c instanceof Sk.builtin.none) {
         c = undefined;
+    }
 
     var a_num = Sk.builtin.asnum$(a);
     var b_num = Sk.builtin.asnum$(b);
@@ -5293,62 +5294,60 @@ Sk.builtin.pow = function pow(a, b, c) {
 
     if (!Sk.builtin.checkNumber(a) || !Sk.builtin.checkNumber(b))
     {
-	if (c === undefined)
-	{
-	    throw new Sk.builtin.TypeError("unsupported operand type(s) for pow(): '" + Sk.abstr.typeName(a) + "' and '" + Sk.abstr.typeName(b) + "'");
-	}
-	else
-	{
-	    throw new Sk.builtin.TypeError("unsupported operand type(s) for pow(): '" + Sk.abstr.typeName(a) + "', '" + Sk.abstr.typeName(b) + "', '" + Sk.abstr.typeName(c) + "'");
-	}
+        if (c === undefined)
+        {
+            throw new Sk.builtin.TypeError("unsupported operand type(s) for pow(): '" + Sk.abstr.typeName(a) + "' and '" + Sk.abstr.typeName(b) + "'");
+        }
+        throw new Sk.builtin.TypeError("unsupported operand type(s) for pow(): '" + Sk.abstr.typeName(a) + "', '" + Sk.abstr.typeName(b) + "', '" + Sk.abstr.typeName(c) + "'");        
     }
     if (a_num < 0 && b.skType === Sk.builtin.nmber.float$)
     {
-	throw new Sk.builtin.ValueError("negative number cannot be raised to a fractional power");
+	   throw new Sk.builtin.ValueError("negative number cannot be raised to a fractional power");
     }
 
     if (c === undefined)
     {
-	var res = Math.pow(a_num, b_num);
-	if ((a.skType === Sk.builtin.nmber.float$ || b.skType === Sk.builtin.nmber.float$) || (b_num < 0))
-	{
-	    return new Sk.builtin.nmber(res, Sk.builtin.nmber.float$);
-	}
-	else if (a instanceof Sk.builtin.lng || b instanceof Sk.builtin.lng)
-	{
-	    return new Sk.builtin.lng(res);
-	}
-	else
-	{
-	    return new Sk.builtin.nmber(res, Sk.builtin.nmber.int$);
-	}
+        if ((a.skType === Sk.builtin.nmber.float$ || b.skType === Sk.builtin.nmber.float$) || (b_num < 0))
+        {
+            return new Sk.builtin.nmber(Math.pow(a_num, b_num), Sk.builtin.nmber.float$);
+        }
+        
+        var left = new Sk.builtin.nmber(a_num, Sk.builtin.nmber.int$);
+        var right = new Sk.builtin.nmber(b_num, Sk.builtin.nmber.int$);
+        var res = left.nb$power(right);
+        
+        if (a instanceof Sk.builtin.lng || b instanceof Sk.builtin.lng)
+        {
+            return new Sk.builtin.lng(res);
+        }
+
+        return res;
     }
     else
     {
-	if (!Sk.builtin.checkInt(a) || !Sk.builtin.checkInt(b) || !Sk.builtin.checkInt(c))
-	{
-	    throw new Sk.builtin.TypeError("pow() 3rd argument not allowed unless all arguments are integers");
-	}
-	if (b_num < 0)
-	{
-	    throw new Sk.builtin.TypeError("pow() 2nd argument cannot be negative when 3rd argument specified");
-	}
+        if (!Sk.builtin.checkInt(a) || !Sk.builtin.checkInt(b) || !Sk.builtin.checkInt(c))
+        {
+            throw new Sk.builtin.TypeError("pow() 3rd argument not allowed unless all arguments are integers");
+        }
+        if (b_num < 0)
+        {
+            throw new Sk.builtin.TypeError("pow() 2nd argument cannot be negative when 3rd argument specified");
+        }
 
-	if ((a instanceof Sk.builtin.lng || b instanceof Sk.builtin.lng || c instanceof Sk.builtin.lng)
-            || (Math.pow(a_num, b_num) === Infinity))
-	{
-	    // convert a to a long so that we can use biginteger's modPowInt method
-	    a = new Sk.builtin.lng(a);
-	    return a.nb$power(b, c);
-	}
-	else
-	{
-	    var ret = new Sk.builtin.nmber(Math.pow(a_num, b_num), Sk.builtin.nmber.int$);
-	    return ret.nb$remainder(c);
-	}
+        if ((a instanceof Sk.builtin.lng || b instanceof Sk.builtin.lng || c instanceof Sk.builtin.lng)
+                || (Math.pow(a_num, b_num) === Infinity))
+        {
+            // convert a to a long so that we can use biginteger's modPowInt method
+            a = new Sk.builtin.lng(a);
+            return a.nb$power(b, c);
+        }
+        else
+        {
+            var ret = new Sk.builtin.nmber(Math.pow(a_num, b_num), Sk.builtin.nmber.int$);
+            return ret.nb$remainder(c);
+        }
     }
-
-}
+};
 
 Sk.builtin.quit = function quit(msg) {
     var s = new Sk.builtin.str(msg).v;
@@ -7704,7 +7703,7 @@ Sk.abstr.numOpAndPromote = function(a, b, opfn)
     {
         var ans = opfn(a, b);
         // todo; handle float   Removed RNL (bugs in lng, and it should be a question of precision, not magnitude -- this was just wrong)
-        if ( (ans > Sk.builtin.lng.threshold$ || ans < -Sk.builtin.lng.threshold$) && Math.floor(ans) === ans) {
+        if ( (ans > Sk.builtin.nmber.threshold$ || ans < -Sk.builtin.nmber.threshold$) && Math.floor(ans) === ans) {
             return [Sk.builtin.lng.fromInt$(a), Sk.builtin.lng.fromInt$(b)];
         } else
             return ans;
@@ -9909,7 +9908,7 @@ Sk.builtin.tuple.prototype.tp$hash = function()
     }
     x += 97531;
     if (x === -1) x = -2;
-    return new Sk.builtin.nmber(x, Sk.builtin.nmber.int$);
+    return new Sk.builtin.nmber(x | 0, Sk.builtin.nmber.int$);
 };
 
 Sk.builtin.tuple.prototype.sq$repeat = function(n)
@@ -11872,7 +11871,7 @@ Sk.builtin.nmber = function(x, skType)	/* number is a reserved word */
 		if (skType !== undefined)
 			result.skType = skType;
 		if (skType === Sk.builtin.nmber.int$)
-			if (result.v > Sk.builtin.nmber.threshold$ || result.v < -Sk.builtin.nmber.threshold$)
+			if (result.v > Sk.builtin.nmber.threshold$ || result.v < -Sk.builtin.nmber.threshold$ - 1)
 				return new Sk.builtin.lng(x);
 		return result;
 	} else if (x instanceof Sk.builtin.lng) {
@@ -11911,7 +11910,7 @@ Sk.builtin.nmber.prototype.tp$name = "number";
 Sk.builtin.nmber.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj('number', Sk.builtin.nmber);
 
 //	Threshold to determine when types should be converted to long
-Sk.builtin.nmber.threshold$ = Math.pow(2, 53);
+Sk.builtin.nmber.threshold$ = Math.pow(2, 53) - 1;
 Sk.builtin.nmber.float$ = "float";
 Sk.builtin.nmber.int$ = "int";
 
@@ -12679,10 +12678,10 @@ Sk.builtin.lng.prototype.tp$name = "long";
 Sk.builtin.lng.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj('long', Sk.builtin.lng);
 
 //    Threshold to determine when types should be converted to long
-Sk.builtin.lng.threshold$ = Math.pow(2, 53);
+//Sk.builtin.lng.threshold$ = Sk.builtin.nmber.threshold$;
 
-Sk.builtin.lng.MAX_INT$ = new Sk.builtin.lng(Sk.builtin.lng.threshold$);
-Sk.builtin.lng.MIN_INT$ = new Sk.builtin.lng(-Sk.builtin.lng.threshold$);
+Sk.builtin.lng.MAX_INT$ = new Sk.builtin.lng(Sk.builtin.nmber.threshold$);
+Sk.builtin.lng.MIN_INT$ = new Sk.builtin.lng(-Sk.builtin.nmber.threshold$);
 
 Sk.builtin.lng.prototype.cantBeInt = function () {
     return (this.longCompare(Sk.builtin.lng.MAX_INT$) > 0) || (this.longCompare(Sk.builtin.lng.MIN_INT$) < 0);
@@ -13255,7 +13254,7 @@ Sk.builtin.int_ = function (x, base) {
     if (x instanceof Sk.builtin.str) {
         base = Sk.builtin.asnum$(base);
         val = Sk.str2number(x.v, base, parseInt, function (x) { return -x; }, "int");
-        if ((val > Sk.builtin.lng.threshold$) || (val < -Sk.builtin.lng.threshold$)) {
+        if ((val > Sk.builtin.nmber.threshold$) || (val < -Sk.builtin.nmber.threshold$)) {
             // Too big for int, convert to long
             return new Sk.builtin.lng(x, base);
         }
@@ -13266,6 +13265,10 @@ Sk.builtin.int_ = function (x, base) {
         throw new Sk.builtin.TypeError("int() can't convert non-string with explicit base");
     }
 
+    if (x === undefined || x === Sk.builtin.none) {
+        x = 0;
+    }
+    
     if (x instanceof Sk.builtin.lng) {
         if (x.cantBeInt()) {
             return new Sk.builtin.lng(x);
@@ -13273,10 +13276,11 @@ Sk.builtin.int_ = function (x, base) {
         return new Sk.builtin.nmber(x.toInt$(), Sk.builtin.nmber.int$);
     }
 
-    // sneaky way to do truncate, floor doesn't work < 0, round doesn't work on the .5> side
-    // bitwise ops convert to 32bit int in the "C-truncate-way" we want.
     x = Sk.builtin.asnum$(x);
-    return new Sk.builtin.nmber(x | 0, Sk.builtin.nmber.int$);
+    if (x > Sk.builtin.nmber.threshold$ || x < -Sk.builtin.nmber.threshold$) {
+        return new Sk.builtin.lng(x); 
+    }
+    return new Sk.builtin.nmber(parseInt(x, base), Sk.builtin.nmber.int$);
 };
 Sk.builtin.int_.co_varnames = [ "base" ];
 Sk.builtin.int_.co_numargs = 2;
@@ -19206,7 +19210,7 @@ function parsenumber(c, s, lineno)
     }
 
     // Convert to long
-    if (val > Sk.builtin.lng.threshold$
+    if (val > Sk.builtin.nmber.threshold$
         && Math.floor(val) === val
         && (s.indexOf('e') === -1 && s.indexOf('E') === -1))
     {
