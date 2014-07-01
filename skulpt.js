@@ -13583,11 +13583,11 @@ Sk.builtin.set.prototype.tp$richcompare = function(w, op)
         case 'LtE':
         case 'Eq':
         case 'NotEq':
-            isSub = Sk.builtin.set.prototype['issubset'].func_code(this, w);
+            isSub = Sk.builtin.set.prototype['issubset'].func_code(this, w).v;
             break;
         case 'Gt':
         case 'GtE':
-            isSuper = Sk.builtin.set.prototype['issuperset'].func_code(this, w);
+            isSuper = Sk.builtin.set.prototype['issuperset'].func_code(this, w).v;
             break;
         default:
             goog.asserts.fail();
@@ -21398,6 +21398,7 @@ Compiler.prototype.cwhile = function(s)
         var orelse = s.orelse.length > 0 ? this.newBlock('while orelse') : null;
         var body = this.newBlock('while body');
 
+        this.annotateSource(s);
         this._jumpfalse(this.vexpr(s.test), orelse ? orelse : next);
         this._jump(body);
 
