@@ -4223,6 +4223,674 @@ goog.asserts.assertObjectPrototypeIsIntact = function() {
   }
 };
 /**
+ * This is a derivation of https://github.com/jakearchibald/es6-promise,
+ * hacked horribly to get it through the Closure compiler.
+ *
+ * @suppress{undefinedVars}
+ */
+(function(self) {
+var define, requireModule, require, requirejs;
+
+(function() {
+  var registry = {}, seen = {};
+
+  define = function(name, deps, callback) {
+    registry[name] = { deps: deps, callback: callback };
+  };
+
+  requirejs = require = requireModule = function(name) {
+  requirejs._eak_seen = registry;
+
+    if (seen[name]) { return seen[name]; }
+    seen[name] = {};
+
+    if (!registry[name]) {
+      throw new Error("Could not find module " + name);
+    }
+
+    var mod = registry[name],
+        deps = mod.deps,
+        callback = mod.callback,
+        reified = [],
+        exports;
+
+    for (var i=0, l=deps.length; i<l; i++) {
+      if (deps[i] === 'exports') {
+        reified.push(exports = {});
+      } else {
+        reified.push(requireModule(resolve(deps[i])));
+      }
+    }
+
+    var value = callback.apply(this, reified);
+    return seen[name] = exports || value;
+
+    function resolve(child) {
+      if (child.charAt(0) !== '.') { return child; }
+      var parts = child.split("/");
+      var parentBase = name.split("/").slice(0, -1);
+
+      for (var i=0, l=parts.length; i<l; i++) {
+        var part = parts[i];
+
+        if (part === '..') { parentBase.pop(); }
+        else if (part === '.') { continue; }
+        else { parentBase.push(part); }
+      }
+
+      return parentBase.join("/");
+    }
+  };
+})();
+
+define("promise/all", 
+  ["./utils","exports"],
+  function(__dependency1__, __exports__) {
+    "use strict";
+    /* global toString */
+
+    var isArray = __dependency1__.isArray;
+    var isFunction = __dependency1__.isFunction;
+
+    /**
+      Returns a promise that is fulfilled when all the given promises have been
+      fulfilled, or rejected if any of them become rejected. The return promise
+      is fulfilled with an array that gives all the values in the order they were
+      passed in the `promises` array argument.
+
+      Example:
+
+      ```javascript
+      var promise1 = RSVP.resolve(1);
+      var promise2 = RSVP.resolve(2);
+      var promise3 = RSVP.resolve(3);
+      var promises = [ promise1, promise2, promise3 ];
+
+      RSVP.all(promises).then(function(array){
+        // The array here would be [ 1, 2, 3 ];
+      });
+      ```
+
+      If any of the `promises` given to `RSVP.all` are rejected, the first promise
+      that is rejected will be given as an argument to the returned promises's
+      rejection handler. For example:
+
+      Example:
+
+      ```javascript
+      var promise1 = RSVP.resolve(1);
+      var promise2 = RSVP.reject(new Error("2"));
+      var promise3 = RSVP.reject(new Error("3"));
+      var promises = [ promise1, promise2, promise3 ];
+
+      RSVP.all(promises).then(function(array){
+        // Code here never runs because there are rejected promises!
+      }, function(error) {
+        // error.message === "2"
+      });
+      ```
+
+      @method all
+      @param {Array} promises
+      @return {Promise} promise that is fulfilled when all `promises` have been
+      fulfilled, or rejected if any of them become rejected.
+    */
+    function all(promises) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      if (!isArray(promises)) {
+        throw new TypeError('You must pass an array to all.');
+      }
+
+      return new Promise(function(resolve, reject) {
+        var results = [], remaining = promises.length,
+        promise;
+
+        if (remaining === 0) {
+          resolve([]);
+        }
+
+        function resolver(index) {
+          return function(value) {
+            resolveAll(index, value);
+          };
+        }
+
+        function resolveAll(index, value) {
+          results[index] = value;
+          if (--remaining === 0) {
+            resolve(results);
+          }
+        }
+
+        for (var i = 0; i < promises.length; i++) {
+          promise = promises[i];
+
+          if (promise && isFunction(promise.then)) {
+            promise.then(resolver(i), reject);
+          } else {
+            resolveAll(i, promise);
+          }
+        }
+      });
+    }
+
+    __exports__.all = all;
+  });
+define("promise/asap", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    var browserGlobal = (typeof window !== 'undefined') ? window : {};
+    var local = (typeof global !== 'undefined') ? global : (this === undefined? window:this);
+
+    // node
+    function useNextTick() {
+      return function() {
+        process.nextTick(flush);
+      };
+    }
+
+    function useSetTimeout() {
+      return function() {
+        local.setTimeout(flush, 1);
+      };
+    }
+
+    var queue = [];
+    function flush() {
+      for (var i = 0; i < queue.length; i++) {
+        var tuple = queue[i];
+        var callback = tuple[0], arg = tuple[1];
+        callback(arg);
+      }
+      queue = [];
+    }
+
+    var scheduleFlush;
+
+    // Decide what async method to use to triggering processing of queued callbacks:
+    if (typeof process !== 'undefined' && {}.toString.call(process) === '[object process]') {
+      scheduleFlush = useNextTick();
+    } else {
+      scheduleFlush = useSetTimeout();
+    }
+
+    function asap(callback, arg) {
+      var length = queue.push([callback, arg]);
+      if (length === 1) {
+        // If length is 1, that means that we need to schedule an async flush.
+        // If additional callbacks are queued before the queue is flushed, they
+        // will be processed by this flush that we are scheduling.
+        scheduleFlush();
+      }
+    }
+
+    __exports__.asap = asap;
+  });
+define("promise/config", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    var config = {
+      instrument: false
+    };
+
+    function configure(name, value) {
+      if (arguments.length === 2) {
+        config[name] = value;
+      } else {
+        return config[name];
+      }
+    }
+
+    __exports__.config = config;
+    __exports__.configure = configure;
+  });
+define("promise/polyfill", 
+  ["./promise","./utils","exports"],
+  function(__dependency1__, __dependency2__, __exports__) {
+    "use strict";
+    /*global self*/
+    var RSVPPromise = __dependency1__.Promise;
+    var isFunction = __dependency2__.isFunction;
+
+    function polyfill() {
+      var local;
+
+      if (typeof global !== 'undefined') {
+        local = global;
+      } else if (typeof window !== 'undefined' && window.document) {
+        local = window;
+      } else {
+        local = self;
+      }
+
+      var es6PromiseSupport = 
+        "Promise" in local &&
+        // Some of these methods are missing from
+        // Firefox/Chrome experimental implementations
+        "resolve" in local.Promise &&
+        "reject" in local.Promise &&
+        "all" in local.Promise &&
+        "race" in local.Promise &&
+        // Older version of the spec had a resolver object
+        // as the arg rather than a function
+        (function() {
+          var resolve;
+          new local.Promise(function(r) { resolve = r; });
+          return isFunction(resolve);
+        }());
+
+      if (!es6PromiseSupport) {
+        local.Promise = RSVPPromise;
+      }
+    }
+
+    __exports__.polyfill = polyfill;
+  });
+define("promise/promise", 
+  ["./config","./utils","./all","./race","./resolve","./reject","./asap","exports"],
+  function(__dependency1__, __dependency2__, __dependency3__, __dependency4__, __dependency5__, __dependency6__, __dependency7__, __exports__) {
+    "use strict";
+    var config = __dependency1__.config;
+    var configure = __dependency1__.configure;
+    var objectOrFunction = __dependency2__.objectOrFunction;
+    var isFunction = __dependency2__.isFunction;
+    var now = __dependency2__.now;
+    var all = __dependency3__.all;
+    var race = __dependency4__.race;
+    var staticResolve = __dependency5__.resolve;
+    var staticReject = __dependency6__.reject;
+    var asap = __dependency7__.asap;
+
+    var counter = 0;
+
+    config.async = asap; // default async is asap;
+
+    function Promise(resolver) {
+      if (!isFunction(resolver)) {
+        throw new TypeError('You must pass a resolver function as the first argument to the promise constructor');
+      }
+
+      if (!(this instanceof Promise)) {
+        throw new TypeError("Failed to construct 'Promise': Please use the 'new' operator, this object constructor cannot be called as a function.");
+      }
+
+      this._subscribers = [];
+
+      invokeResolver(resolver, this);
+    }
+
+    function invokeResolver(resolver, promise) {
+      function resolvePromise(value) {
+        resolve(promise, value);
+      }
+
+      function rejectPromise(reason) {
+        reject(promise, reason);
+      }
+
+      try {
+        resolver(resolvePromise, rejectPromise);
+      } catch(e) {
+        rejectPromise(e);
+      }
+    }
+
+    function invokeCallback(settled, promise, callback, detail) {
+      var hasCallback = isFunction(callback),
+          value, error, succeeded, failed;
+
+      if (hasCallback) {
+        try {
+          value = callback(detail);
+          succeeded = true;
+        } catch(e) {
+          failed = true;
+          error = e;
+        }
+      } else {
+        value = detail;
+        succeeded = true;
+      }
+
+      if (handleThenable(promise, value)) {
+        return;
+      } else if (hasCallback && succeeded) {
+        resolve(promise, value);
+      } else if (failed) {
+        reject(promise, error);
+      } else if (settled === FULFILLED) {
+        resolve(promise, value);
+      } else if (settled === REJECTED) {
+        reject(promise, value);
+      }
+    }
+
+    var PENDING   = void 0;
+    var SEALED    = 0;
+    var FULFILLED = 1;
+    var REJECTED  = 2;
+
+    function subscribe(parent, child, onFulfillment, onRejection) {
+      var subscribers = parent._subscribers;
+      var length = subscribers.length;
+
+      subscribers[length] = child;
+      subscribers[length + FULFILLED] = onFulfillment;
+      subscribers[length + REJECTED]  = onRejection;
+    }
+
+    function publish(promise, settled) {
+      var child, callback, subscribers = promise._subscribers, detail = promise._detail;
+
+      for (var i = 0; i < subscribers.length; i += 3) {
+        child = subscribers[i];
+        callback = subscribers[i + settled];
+
+        invokeCallback(settled, child, callback, detail);
+      }
+
+      promise._subscribers = null;
+    }
+
+    Promise.prototype = {
+      constructor: Promise,
+
+      _state: undefined,
+      _detail: undefined,
+      _subscribers: undefined,
+
+      then: function(onFulfillment, onRejection) {
+        var promise = this;
+
+        var thenPromise = new this.constructor(function() {});
+
+        if (this._state) {
+          var callbacks = arguments;
+          config.async(function invokePromiseCallback() {
+            invokeCallback(promise._state, thenPromise, callbacks[promise._state - 1], promise._detail);
+          });
+        } else {
+          subscribe(this, thenPromise, onFulfillment, onRejection);
+        }
+
+        return thenPromise;
+      },
+
+      'catch': function(onRejection) {
+        return this.then(null, onRejection);
+      }
+    };
+
+    Promise.all = all;
+    Promise.race = race;
+    Promise.resolve = staticResolve;
+    Promise.reject = staticReject;
+
+    function handleThenable(promise, value) {
+      var then = null,
+      resolved;
+
+      try {
+        if (promise === value) {
+          throw new TypeError("A promises callback cannot return that same promise.");
+        }
+
+        if (objectOrFunction(value)) {
+          then = value.then;
+
+          if (isFunction(then)) {
+            then.call(value, function(val) {
+              if (resolved) { return true; }
+              resolved = true;
+
+              if (value !== val) {
+                resolve(promise, val);
+              } else {
+                fulfill(promise, val);
+              }
+            }, function(val) {
+              if (resolved) { return true; }
+              resolved = true;
+
+              reject(promise, val);
+            });
+
+            return true;
+          }
+        }
+      } catch (error) {
+        if (resolved) { return true; }
+        reject(promise, error);
+        return true;
+      }
+
+      return false;
+    }
+
+    function resolve(promise, value) {
+      if (promise === value) {
+        fulfill(promise, value);
+      } else if (!handleThenable(promise, value)) {
+        fulfill(promise, value);
+      }
+    }
+
+    function fulfill(promise, value) {
+      if (promise._state !== PENDING) { return; }
+      promise._state = SEALED;
+      promise._detail = value;
+
+      config.async(publishFulfillment, promise);
+    }
+
+    function reject(promise, reason) {
+      if (promise._state !== PENDING) { return; }
+      promise._state = SEALED;
+      promise._detail = reason;
+
+      config.async(publishRejection, promise);
+    }
+
+    function publishFulfillment(promise) {
+      publish(promise, promise._state = FULFILLED);
+    }
+
+    function publishRejection(promise) {
+      publish(promise, promise._state = REJECTED);
+    }
+
+    __exports__.Promise = Promise;
+  });
+define("promise/race", 
+  ["./utils","exports"],
+  function(__dependency1__, __exports__) {
+    "use strict";
+    /* global toString */
+    var isArray = __dependency1__.isArray;
+
+    /**
+      `RSVP.race` allows you to watch a series of promises and act as soon as the
+      first promise given to the `promises` argument fulfills or rejects.
+
+      Example:
+
+      ```javascript
+      var promise1 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 1");
+        }, 200);
+      });
+
+      var promise2 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 2");
+        }, 100);
+      });
+
+      RSVP.race([promise1, promise2]).then(function(result){
+        // result === "promise 2" because it was resolved before promise1
+        // was resolved.
+      });
+      ```
+
+      `RSVP.race` is deterministic in that only the state of the first completed
+      promise matters. For example, even if other promises given to the `promises`
+      array argument are resolved, but the first completed promise has become
+      rejected before the other promises became fulfilled, the returned promise
+      will become rejected:
+
+      ```javascript
+      var promise1 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          resolve("promise 1");
+        }, 200);
+      });
+
+      var promise2 = new RSVP.Promise(function(resolve, reject){
+        setTimeout(function(){
+          reject(new Error("promise 2"));
+        }, 100);
+      });
+
+      RSVP.race([promise1, promise2]).then(function(result){
+        // Code here never runs because there are rejected promises!
+      }, function(reason){
+        // reason.message === "promise2" because promise 2 became rejected before
+        // promise 1 became fulfilled
+      });
+      ```
+
+      @method race
+      @param {Array} promises array of promises to observe
+      @return {Promise} a promise that becomes fulfilled with the value the first
+      completed promises is resolved with if the first completed promise was
+      fulfilled, or rejected with the reason that the first completed promise
+      was rejected with.
+    */
+    function race(promises) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      if (!isArray(promises)) {
+        throw new TypeError('You must pass an array to race.');
+      }
+      return new Promise(function(resolve, reject) {
+        var results = [], promise;
+
+        for (var i = 0; i < promises.length; i++) {
+          promise = promises[i];
+
+          if (promise && typeof promise.then === 'function') {
+            promise.then(resolve, reject);
+          } else {
+            resolve(promise);
+          }
+        }
+      });
+    }
+
+    __exports__.race = race;
+  });
+define("promise/reject", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    /**
+      `RSVP.reject` returns a promise that will become rejected with the passed
+      `reason`. `RSVP.reject` is essentially shorthand for the following:
+
+      ```javascript
+      var promise = new RSVP.Promise(function(resolve, reject){
+        reject(new Error('WHOOPS'));
+      });
+
+      promise.then(function(value){
+        // Code here doesn't run because the promise is rejected!
+      }, function(reason){
+        // reason.message === 'WHOOPS'
+      });
+      ```
+
+      Instead of writing the above, your code now simply becomes the following:
+
+      ```javascript
+      var promise = RSVP.reject(new Error('WHOOPS'));
+
+      promise.then(function(value){
+        // Code here doesn't run because the promise is rejected!
+      }, function(reason){
+        // reason.message === 'WHOOPS'
+      });
+      ```
+
+      @method reject
+      @param {?} reason value that the returned promise will be rejected with.
+      @return {Promise} a promise that will become rejected with the given
+      `reason`.
+    */
+    function reject(reason) {
+      /*jshint validthis:true */
+      var Promise = this;
+
+      return new Promise(function (resolve, reject) {
+        reject(reason);
+      });
+    }
+
+    __exports__.reject = reject;
+  });
+define("promise/resolve", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    function resolve(value) {
+      /*jshint validthis:true */
+      if (value && typeof value === 'object' && value.constructor === this) {
+        return value;
+      }
+
+      var Promise = this;
+
+      return new Promise(function(resolve) {
+        resolve(value);
+      });
+    }
+
+    __exports__.resolve = resolve;
+  });
+define("promise/utils", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    function objectOrFunction(x) {
+      return isFunction(x) || (typeof x === "object" && x !== null);
+    }
+
+    function isFunction(x) {
+      return typeof x === "function";
+    }
+
+    function isArray(x) {
+      return Object.prototype.toString.call(x) === "[object Array]";
+    }
+
+    // Date.now is not available in browsers < IE9
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/now#Compatibility
+    var now = Date.now || function() { return new Date().getTime(); };
+
+
+    __exports__.objectOrFunction = objectOrFunction;
+    __exports__.isFunction = isFunction;
+    __exports__.isArray = isArray;
+    __exports__.now = now;
+  });
+requireModule('promise/polyfill').polyfill();
+}(this));
+/**
  * Base namespace for Skulpt. This is the only symbol that Skulpt adds to the
  * global namespace. Other user accessible symbols are noted and described
  * below.
@@ -4272,6 +4940,13 @@ Sk.configure = function (options) {
 
     Sk.retainGlobals = options["retainglobals"] || false;
     goog.asserts.assert(typeof Sk.throwSystemExit === "boolean");
+
+    Sk.debugging = options["debugging"] || false;
+    goog.asserts.assert(typeof Sk.debugging === "boolean");
+
+    Sk.breakpoints = options["breakpoints"] || function() { return true; };
+    goog.asserts.assert(typeof Sk.breakpoints === "function");
+
 
     if (options["syspath"]) {
         Sk.syspath = options["syspath"];
@@ -4366,7 +5041,8 @@ Sk.inputfun = function (args) {
 
 goog.exportSymbol("Sk.python3", Sk.python3);
 goog.exportSymbol("Sk.inputfun", Sk.inputfun);
-goog.require("goog.asserts");// builtins are supposed to come from the __builtin__ module, but we don't do
+goog.require("goog.asserts");
+// builtins are supposed to come from the __builtin__ module, but we don't do
 // that yet.
 Sk.builtin = {};
 
@@ -5863,6 +6539,25 @@ Sk.builtin.ParseError.prototype.tp$name = "ParseError";
  * @extends Sk.builtin.Exception
  * @param {...*} args
  */
+Sk.builtin.SuspensionError = function (args) {
+    var o;
+    if (!(this instanceof Sk.builtin.SuspensionError)) {
+        o = Object.create(Sk.builtin.SuspensionError.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    Sk.builtin.Exception.apply(this, arguments);
+};
+goog.inherits(Sk.builtin.SuspensionError, Sk.builtin.Exception);
+Sk.builtin.SuspensionError.prototype.tp$name = "SuspensionError";
+goog.exportSymbol("Sk.builtin.SuspensionError", Sk.builtin.SuspensionError);
+
+
+/**
+ * @constructor
+ * @extends Sk.builtin.Exception
+ * @param {...*} args
+ */
 Sk.builtin.SystemExit = function (args) {
     var o;
     if (!(this instanceof Sk.builtin.SystemExit)) {
@@ -6127,23 +6822,41 @@ Sk.builtin.type = function (name, bases, dict) {
         /**
         * @constructor
         */
-        klass = function (kwdict, varargseq, kws, args) {
+        klass = function (kwdict, varargseq, kws, args, canSuspend) {
             var init;
+            var self = this;
+            var s;
             if (!(this instanceof klass)) {
-                return new klass(kwdict, varargseq, kws, args);
+                return new klass(kwdict, varargseq, kws, args, canSuspend);
             }
 
             args = args || [];
-            this["$d"] = new Sk.builtin.dict([]);
+            self["$d"] = new Sk.builtin.dict([]);
 
-            init = Sk.builtin.type.typeLookup(this.ob$type, "__init__");
+
+            init = Sk.builtin.type.typeLookup(self.ob$type, "__init__");
             if (init !== undefined) {
                 // return should be None or throw a TypeError otherwise
-                args.unshift(this);
-                Sk.misceval.apply(init, kwdict, varargseq, kws, args);
+                args.unshift(self);
+                s = Sk.misceval.applyOrSuspend(init, kwdict, varargseq, kws, args);
+
+                return (function doSusp(s) {
+                    if (s instanceof Sk.misceval.Suspension) {
+                        // TODO I (Meredydd) don't know whether we are ever called
+                        // from anywhere except Sk.misceval.applyOrSuspend().
+                        // If we're not, we don't need a canSuspend parameter at all.
+                        if (canSuspend) {
+                            return new Sk.misceval.Suspension(doSusp, s);
+                        } else {
+                            return Sk.misceval.retryOptionalSuspensionOrThrow(s);
+                        }
+                    } else {
+                        return self;
+                    }
+                })(s);
             }
 
-            return this;
+            return self;
         };
 
         for (v in dict) {
@@ -6971,6 +7684,51 @@ Sk.builtin.method.prototype["$r"] = function () {
 };
 Sk.misceval = {};
 
+/*
+  Suspension object format:
+  {resume: function() {...}, // the continuation - returns either another suspension or the return value
+   data: <copied down from innermost level>,
+   optional: <if true, can be resumed immediately (eg debug stops)>,
+   child: <Suspension, or null if we are the innermost level>,
+   $blk: <>, $loc: <>, $gbl: <>, $exc: <>, $err: <>, [$cell: <>],
+  }
+*/
+
+/**
+ * @constructor
+ * @param{function(?)=} resume A function to be called on resume. child is resumed first and its return value is passed to this function.
+ * @param{Object=} child A child suspension. 'optional' will be copied from here if supplied.
+ * @param{Object=} data Data attached to this suspension. Will be copied from child if not supplied.
+ */
+Sk.misceval.Suspension = function Suspension(resume, child, data) {
+    if (resume !== undefined && child !== undefined) {
+        this.resume = function() { return resume(child.resume()); };
+    }
+    this.child = child;
+    this.optional = child !== undefined && child.optional;
+    if (data === undefined && child !== undefined) {
+        this.data = child.data;
+    } else {
+        this.data = data;
+    }
+};
+goog.exportSymbol("Sk.misceval.Suspension", Sk.misceval.Suspension);
+
+/**
+ * @param{Sk.misceval.Suspension} susp
+ * @param{string=} message
+ */
+Sk.misceval.retryOptionalSuspensionOrThrow = function (susp, message) {
+    while (susp instanceof Sk.misceval.Suspension) {
+        if (!susp.optional) {
+            throw new Sk.builtin.SuspensionError(message || "Cannot call a function that blocks or suspends here");
+        }
+        susp = susp.resume();
+    }
+    return susp;
+};
+goog.exportSymbol("Sk.misceval.retryOptionalSuspensionOrThrow", Sk.misceval.retryOptionalSuspensionOrThrow);
+
 Sk.misceval.isIndex = function (o) {
     if (o === null || o.constructor === Sk.builtin.lng || o.tp$index ||
         o === true || o === false) {
@@ -7134,7 +7892,7 @@ Sk.misceval.richCompareBool = function (v, w, op) {
         numeric_types,
         w_type,
         v_type;
-    
+
     goog.asserts.assert((v !== null) && (v !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
     goog.asserts.assert((w !== null) && (w !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
 
@@ -7619,6 +8377,33 @@ Sk.misceval.call = function (func, kwdict, varargseq, kws, args) {
 goog.exportSymbol("Sk.misceval.call", Sk.misceval.call);
 
 /**
+ * @param {?Object} suspensionHandlers
+ * @param {Object} func the thing to call
+ * @param {Object=} kwdict **kwargs
+ * @param {Object=} varargseq **args
+ * @param {Object=} kws keyword args or undef
+ * @param {...*} args stuff to pass it
+ *
+ *
+ * TODO I think all the above is out of date.
+ */
+
+Sk.misceval.callAsync = function (suspensionHandlers, func, kwdict, varargseq, kws, args) {
+    args = Array.prototype.slice.call(arguments, 5);
+    // todo; possibly inline apply to avoid extra stack frame creation
+    return Sk.misceval.applyAsync(suspensionHandlers, func, kwdict, varargseq, kws, args);
+};
+goog.exportSymbol("Sk.misceval.callAsync", Sk.misceval.callAsync);
+
+
+Sk.misceval.callOrSuspend = function (func, kwdict, varargseq, kws, args) {
+    args = Array.prototype.slice.call(arguments, 4);
+    // todo; possibly inline apply to avoid extra stack frame creation
+    return Sk.misceval.applyOrSuspend(func, kwdict, varargseq, kws, args);
+};
+goog.exportSymbol("Sk.misceval.callOrSuspend", Sk.misceval.callOrSuspend);
+
+/**
  * @param {Object} func the thing to call
  * @param {...*} args stuff to pass it
  */
@@ -7629,10 +8414,143 @@ Sk.misceval.callsim = function (func, args) {
 goog.exportSymbol("Sk.misceval.callsim", Sk.misceval.callsim);
 
 /**
+ * @param {?Object} suspensionHandlers any custom suspension handlers
+ * @param {Object} func the thing to call
+ * @param {...*} args stuff to pass it
+ */
+Sk.misceval.callsimAsync = function (suspensionHandlers, func, args) {
+    args = Array.prototype.slice.call(arguments, 2);
+    return Sk.misceval.applyAsync(suspensionHandlers, func, undefined, undefined, undefined, args);
+};
+goog.exportSymbol("Sk.misceval.callsimAsync", Sk.misceval.callsimAsync);
+
+
+/**
+ * @param {Object} func the thing to call
+ * @param {...*} args stuff to pass it
+ */
+Sk.misceval.callsimOrSuspend = function (func, args) {
+    args = Array.prototype.slice.call(arguments, 1);
+    return Sk.misceval.applyOrSuspend(func, undefined, undefined, undefined, args);
+};
+goog.exportSymbol("Sk.misceval.callsimOrSuspend", Sk.misceval.callsimOrSuspend);
+
+/**
+ * Wrap Sk.misceval.applyOrSuspend, but throw an error if we suspend
+ */
+Sk.misceval.apply = function (func, kwdict, varargseq, kws, args) {
+    var r = Sk.misceval.applyOrSuspend(func, kwdict, varargseq, kws, args);
+    if (r instanceof Sk.misceval.Suspension) {
+        return Sk.misceval.retryOptionalSuspensionOrThrow(r);
+    } else {
+        return r;
+    }
+};
+goog.exportSymbol("Sk.misceval.apply", Sk.misceval.apply);
+
+/**
+ * Wraps anything that can return an Sk.misceval.Suspension, and returns a
+ * JS Promise with the result. Also takes an object map of suspension handlers:
+ * pass in {"suspType": function (susp) {} }, and your function will be called
+ * with the Suspension object if susp.type=="suspType". A suspension handler
+ * should return a Promise yielding the return value of r.resume() - ie,
+ * either the final return value of this call or another Suspension. That is,
+ * the null suspension handler is:
+ *
+ *     function handler(susp) {
+ *       return new Promise(function(resolve, reject) {
+ *         try {
+ *           resolve(susp.resume());
+ *         } catch(e) {
+ *           reject(e);
+ *         }
+ *       });
+ *     }
+ *
+ * (Note: do *not* call asyncToPromise() in a suspension handler; this will
+ * create a new Promise object for each such suspension that occurs)
+ *
+ * asyncToPromise() returns a Promise that will be resolved with the final
+ * return value, or rejected with an exception if one is thrown.
+ *
+ * @param{function()} suspendablefn returns either a result or a Suspension
+ * @param{Object=} suspHandlers an object map of suspension handlers
+ */
+Sk.misceval.asyncToPromise = function(suspendablefn, suspHandlers) {
+    return new Promise(function(resolve, reject) {
+        try {
+            var r = suspendablefn();
+
+            (function handleResponse (r) {
+                try {
+                    // jsh*nt insists these be defined outside the loop
+                    var resumeWithData = function resolved(x) {
+                        try {
+                            r.data["result"] = x;
+                            handleResponse(r.resume());
+                        } catch(e) {
+                            reject(e);
+                        }
+                    };
+                    var resumeWithError = function rejected(e) {
+                        try {
+                            r.data["error"] = e;
+                            handleResponse(r.resume());
+                        } catch(ex) {
+                            reject(ex);
+                        }
+                    };
+
+
+                    while (r instanceof Sk.misceval.Suspension) {
+
+                        var handler = suspHandlers && suspHandlers[r.data["type"]];
+
+                        if (handler) {
+                            handler(r).then(handleResponse, reject);
+                            return;
+
+                        } else if (r.data["type"] == "Sk.promise") {
+                            r.data["promise"].then(resumeWithData, resumeWithError);
+                            return;
+
+                        } else if (r.optional) {
+                            // Unhandled optional suspensions just get
+                            // resumed immediately, and we go around the loop again.
+                            r = r.resume();
+
+                        } else {
+                            // Unhandled, non-optional suspension.
+                            throw new Sk.builtin.SuspensionError("Unhandled non-optional suspension of type '"+r.data["type"]+"'");
+                        }
+                    }
+
+                    resolve(r);
+                } catch(e) {
+                    reject(e);
+                }
+            })(r);
+
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+goog.exportSymbol("Sk.misceval.asyncToPromise", Sk.misceval.asyncToPromise);
+
+Sk.misceval.applyAsync = function (suspHandlers, func, kwdict, varargseq, kws, args) {
+    return Sk.misceval.asyncToPromise(function() {
+        return Sk.misceval.applyOrSuspend(func, kwdict, varargseq, kws, args);
+    }, suspHandlers);
+};
+goog.exportSymbol("Sk.misceval.applyAsync", Sk.misceval.applyAsync);
+
+
+/**
  * same as Sk.misceval.call except args is an actual array, rather than
  * varargs.
  */
-Sk.misceval.apply = function (func, kwdict, varargseq, kws, args) {
+Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
     var fcall;
     var kwix;
     var numPosParams;
@@ -7656,7 +8574,7 @@ Sk.misceval.apply = function (func, kwdict, varargseq, kws, args) {
 
         if (func.sk$klass) {
             // klass wrapper around __init__ requires special handling
-            return func.apply(null, [kwdict, varargseq, kws, args]);
+            return func.apply(null, [kwdict, varargseq, kws, args, true]);
         }
 
         if (varargseq) {
@@ -7725,7 +8643,7 @@ Sk.misceval.apply = function (func, kwdict, varargseq, kws, args) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
     }
 };
-goog.exportSymbol("Sk.misceval.apply", Sk.misceval.apply);
+goog.exportSymbol("Sk.misceval.applyOrSuspend", Sk.misceval.applyOrSuspend);
 
 /**
  * Constructs a class object given a code object representing the body
@@ -7800,7 +8718,7 @@ Sk.abstr.boNameToSlotFuncLhs_ = function (obj, name) {
     if (obj === null) {
         return undefined;
     }
-    
+
     switch (name) {
     case "Add":
         return obj.nb$add ? obj.nb$add : obj["__add__"];
@@ -7833,7 +8751,7 @@ Sk.abstr.boNameToSlotFuncRhs_ = function (obj, name) {
     if (obj === null) {
         return undefined;
     }
-    
+
     switch (name) {
     case "Add":
         return obj.nb$add ? obj.nb$add : obj["__radd__"];
@@ -7985,7 +8903,7 @@ Sk.abstr.numOpAndPromote = function (a, b, opfn) {
     if (a === null || b === null) {
         return undefined;
     }
-    
+
     if (typeof a === "number" && typeof b === "number") {
         ans = opfn(a, b);
         // todo; handle float   Removed RNL (bugs in lng, and it should be a question of precision, not magnitude -- this was just wrong)
@@ -8491,8 +9409,8 @@ Sk.abstr.iter = function (obj) {
 };
 goog.exportSymbol("Sk.abstr.iter", Sk.abstr.iter);
 
-Sk.abstr.iternext = function (it) {
-    return it.tp$iternext();
+Sk.abstr.iternext = function (it, canSuspend) {
+    return it.tp$iternext(canSuspend);
 };
 goog.exportSymbol("Sk.abstr.iternext", Sk.abstr.iternext);
 /**
@@ -15012,9 +15930,10 @@ Sk.builtin.generator.prototype.tp$iter = function () {
     return this;
 };
 
-Sk.builtin.generator.prototype.tp$iternext = function (yielded) {
+Sk.builtin.generator.prototype.tp$iternext = function (canSuspend, yielded) {
     var ret;
     var args;
+    var self = this;
     this["gi$running"] = true;
     if (yielded === undefined) {
         yielded = null;
@@ -15028,24 +15947,33 @@ Sk.builtin.generator.prototype.tp$iternext = function (yielded) {
         args.push(this.func_closure);
     }
     ret = this.func_code.apply(this.func_globals, args);
-    //print("ret", JSON.stringify(ret));
-    this["gi$running"] = false;
-    goog.asserts.assert(ret !== undefined);
-    if (ret !== Sk.builtin.none.none$) {
-        // returns a pair: resume target and yielded value
-        this["gi$resumeat"] = ret[0];
-        ret = ret[1];
-    }
-    else {
-        // todo; StopIteration
-        return undefined;
-    }
-    //print("returning:", JSON.stringify(ret));
-    return ret;
+    return (function finishIteration(ret) {
+        if (ret instanceof Sk.misceval.Suspension) {
+            if (canSuspend) {
+                return new Sk.misceval.Suspension(finishIteration, ret);
+            } else {
+                ret = Sk.misceval.retryOptionalSuspensionOrThrow(ret);
+            }
+        }
+        //print("ret", JSON.stringify(ret));
+        self["gi$running"] = false;
+        goog.asserts.assert(ret !== undefined);
+        if (ret !== Sk.builtin.none.none$) {
+            // returns a pair: resume target and yielded value
+            self["gi$resumeat"] = ret[0];
+            ret = ret[1];
+        }
+        else {
+            // todo; StopIteration
+            return undefined;
+        }
+        //print("returning:", JSON.stringify(ret));
+        return ret;
+    })(ret);
 };
 
 Sk.builtin.generator.prototype["next"] = new Sk.builtin.func(function (self) {
-    return self.tp$iternext();
+    return self.tp$iternext(true);
 });
 
 Sk.builtin.generator.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("generator", Sk.builtin.generator);
@@ -15055,7 +15983,7 @@ Sk.builtin.generator.prototype["$r"] = function () {
 };
 
 Sk.builtin.generator.prototype["send"] = new Sk.builtin.func(function (self, value) {
-    return self.tp$iternext(value);
+    return self.tp$iternext(true, value);
 });
 
 /**
@@ -22161,12 +23089,17 @@ function Compiler (filename, st, flags, sourceCodeForAnnotation) {
 function CompilerUnit () {
     this.ste = null;
     this.name = null;
+    this.canSuspend = false;
+    this.doesSuspend = false;
 
     this.private_ = null;
     this.firstlineno = 0;
     this.lineno = 0;
     this.linenoSet = false;
     this.localnames = [];
+
+    this.localtemps = [];
+    this.tempsToSave = [];
 
     this.blocknum = 0;
     this.blocks = [];
@@ -22365,6 +23298,7 @@ function mangleName (priv, ident) {
 Compiler.prototype._gr = function (hint, rest) {
     var i;
     var v = this.gensym(hint);
+    this.u.localtemps.push(v);
     out("var ", v, "=");
     for (i = 1; i < arguments.length; ++i) {
         out(arguments[i]);
@@ -22540,6 +23474,8 @@ Compiler.prototype.ccall = function (e) {
     var kwarray;
     var func = this.vexpr(e.func);
     var args = this.vseqexpr(e.args);
+    var retblk;
+
     //print(JSON.stringify(e, null, 2));
     if (e.keywords.length > 0 || e.starargs || e.kwargs) {
         kwarray = [];
@@ -22556,11 +23492,30 @@ Compiler.prototype.ccall = function (e) {
         if (e.kwargs) {
             kwargs = this.vexpr(e.kwargs);
         }
-        return this._gr("call", "Sk.misceval.call(", func, ",", kwargs, ",", starargs, ",", keywords, args.length > 0 ? "," : "", args, ")");
+        out ("$ret;"); // This forces a failure if $ret isn't defined
+        out ("$ret = Sk.misceval.callOrSuspend(", func, ",", kwargs, ",", starargs, ",", keywords, args.length > 0 ? "," : "", args, ");");
     }
     else {
-        return this._gr("call", "Sk.misceval.callsim(", func, args.length > 0 ? "," : "", args, ")");
+        out ("$ret;"); // This forces a failure if $ret isn't defined
+        out ("$ret = Sk.misceval.callsimOrSuspend(", func, args.length > 0 ? "," : "", args, ");");
     }
+
+    if (this.u.canSuspend) {
+
+        retblk = this.newBlock("function return or resume suspension");
+        this._jump(retblk);
+        this.setBlock(retblk);
+
+        out ("if ($ret instanceof Sk.misceval.Suspension) { return $saveSuspension($ret,'"+this.filename+"',"+e.lineno+","+e.col_offset+"); }");
+
+        this.u.doesSuspend = true;
+        this.u.tempsToSave = this.u.tempsToSave.concat(this.u.localtemps);
+
+    } else {
+        out ("if ($ret instanceof Sk.misceval.Suspension) { $ret = Sk.misceval.retryOptionalSuspensionOrThrow($ret); }");
+    }
+
+    return this._gr("call", "$ret");
 };
 
 Compiler.prototype.cslice = function (s) {
@@ -22926,6 +23881,51 @@ Compiler.prototype.outputLocals = function (unit) {
     return "";
 };
 
+Compiler.prototype.outputSuspensionHelpers = function (unit) {
+    var i, t;
+    var localSaveCode = [];
+    var localsToSave = unit.localnames.concat(unit.tempsToSave);
+    var seenTemps = {};
+    var hasCell = unit.ste.blockType === FunctionBlock && unit.ste.childHasFree;
+    var output = "var $wakeFromSuspension = function() {" +
+                    "var susp = "+unit.scopename+".wakingSuspension; delete "+unit.scopename+".wakingSuspension;" +
+                    "$blk=susp.$blk; $loc=susp.$loc; $gbl=susp.$gbl; $exc=susp.$exc; $err=susp.$err;" +
+                    (hasCell?"$cell=susp.$cell;":"");
+
+    for (i = 0; i < localsToSave.length; i++) {
+        t = localsToSave[i];
+        if (seenTemps[t]===undefined) {
+            output += t + "=susp.$tmps." + t + ";";
+            seenTemps[t] = true;
+        }
+    }
+
+    output +=  "try { $ret=susp.child.resume(); } catch(err) { if($exc.length>0) { $err=err; $blk=$exc.pop(); } else { throw err; } }" +
+                "};";
+
+    output += "var $saveSuspension = function(child, filename, lineno, colno) {" +
+                "var susp = new Sk.misceval.Suspension(); susp.child=child;" +
+                "susp.resume=function(){"+unit.scopename+".wakingSuspension=susp; return "+unit.scopename+"("+(unit.ste.generator?"$gen":"")+"); };" +
+                "susp.data=susp.child.data;susp.$blk=$blk;susp.$loc=$loc;susp.$gbl=$gbl;susp.$exc=$exc;susp.$err=$err;" +
+                "susp.filename=filename;susp.lineno=lineno;susp.colno=colno;" +
+                "susp.optional=child.optional;" +
+                (hasCell ? "susp.$cell=$cell;" : "");
+
+    seenTemps = {};
+    for (i = 0; i < localsToSave.length; i++) {
+        t = localsToSave[i];
+        if (seenTemps[t]===undefined) {
+            localSaveCode.push("\"" + t + "\":" + t);
+            seenTemps[t]=true;
+        }
+    }
+    output +=   "susp.$tmps={" + localSaveCode.join(",") + "};" +
+                "return susp;" +
+              "};";
+
+    return output;
+}
+
 Compiler.prototype.outputAllUnits = function () {
     var i;
     var blocks;
@@ -22936,6 +23936,9 @@ Compiler.prototype.outputAllUnits = function () {
         unit = this.allUnits[j];
         ret += unit.prefixCode;
         ret += this.outputLocals(unit);
+        if (unit.doesSuspend) {
+            ret += this.outputSuspensionHelpers(unit);
+        }
         ret += unit.varDeclsCode;
         ret += unit.switchCode;
         blocks = unit.blocks;
@@ -23034,6 +24037,7 @@ Compiler.prototype.cfor = function (s) {
     var iter;
     var toiter;
     var start = this.newBlock("for start");
+    var body;
     var cleanup = this.newBlock("for cleanup");
     var end = this.newBlock("for end");
 
@@ -23050,6 +24054,7 @@ Compiler.prototype.cfor = function (s) {
     }
     else {
         iter = this._gr("iter", "Sk.abstr.iter(", toiter, ")");
+        this.u.tempsToSave.push(iter); // Save it across suspensions
     }
 
     this._jump(start);
@@ -23057,7 +24062,21 @@ Compiler.prototype.cfor = function (s) {
     this.setBlock(start);
 
     // load targets
-    nexti = this._gr("next", "Sk.abstr.iternext(", iter, ")");
+    out ("$ret = Sk.abstr.iternext(", iter,(this.u.canSuspend?", true":", false"),");");
+    if (this.u.canSuspend) {
+        this.u.doesSuspend = true;
+
+        body = this.newBlock("for body");
+        this._jump(body);
+
+        this.setBlock(body);
+
+        out ("if ($ret instanceof Sk.misceval.Suspension) { return $saveSuspension($ret, '"+this.filename+"',"+s.lineno+","+s.col_offset+"); }");
+    } else {
+        out ("if ($ret instanceof Sk.misceval.Suspension) { $ret = Sk.misceval.retryOptionalSuspensionOrThrow($ret, 'Generator blocked/suspended, which is not permitted here'); }");
+    }
+
+    nexti = this._gr("next", "$ret");
     this._jumpundef(nexti, cleanup); // todo; this should be handled by StopIteration
     target = this.vexpr(s.target, nexti);
 
@@ -23346,7 +24365,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     //
     // enter the new scope, and create the first block
     //
-    scopename = this.enterScope(coname, n, n.lineno);
+    scopename = this.enterScope(coname, n, n.lineno, true);
 
     isGenerator = this.u.ste.generator;
     hasFree = this.u.ste.hasFree;
@@ -23372,6 +24391,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     else {
         if (kwarg) {
             funcArgs.push("$kwa");
+            this.u.tempsToSave.push("$kwa");
         }
         for (i = 0; args && i < args.args.length; ++i) {
             funcArgs.push(this.nameop(args.args[i].id, Param));
@@ -23379,6 +24399,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     }
     if (hasFree) {
         funcArgs.push("$free");
+        this.u.tempsToSave.push("$free");
     }
     this.u.prefixCode += funcArgs.join(",");
 
@@ -23414,7 +24435,13 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
 
     // note special usage of 'this' to avoid having to slice globals into
     // all function invocations in call
-    this.u.varDeclsCode += "var $blk=" + entryBlock + ",$exc=[],$loc=" + locals + cells + ",$gbl=this,$err=undefined;";
+    this.u.varDeclsCode += "var $blk=" + entryBlock + ",$exc=[],$loc=" + locals + cells + ",$gbl=this,$err=undefined,$ret=undefined;";
+
+    //
+    // If there is a suspension, resume from it. Otherwise, initialise
+    // parameters appropriately.
+    //
+    this.u.varDeclsCode += "if ("+scopename+".wakingSuspension!==undefined) { $wakeFromSuspension(); } else {";
 
     //
     // initialize default arguments. we store the values of the defaults to
@@ -23459,6 +24486,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     //
     if (vararg) {
         start = funcArgs.length;
+        this.u.localnames.push(vararg.v);
         this.u.varDeclsCode += vararg.v + "=new Sk.builtins['tuple'](Array.prototype.slice.call(arguments," + start + ")); /*vararg*/";
     }
 
@@ -23466,8 +24494,15 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     // initialize kwarg, if any
     //
     if (kwarg) {
+        this.u.localnames.push(kwarg.v);
         this.u.varDeclsCode += kwarg.v + "=new Sk.builtins['dict']($kwa);";
     }
+
+    //
+    // close the else{} block from the wakingSuspension check
+    //
+    this.u.varDeclsCode += "}";
+
 
     //
     // finally, set up the block switch that the jump code expects
@@ -23709,7 +24744,7 @@ Compiler.prototype.cclass = function (s) {
 
     this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$rest){var $gbl=$globals,$loc=$locals;";
     this.u.switchCode += "return(function " + s.name.v + "(){";
-    this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[];while(true){switch($blk){";
+    this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[],$ret=undefined;while(true){switch($blk){";
     this.u.suffixCode = "}break;}}).apply(null,$rest);});";
 
     this.u.private_ = s.name;
@@ -23745,8 +24780,23 @@ Compiler.prototype.vstmt = function (s) {
     var i;
     var val;
     var n;
+    var debugBlock;
     this.u.lineno = s.lineno;
     this.u.linenoSet = false;
+    this.u.localtemps = [];
+
+    if (Sk.debugging && this.u.canSuspend) {
+        debugBlock = this.newBlock("debug breakpoint for line "+s.lineno);
+        out("if (Sk.breakpoints('"+this.filename+"',"+s.lineno+","+s.col_offset+")) {",
+            "var $susp = $saveSuspension({data: {type: 'Sk.debug'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
+            "$susp.$blk = "+debugBlock+";",
+            "$susp.optional = true;",
+            "return $susp;",
+            "}");
+        this._jump(debugBlock);
+        this.setBlock(debugBlock);
+        this.u.doesSuspend = true;
+    }
 
     this.annotateSource(s);
 
@@ -23946,10 +24996,8 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
         case OP_NAME:
             switch (ctx) {
                 case Load:
-                    v = this.gensym("loadname");
                     // can't be || for loc.x = 0 or null
-                    out("var ", v, "=", mangled, "!==undefined?", mangled, ":Sk.misceval.loadname('", mangledNoPre, "',$gbl);");
-                    return v;
+                    return this._gr("loadname", mangled, "!==undefined?", mangled, ":Sk.misceval.loadname('", mangledNoPre, "',$gbl);");
                 case Store:
                     out(mangled, "=", dataToStore, ";");
                     break;
@@ -23994,12 +25042,19 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
     }
 };
 
-Compiler.prototype.enterScope = function (name, key, lineno) {
+/**
+ * @param {Sk.builtin.str} name
+ * @param {Object} key
+ * @param {number} lineno
+ * @param {boolean=} canSuspend
+ */
+Compiler.prototype.enterScope = function (name, key, lineno, canSuspend) {
     var scopeName;
     var u = new CompilerUnit();
     u.ste = this.st.getStsForAst(key);
     u.name = name;
     u.firstlineno = lineno;
+    u.canSuspend = canSuspend || false;
 
     if (this.u && this.u.private_) {
         u.private_ = this.u.private_;
@@ -24070,16 +25125,19 @@ Compiler.prototype.cprint = function (s) {
 Compiler.prototype.cmod = function (mod) {
     //print("-----");
     //print(Sk.astDump(mod));
-    var modf = this.enterScope(new Sk.builtin.str("<module>"), mod, 0);
+    var modf = this.enterScope(new Sk.builtin.str("<module>"), mod, 0, true);
 
     var entryBlock = this.newBlock("module entry");
     this.u.prefixCode = "var " + modf + "=(function($modname){";
-    this.u.varDeclsCode = "var $gbl = {};" +
+    this.u.varDeclsCode = "var $gbl = {}, $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname,$ret=undefined;";
+
+    this.u.varDeclsCode += "try {";
+
+    this.u.varDeclsCode += "if ("+modf+".wakingSuspension!==undefined) { $wakeFromSuspension(); }" +
         "if (Sk.retainGlobals) {" +
         "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl }" +
         "    else { Sk.globals = $gbl; }" +
-        "} else { Sk.globals = $gbl; }" +
-        "var $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname;";
+        "} else { Sk.globals = $gbl; }"
 
     // Add the try block that pops the try/except stack if one exists
     // Github Issue #38
@@ -24090,8 +25148,9 @@ Compiler.prototype.cmod = function (mod) {
     //this.u.suffixCode = "}}});";
 
     // New Code:
-    this.u.switchCode = "try { while(true){try{ switch($blk){";
-    this.u.suffixCode = "} }catch(err){if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} } }catch(err){ if (err instanceof Sk.builtin.SystemExit && !Sk.throwSystemExit) { Sk.misceval.print_(err.toString() + '\\n'); return $loc; } else { throw err; } } });";
+    this.u.switchCode = "while(true){try{ switch($blk){";
+    this.u.suffixCode = "} }catch(err){if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} }" +
+        " }catch(err){ if (err instanceof Sk.builtin.SystemExit && !Sk.throwSystemExit) { Sk.misceval.print_(err.toString() + '\\n'); return $loc; } else { throw err; } } });";
 
     // Note - this change may need to be adjusted for all the other instances of
     // switchCode and suffixCode in this file.  Not knowing how to test those
@@ -24336,8 +25395,9 @@ if (COMPILED) {
  * it's to be renamed (i.e. __main__)
  * @param {string=} suppliedPyBody use as the body of the text for the module
  * rather than Sk.read'ing it.
+ * @param {boolean=} canSuspend whether we may return a Suspension object
  */
-Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody) {
+Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canSuspend) {
     //dumpJS = true;
     var parentModule;
     var modlocs;
@@ -24465,48 +25525,63 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody) {
 //		Sk.debugout(finalcode);
 
     modlocs = goog.global["eval"](finalcode);
-    // pass in __name__ so the module can set it (so that the code can access
-    // it), but also set it after we're done so that builtins don't have to
-    // remember to do it.
-    if (!modlocs["__name__"]) {
-        modlocs["__name__"] = new Sk.builtin.str(modname);
-    }
 
-    module["$d"] = modlocs;
+    return (function finishLoading(modlocs) {
+        var susp;
 
-    // If an onAfterImport method is defined on the global Sk
-    // then call it now after a library has been successfully imported
-    // and compiled.
-    if (Sk.onAfterImport && typeof Sk.onAfterImport === "function") {
-        try {
-            Sk.onAfterImport(name);
-        } catch (e) {
+        if (modlocs instanceof Sk.misceval.Suspension) {
+
+            if (canSuspend) {
+                return new Sk.misceval.Suspension(finishLoading, modlocs);
+            } else {
+                modlocs = Sk.misceval.retryOptionalSuspensionOrThrow(modlocs, "Module \""+modname+"\" suspended or blocked during load, and it was loaded somewhere that does not permit this");
+            }
         }
-    }
 
-    if (toReturn) {
-        // if we were a dotted name, then we want to return the top-most
-        // package. we store ourselves into our parent as an attribute
-        parentModule = Sk.sysmodules.mp$subscript(parentModName);
-        parentModule.tp$setattr(modNameSplit[modNameSplit.length - 1], module);
-        //print("import returning parent module, modname", modname, "__name__", toReturn.tp$getattr("__name__").v);
-        return toReturn;
-    }
+        // pass in __name__ so the module can set it (so that the code can access
+        // it), but also set it after we're done so that builtins don't have to
+        // remember to do it.
+        if (!modlocs["__name__"]) {
+            modlocs["__name__"] = new Sk.builtin.str(modname);
+        }
 
-    //print("name", name, "modname", modname, "returning leaf");
-    // otherwise we return the actual module that we just imported
-    return module;
+        module["$d"] = modlocs;
+
+        // If an onAfterImport method is defined on the global Sk
+        // then call it now after a library has been successfully imported
+        // and compiled.
+        if (Sk.onAfterImport && typeof Sk.onAfterImport === "function") {
+            try {
+                Sk.onAfterImport(name);
+            } catch (e) {
+            }
+        }
+
+        if (toReturn) {
+            // if we were a dotted name, then we want to return the top-most
+            // package. we store ourselves into our parent as an attribute
+            parentModule = Sk.sysmodules.mp$subscript(parentModName);
+            parentModule.tp$setattr(modNameSplit[modNameSplit.length - 1], module);
+            //print("import returning parent module, modname", modname, "__name__", toReturn.tp$getattr("__name__").v);
+            return toReturn;
+        }
+
+        //print("name", name, "modname", modname, "returning leaf");
+        // otherwise we return the actual module that we just imported
+        return module;
+    })(modlocs);
 };
 
 /**
  * @param {string} name the module name
  * @param {boolean=} dumpJS print out the js code after compilation for debugging
+ * @param {boolean=} canSuspend can this function suspend and return a Suspension object?
  */
-Sk.importModule = function (name, dumpJS) {
-    return Sk.importModuleInternal_(name, dumpJS);
+Sk.importModule = function (name, dumpJS, canSuspend) {
+    return Sk.importModuleInternal_(name, dumpJS, undefined, undefined, canSuspend);
 };
 
-Sk.importMain = function (name, dumpJS) {
+Sk.importMain = function (name, dumpJS, canSuspend) {
     Sk.dateSet = false;
     Sk.filesLoaded = false;
     //	Added to reset imports
@@ -24515,10 +25590,10 @@ Sk.importMain = function (name, dumpJS) {
 
     Sk.resetCompiler();
 
-    return Sk.importModuleInternal_(name, dumpJS, "__main__");
+    return Sk.importModuleInternal_(name, dumpJS, "__main__", undefined, canSuspend);
 };
 
-Sk.importMainWithBody = function (name, dumpJS, body) {
+Sk.importMainWithBody = function (name, dumpJS, body, canSuspend) {
     Sk.dateSet = false;
     Sk.filesLoaded = false;
     //	Added to reset imports
@@ -24527,7 +25602,7 @@ Sk.importMainWithBody = function (name, dumpJS, body) {
 
     Sk.resetCompiler();
 
-    return Sk.importModuleInternal_(name, dumpJS, "__main__", body);
+    return Sk.importModuleInternal_(name, dumpJS, "__main__", body, canSuspend);
 };
 
 Sk.builtin.__import__ = function (name, globals, locals, fromlist) {
