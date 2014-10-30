@@ -23324,9 +23324,12 @@ CompilerUnit.prototype.activateScope = function () {
     out = function () {
         var i;
         var b = self.blocks[self.curblock];
-        for (i = 0; i < arguments.length; ++i) {
-            b.push(arguments[i]);
+        if (b._next === null) {
+            for (i = 0; i < arguments.length; ++i) {
+                b.push(arguments[i]);
+            }
         }
+        // TODO: Warn about unreachable code after an unconditional jump?
     };
 };
 
@@ -23533,7 +23536,10 @@ Compiler.prototype._jumptrue = function (test, block) {
 
 Compiler.prototype._jump = function (block) {
     this._interruptTest();	// Added by RNL
-    out("$blk=", block, ";/* jump */continue;");
+    if (this.u.blocks[this.u.curblock]._next === null) {
+        out("$blk=", block, ";");
+        this.u.blocks[this.u.curblock]._next = block;
+    }
 };
 
 Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
@@ -24035,6 +24041,7 @@ Compiler.prototype.newBlock = function (name) {
     var ret = this.u.blocknum++;
     this.u.blocks[ret] = [];
     this.u.blocks[ret]._name = name || "<unnamed>";
+    this.u.blocks[ret]._next = null;
     return ret;
 };
 Compiler.prototype.setBlock = function (n) {
@@ -24158,6 +24165,8 @@ Compiler.prototype.outputAllUnits = function () {
     var unit;
     var j;
     var ret = "";
+    var block;
+    var generatedBlocks;
     for (j = 0; j < this.allUnits.length; ++j) {
         unit = this.allUnits[j];
         ret += unit.prefixCode;
@@ -24168,11 +24177,32 @@ Compiler.prototype.outputAllUnits = function () {
         ret += unit.varDeclsCode;
         ret += unit.switchCode;
         blocks = unit.blocks;
+        generatedBlocks = Object.create(null);
         for (i = 0; i < blocks.length; ++i) {
-            ret += "case " + i + ": /* --- " + blocks[i]._name + " --- */";
-            ret += blocks[i].join("");
+            block = i;
+            if (block in generatedBlocks)
+                continue;
+            while (true) {
+                generatedBlocks[block] = true;
 
-            ret += "throw new Sk.builtin.SystemError('internal error: unterminated block');";
+                ret += "case " + block + ": /* --- " + blocks[block]._name + " --- */";
+                ret += blocks[block].join("");
+
+                if (blocks[block]._next !== null) {
+                    if (!(blocks[block]._next in generatedBlocks)) {
+                        ret += "/* allowing case fallthrough */";
+                        block = blocks[block]._next;
+                    }
+                    else {
+                        ret += "/* jump */ continue;";
+                        break;
+                    }
+                }
+                else {
+                    ret += "throw new Sk.builtin.SystemError('internal error: unterminated block');";
+                    break;
+                }
+            }
         }
         ret += unit.suffixCode;
     }
