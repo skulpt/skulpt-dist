@@ -5458,7 +5458,7 @@ Sk.builtin.zip = function zip () {
             iters.push(arguments[i].tp$iter());
         }
         else {
-            throw "TypeError: argument " + i + " must support iteration";
+            throw new Sk.builtin.TypeError("argument " + i + " must support iteration");
         }
     }
     res = [];
@@ -5920,7 +5920,7 @@ Sk.builtin.map = function map (fun, seq) {
          item = iter.tp$iternext()) {
         if (fun === Sk.builtin.none.none$) {
             if (item instanceof Array) {
-                // With None function and multiple sequences, 
+                // With None function and multiple sequences,
                 // map should return a list of tuples
                 item = new Sk.builtin.tuple(item);
             }
@@ -6343,7 +6343,14 @@ Sk.builtin.intern = function intern () {
  * @param {...Object|null} args
  */
 Sk.builtin.Exception = function (args) {
-    var i;
+    var i, o;
+
+    if (!(this instanceof Sk.builtin.Exception)) {
+        o = Object.create(Sk.builtin.Exception.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+
     args = Array.prototype.slice.call(arguments);
     // hackage to allow shorter throws
     for (i = 0; i < args.length; ++i) {
@@ -6352,42 +6359,17 @@ Sk.builtin.Exception = function (args) {
         }
     }
     this.args = new Sk.builtin.tuple(args);
+    this.traceback = [];
 
-    if (Sk.currFilename) {
-        this.filename = Sk.currFilename;
-    }
-    else if (this.args.sq$length() >= 3) {
-        if (this.args.v[1].v) {
-            this.filename = this.args.v[1].v;
-        }
-        else {
-            // Unknown, this is an error, and the exception that causes it
-            // probably needs to be fixed.
-            this.filename = "<unknown>";
-        }
-    }
-    else {
-        // Unknown, this is an error, and the exception that causes it
-        // probably needs to be fixed.
-        this.filename = "<unknown>";
-    }
+    // For errors occurring during normal execution, the line/col/etc
+    // of the error are populated by each stack frame of the runtime code,
+    // but we can seed it with the supplied parameters.
     if (this.args.sq$length() >= 3) {
-        this.lineno = this.args.v[2];
-    }
-    else if (Sk.currLineNo > 0) {
-        this.lineno = Sk.currLineNo;
-    }
-    else {
-        // Unknown, this is an error, and the exception that causes it
-        // probably needs to be fixed.
-        this.lineno = "<unknown>";
-    }
 
-    if (Sk.currColNo > 0) {
-        this["colno"] = Sk.currColNo;
-    }
-    else {
-        this["colno"] = "<unknown>";
+        // if !this.args[1].v, this is an error, and the exception that causes it
+        // probably needs to be fixed, but we mark as "<unknown>" for now
+        this.traceback.push({lineno: this.args.v[2],
+                             filename: this.args.v[1].v || "<unknown>"});
     }
 };
 Sk.builtin.Exception.prototype.tp$name = "Exception";
@@ -6400,7 +6382,11 @@ Sk.builtin.Exception.prototype.tp$str = function () {
     if (this.args) {
         ret += ": " + (this.args.v.length > 0 ? this.args.v[0].v : "");
     }
-    ret += " on line " + this.lineno;
+    if (this.traceback.length !== 0) {
+        ret += " on line " + this.traceback[0].lineno;
+    } else {
+        ret += " at <unknown>";
+    }
 
     if (this.args.v.length > 4) {
         ret += "\n" + this.args.v[4].v + "\n";
@@ -6409,6 +6395,13 @@ Sk.builtin.Exception.prototype.tp$str = function () {
         }
         ret += "^\n";
     }
+
+    /*for (i = 0; i < this.traceback.length; i++) {
+        ret += "\n  at " + this.traceback[i].filename + " line " + this.traceback[i].lineno;
+        if ("colno" in this.traceback[i]) {
+            ret += " column " + this.traceback[i].colno;
+        }
+    }*/
 
     return new Sk.builtin.str(ret);
 };
@@ -6538,6 +6531,23 @@ Sk.builtin.NameError = function (args) {
 };
 goog.inherits(Sk.builtin.NameError, Sk.builtin.Exception);
 Sk.builtin.NameError.prototype.tp$name = "NameError";
+
+/**
+ * @constructor
+ * @extends Sk.builtin.Exception
+ * @param {...*} args
+ */
+Sk.builtin.UnboundLocalError = function (args) {
+    var o;
+    if (!(this instanceof Sk.builtin.UnboundLocalError)) {
+        o = Object.create(Sk.builtin.UnboundLocalError.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    Sk.builtin.Exception.apply(this, arguments);
+};
+goog.inherits(Sk.builtin.UnboundLocalError, Sk.builtin.Exception);
+Sk.builtin.UnboundLocalError.prototype.tp$name = "UnboundLocalError";
 
 /**
  * @constructor
@@ -6775,6 +6785,30 @@ goog.exportSymbol("Sk.builtin.NegativePowerError", Sk.builtin.NegativePowerError
 /**
  * @constructor
  * @extends Sk.builtin.Exception
+ * @param {*} nativeError
+ * @param {...*} args
+ */
+Sk.builtin.ExternalError = function (nativeError, args) {
+    var o;
+    if (!(this instanceof Sk.builtin.ExternalError)) {
+        o = Object.create(Sk.builtin.ExternalError.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    // Make the first argument a string, so it can be printed in Python without errors,
+    // but save a reference to the real thing for Javascript consumption
+    args = Array.prototype.slice.call(arguments);
+    this.nativeError = args[0];
+    args[0] = ""+args[0];
+    Sk.builtin.Exception.apply(this, args);
+};
+goog.inherits(Sk.builtin.ExternalError, Sk.builtin.Exception);
+Sk.builtin.ExternalError.prototype.tp$name = "ExternalError";
+goog.exportSymbol("Sk.builtin.ExternalError", Sk.builtin.ExternalError);
+
+/**
+ * @constructor
+ * @extends Sk.builtin.Exception
  * @param {...*} args
  */
 Sk.builtin.OperationError = function (args) {
@@ -6808,14 +6842,8 @@ goog.inherits(Sk.builtin.SystemError, Sk.builtin.Exception);
 Sk.builtin.SystemError.prototype.tp$name = "SystemError";
 goog.exportSymbol("Sk.builtin.SystemError", Sk.builtin.SystemError);
 
-Sk.currLineNo = -1;
-Sk.currColNo = -1;
-Sk.currFilename = "";
 
 goog.exportSymbol("Sk", Sk);
-goog.exportProperty(Sk, "currLineNo", Sk.currLineNo);
-goog.exportProperty(Sk, "currColNo", Sk.currColNo);
-goog.exportProperty(Sk, "currFilename", Sk.currFilename);
 /**
  *
  * @constructor
@@ -10533,7 +10561,7 @@ Sk.builtin.str.prototype["join"] = new Sk.builtin.func(function (self, seq) {
     arrOfStrs = [];
     for (it = seq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if (i.constructor !== Sk.builtin.str) {
-            throw "TypeError: sequence item " + arrOfStrs.length + ": expected string, " + typeof i + " found";
+            throw new Sk.builtin.TypeError("TypeError: sequence item " + arrOfStrs.length + ": expected string, " + typeof i + " found");
         }
         arrOfStrs.push(i.v);
     }
@@ -10573,7 +10601,7 @@ Sk.builtin.str.prototype["split"] = new Sk.builtin.func(function (self, on, howm
         regex = new RegExp(s, "g");
     }
 
-    // This is almost identical to re.split, 
+    // This is almost identical to re.split,
     // except how the regexp is constructed
 
     result = [];
@@ -23434,8 +23462,7 @@ Compiler.prototype.annotateSource = function (ast) {
         }
         out("^\n//\n");
 
-        out("\nSk.currLineNo = ", lineno, ";\nSk.currColNo = ", col_offset, "\n\n");	//	Added by RNL
-        out("\nSk.currFilename = '", this.filename, "';\n\n");	//	Added by RNL
+        out("currLineNo = ", lineno, ";\ncurrColNo = ", col_offset, "\n\n");
     }
 };
 
@@ -23602,7 +23629,7 @@ Compiler.prototype.outputInterruptTest = function () { // Added by RNL
     }
     if (Sk.yieldLimit !== null && this.u.canSuspend) {
         output += "if (new Date() - Sk.lastYield > Sk.yieldLimit) {";
-        output += "var $susp = $saveSuspension({data: {type: 'Sk.yield'}, resume: function() {}}, '"+this.filename+"',Sk.currLineNo,Sk.currColNo);";
+        output += "var $susp = $saveSuspension({data: {type: 'Sk.yield'}, resume: function() {}}, '"+this.filename+"',currLineNo,currColNo);";
         output += "$susp.$blk = $blk;";
         output += "$susp.optional = true;";
         output += "return $susp;";
@@ -23642,7 +23669,7 @@ Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
             this.vexpr(e.elts[i], "Sk.abstr.objectGetItem(" + data + "," + i + ")");
         }
     }
-    else if (e.ctx === Load || tuporlist === "set") { //because set's can't be assigned to. 
+    else if (e.ctx === Load || tuporlist === "set") { //because set's can't be assigned to.
         items = [];
         for (i = 0; i < e.elts.length; ++i) {
             items.push(this._gr("elem", this.vexpr(e.elts[i])));
@@ -23698,7 +23725,7 @@ Compiler.prototype.ccompgen = function (type, tmpname, generators, genIndex, val
     var target;
     var nexti;
     var n;
-    
+
     this._jump(start);
     this.setBlock(start);
 
@@ -23722,10 +23749,10 @@ Compiler.prototype.ccompgen = function (type, tmpname, generators, genIndex, val
         if (type === "dict") {
             lkey = this.vexpr(key);
             out(tmpname, ".mp$ass_subscript(", lkey, ",", lvalue, ");");
-        } 
+        }
         else if (type === "list") {
             out(tmpname, ".v.push(", lvalue, ");"); // todo;
-        } 
+        }
         else if (type === "set") {
             out(tmpname, ".v.mp$ass_subscript(", lvalue, ", true);");
         }
@@ -24214,7 +24241,7 @@ Compiler.prototype.outputSuspensionHelpers = function (unit) {
     var output = "var $wakeFromSuspension = function() {" +
                     "var susp = "+unit.scopename+".wakingSuspension; delete "+unit.scopename+".wakingSuspension;" +
                     "$blk=susp.$blk; $loc=susp.$loc; $gbl=susp.$gbl; $exc=susp.$exc; $err=susp.$err;" +
-                    "Sk.lastYield=new Date();" +
+                    "currLineNo=susp.lineno; currColNo=susp.colno; Sk.lastYield=new Date();" +
                     (hasCell?"$cell=susp.$cell;":"");
 
     for (i = 0; i < localsToSave.length; i++) {
@@ -24225,7 +24252,7 @@ Compiler.prototype.outputSuspensionHelpers = function (unit) {
         }
     }
 
-    output +=  "try { $ret=susp.child.resume(); } catch(err) { if($exc.length>0) { $err=err; $blk=$exc.pop(); } else { throw err; } }" +
+    output +=  "try { $ret=susp.child.resume(); } catch(err) { if (!(err instanceof Sk.builtin.Exception)) { err = new Sk.builtin.ExternalError(err); } err.traceback.push({lineno: currLineNo, colno: currColNo, filename: '"+this.filename+"'}); if($exc.length>0) { $err=err; $blk=$exc.pop(); } else { throw err; } }" +
                 "};";
 
     output += "var $saveSuspension = function(child, filename, lineno, colno) {" +
@@ -24790,7 +24817,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
 
     // note special usage of 'this' to avoid having to slice globals into
     // all function invocations in call
-    this.u.varDeclsCode += "var $blk=" + entryBlock + ",$exc=[],$loc=" + locals + cells + ",$gbl=this,$err=undefined,$ret=undefined;";
+    this.u.varDeclsCode += "var $blk=" + entryBlock + ",$exc=[],$loc=" + locals + cells + ",$gbl=this,$err=undefined,$ret=undefined,currLineNo=undefined,currColNo=undefined;";
     if (Sk.execLimit !== null) {
         this.u.varDeclsCode += "if (typeof Sk.execStart === 'undefined') {Sk.execStart = new Date()}";
     }
@@ -24876,7 +24903,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     this.u.switchCode = "while(true){try{"
     this.u.switchCode += this.outputInterruptTest();
     this.u.switchCode += "switch($blk){";
-    this.u.suffixCode = "} }catch(err){if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} }});";
+    this.u.suffixCode = "} }catch(err){ if (!(err instanceof Sk.builtin.Exception)) { err = new Sk.builtin.ExternalError(err); } err.traceback.push({lineno: currLineNo, colno: currColNo, filename: '"+this.filename+"'}); if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} }});";
 
     //
     // jump back to the handler so it can do the main actual work of the
@@ -25107,7 +25134,7 @@ Compiler.prototype.cclass = function (s) {
 
     this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$rest){var $gbl=$globals,$loc=$locals;";
     this.u.switchCode += "return(function " + s.name.v + "(){";
-    this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[],$ret=undefined;"
+    this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[],$ret=undefined,currLineNo=undefined,currColNo=undefined;"
     if (Sk.execLimit !== null) {
         this.u.switchCode += "if (typeof Sk.execStart === 'undefined') {Sk.execStart = new Date()}";
     }
@@ -25356,7 +25383,7 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
                 case Load:
                 case Param:
                     // Need to check that it is bound!
-                    out("if (", mangled, " === undefined) { throw new Error('local variable \\\'", mangled, "\\\' referenced before assignment'); }\n");
+                    out("if (", mangled, " === undefined) { throw new Sk.builtin.UnboundLocalError('local variable \\\'", mangled, "\\\' referenced before assignment'); }\n");
                     return mangled;
                 case Store:
                     out(mangled, "=", dataToStore, ";");
@@ -25504,7 +25531,7 @@ Compiler.prototype.cmod = function (mod) {
 
     var entryBlock = this.newBlock("module entry");
     this.u.prefixCode = "var " + modf + "=(function($modname){";
-    this.u.varDeclsCode = "var $gbl = {}, $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname,$ret=undefined;";
+    this.u.varDeclsCode = "var $gbl = {}, $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname,$ret=undefined,currLineNo=undefined,currColNo=undefined;";
     if (Sk.execLimit !== null) {
         this.u.varDeclsCode += "if (typeof Sk.execStart === 'undefined') {Sk.execStart = new Date()}";
     }
@@ -25532,7 +25559,7 @@ Compiler.prototype.cmod = function (mod) {
     this.u.switchCode = "while(true){try{";
     this.u.switchCode += this.outputInterruptTest();
     this.u.switchCode += "switch($blk){";
-    this.u.suffixCode = "} }catch(err){if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} }" +
+    this.u.suffixCode = "} }catch(err){ if (!(err instanceof Sk.builtin.Exception)) { err = new Sk.builtin.ExternalError(err); } err.traceback.push({lineno: currLineNo, colno: currColNo, filename: '"+this.filename+"'}); if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }} }" +
         " }catch(err){ if (err instanceof Sk.builtin.SystemExit && !Sk.throwSystemExit) { Sk.misceval.print_(err.toString() + '\\n'); return $loc; } else { throw err; } } });";
 
     // Note - this change may need to be adjusted for all the other instances of
