@@ -11350,10 +11350,13 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
         if (rhs.constructor === Sk.builtin.tuple) {
             value = rhs.v[i];
         }
-        else if (rhs.mp$subscript !== undefined) {
+        else if (rhs.mp$subscript !== undefined && mappingKey !== undefined) {
             mk = mappingKey.substring(1, mappingKey.length - 1);
             //print("mk",mk);
             value = rhs.mp$subscript(new Sk.builtin.str(mk));
+        } else if (rhs.constructor === Sk.builtin.dict || rhs.constructor === Sk.builtin.list) {
+            // new case where only one argument is provided
+            value = rhs;
         }
         else {
             throw new Sk.builtin.AttributeError(rhs.tp$name + " instance has no attribute 'mp$subscript'");
@@ -11421,6 +11424,9 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             r = new Sk.builtin.str(value);
             if (precision) {
                 return r.v.substr(0, precision);
+            }
+            if(fieldWidth) {
+                r.v = handleWidth([" ", r.v]);
             }
             return r.v;
         } else if (conversionType === "%") {
