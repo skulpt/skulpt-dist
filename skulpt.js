@@ -7343,6 +7343,11 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericGetAttr", Sk.builtin.object.prototype.GenericGetAttr);
 
+Sk.builtin.object.prototype.GenericPythonGetAttr = function(self, name) {
+    return Sk.builtin.object.prototype.GenericGetAttr.call(self, name.v);
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin.object.prototype.GenericPythonGetAttr);
+
 Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
     goog.asserts.assert(typeof name === "string");
     // todo; lots o' stuff
@@ -7355,12 +7360,23 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
 
+Sk.builtin.object.prototype.GenericPythonSetAttr = function(self, name, value) {
+    return Sk.builtin.object.prototype.GenericSetAttr.call(self, name.v, value);
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonSetAttr", Sk.builtin.object.prototype.GenericPythonSetAttr);
+
 Sk.builtin.object.prototype.HashNotImplemented = function () {
     throw new Sk.builtin.TypeError("unhashable type: '" + Sk.abstr.typeName(this) + "'");
 };
 
 Sk.builtin.object.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
 Sk.builtin.object.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
+
+// Although actual attribute-getting happens in pure Javascript via tp$getattr, classes
+// overriding __getattr__ etc need to be able to call object.__getattr__ etc from Python
+Sk.builtin.object.prototype["__getattr__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
+Sk.builtin.object.prototype["__setattr__"] = Sk.builtin.object.prototype.GenericPythonSetAttr;
+
 Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
 
 /**
@@ -8630,6 +8646,44 @@ Sk.misceval.applyAsync = function (suspHandlers, func, kwdict, varargseq, kws, a
 };
 goog.exportSymbol("Sk.misceval.applyAsync", Sk.misceval.applyAsync);
 
+/**
+ * Chain together a set of functions, each of which might return a value or
+ * an Sk.misceval.Suspension. Each function is called with the return value of
+ * the preceding function, but does not see any suspensions. If a function suspends,
+ * Sk.misceval.chain() returns a suspension that will resume the chain once an actual
+ * return value is available.
+ *
+ * The idea is to allow a Promise-like chaining of possibly-suspending steps without
+ * repeating boilerplate suspend-and-resume code.
+ *
+ * For example, imagine we call Sk.misceval.chain(x, f).
+ *  - If x is a value, we return f(x).
+ *  - If x is a suspension, we suspend. We will suspend and resume until we get a
+ *    return value, and then we will return f(<resumed-value).
+ * This can be expanded to an arbitrary number of functions
+ * (eg Sk.misceval.chain(x, f, g), which is equivalent to chain(chain(x, f), g).)
+ *
+ * @param {*}              initialValue
+ * @param {...function(*)} chainedFns
+ */
+
+Sk.misceval.chain = function (initialValue, chainedFns) {
+    var fs = arguments, i = 1;
+
+    return (function nextStep(r) {
+        while (i < fs.length) {
+            if (r instanceof Sk.misceval.Suspension) {
+                return new Sk.misceval.Suspension(nextStep, r);
+            }
+
+            r = fs[i](r);
+            i++;
+        }
+
+        return r;
+    })(initialValue);
+};
+goog.exportSymbol("Sk.misceval.chain", Sk.misceval.chain);
 
 /**
  * same as Sk.misceval.call except args is an actual array, rather than
@@ -9455,10 +9509,12 @@ Sk.abstr.gattr = function (obj, nameJS) {
     }
 
 
-    if (obj["__getattr__"]) {
-        ret = Sk.misceval.callsim(obj["__getattr__"], obj, nameJS);
-    } else if (obj.tp$getattr !== undefined) {
+    if (obj.tp$getattr !== undefined) {
         ret = obj.tp$getattr(nameJS);
+    }
+
+    if (ret === undefined && obj["__getattr__"] && obj["__getattr__"] !== Sk.builtin.object.prototype["__getattr__"]) {
+        ret = Sk.misceval.callsim(obj["__getattr__"], obj, new Sk.builtin.str(nameJS));
     }
 
     if (ret === undefined) {
@@ -9475,7 +9531,7 @@ Sk.abstr.sattr = function (obj, nameJS, data) {
     if (obj === null) {
         throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + nameJS + "'");
     } else if (obj["__setattr__"]) {
-        Sk.misceval.callsim(obj["__setattr__"], obj, nameJS, data);
+        Sk.misceval.callsim(obj["__setattr__"], obj, new Sk.builtin.str(nameJS), data);
     } else if (obj.tp$setattr !== undefined) {
         obj.tp$setattr(nameJS, data);
     } else {
