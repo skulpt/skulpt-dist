@@ -6191,6 +6191,10 @@ Sk.builtin.globals = function globals () {
 
 };
 
+Sk.builtin.divmod = function divmod (a, b) {
+    return Sk.abstr.numberBinOp(a, b, "DivMod");
+};
+
 
 Sk.builtin.bytearray = function bytearray () {
     throw new Sk.builtin.NotImplementedError("bytearray is not yet implemented");
@@ -6203,9 +6207,6 @@ Sk.builtin.complex = function complex () {
 };
 Sk.builtin.delattr = function delattr () {
     throw new Sk.builtin.NotImplementedError("delattr is not yet implemented");
-};
-Sk.builtin.divmod = function divmod () {
-    throw new Sk.builtin.NotImplementedError("divmod is not yet implemented");
 };
 Sk.builtin.execfile = function execfile () {
     throw new Sk.builtin.NotImplementedError("execfile is not yet implemented");
@@ -8864,6 +8865,8 @@ Sk.abstr.boNameToSlotFuncLhs_ = function (obj, name) {
         return obj.nb$floor_divide ? obj.nb$floor_divide : obj["__floordiv__"];
     case "Mod":
         return obj.nb$remainder ? obj.nb$remainder : obj["__mod__"];
+    case "DivMod":
+        return obj.nb$divmod ? obj.nb$divmod : obj["__divmod__"];
     case "Pow":
         return obj.nb$power ? obj.nb$power : obj["__pow__"];
     case "LShift":
@@ -8897,6 +8900,8 @@ Sk.abstr.boNameToSlotFuncRhs_ = function (obj, name) {
         return obj.nb$floor_divide ? obj.nb$floor_divide : obj["__rfloordiv__"];
     case "Mod":
         return obj.nb$remainder ? obj.nb$remainder : obj["__rmod__"];
+    case "DivMod":
+        return obj.nb$divmod ? obj.nb$divmod : obj["__rdivmod__"];
     case "Pow":
         return obj.nb$power ? obj.nb$power : obj["__rpow__"];
     case "LShift":
@@ -15080,6 +15085,32 @@ Sk.builtin.nmber.prototype.nb$remainder = function (other) {
     }
 
     return undefined;
+};
+
+Sk.builtin.nmber.prototype.nb$divmod = function (other) {
+    var thisAsLong;
+    var result;
+
+    if (typeof other === "number") {
+        other = new Sk.builtin.nmber(other, undefined);
+    }
+    else if (other instanceof Sk.builtin.bool) {
+        other = new Sk.builtin.nmber(Sk.builtin.asnum$(other), undefined);
+    }
+
+    if (other instanceof Sk.builtin.bool) {
+        other = new Sk.builtin.nmber(Sk.builtin.asnum$(other), undefined);
+    }
+
+    if (other instanceof Sk.builtin.nmber || other instanceof Sk.builtin.lng) {
+        return new Sk.builtin.tuple([
+            this.nb$floor_divide(other),
+            this.nb$remainder(other)
+        ]);
+    }
+
+    return undefined;
+
 };
 
 Sk.builtin.nmber.prototype.nb$power = function (other) {
