@@ -7365,7 +7365,15 @@ Sk.builtin.none.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NoneType", 
 Sk.builtin.none.prototype.tp$name = "NoneType";
 Sk.builtin.none.none$ = Object.create(Sk.builtin.none.prototype, {v: {value: null, enumerable: true}});
 
+Sk.builtin.NotImplemented = function() {};
+Sk.builtin.NotImplemented.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NotImplementedType", Sk.builtin.NotImplemented);
+Sk.builtin.NotImplemented.prototype.tp$name = "NotImplementedType";
+Sk.builtin.NotImplemented.prototype["$r"] = function () { return new Sk.builtin.str("NotImplemented"); };
+Sk.builtin.NotImplemented.NotImplemented$ = Object.create(Sk.builtin.NotImplemented.prototype, {v: {value: null, enumerable: false}});
+
+
 goog.exportSymbol("Sk.builtin.none", Sk.builtin.none);
+goog.exportSymbol("Sk.builtin.NotImplemented", Sk.builtin.NotImplemented);
 Sk.builtin.bool = function (x) {
     Sk.builtin.pyCheckArgs("bool", arguments, 1);
     if (Sk.misceval.isTrue(x)) {
@@ -26014,6 +26022,9 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
     }
     if (name.v === "False") {
         return "Sk.builtin.bool.false$";
+    }
+    if (name.v === "NotImplemented") {
+        return "Sk.builtin.NotImplemented.NotImplemented$";
     }
 
     mangled = mangleName(this.u.private_, name).v;
