@@ -25164,7 +25164,7 @@ Compiler.prototype.cfor = function (s) {
 };
 
 Compiler.prototype.craise = function (s) {
-    var inst;
+    var inst, exc;
     if (s && s.type && s.type.id && (s.type.id.v === "StopIteration")) {
         // currently, we only handle StopIteration, and all it does it return
         // undefined which is what our iterator protocol requires.
@@ -25185,8 +25185,15 @@ Compiler.prototype.craise = function (s) {
                 out("throw ", this.vexpr(s.type), ";");
             }
             else {
-                // handles: raise Error
-                out("throw ", this.vexpr(s.type), "('');");
+                // handles: raise Error OR raise someinstance
+                exc = this._gr("err", this.vexpr(s.type));
+                out("if(",exc," instanceof Sk.builtin.type) {",
+                    "throw Sk.misceval.callsim(", exc, ");",
+                    "} else if(typeof(",exc,") === 'function') {",
+                    "throw ",exc,"();",
+                    "} else {",
+                    "throw ", exc, ";",
+                    "}");
             }
         }
         else {
