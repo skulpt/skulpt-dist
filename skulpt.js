@@ -6355,7 +6355,7 @@ goog.exportSymbol("Sk.builtin.BaseException", Sk.builtin.BaseException);
 
 /**
  * @constructor
- * @extends Sk.builtin.Exception
+ * @extends Sk.builtin.BaseException
  * @param {...*} args
  */
 Sk.builtin.Exception = function (args) {
@@ -6373,7 +6373,7 @@ goog.exportSymbol("Sk.builtin.Exception", Sk.builtin.Exception);
 
 /**
  * @constructor
- * @extends Sk.builtin.StandardError
+ * @extends Sk.builtin.Exception
  * @param {...*} args
  */
 Sk.builtin.StandardError = function (args) {
@@ -15433,6 +15433,7 @@ Sk.builtin.nmber.prototype.str$ = function (base, sign) {
     var idx;
     var tmp;
     var work;
+
     if (isNaN(this.v)) {
         return "nan";
     }
@@ -15462,6 +15463,7 @@ Sk.builtin.nmber.prototype.str$ = function (base, sign) {
             idx = tmp.indexOf(".");
             pre = work.toString().slice(0, idx);
             post = work.toString().slice(idx);
+
             if (pre.match(/^-?0$/) && post.slice(1).match(/^0{4,}/)) {
                 if (tmp.length < 12) {
                     tmp = work.toExponential();
@@ -15471,17 +15473,21 @@ Sk.builtin.nmber.prototype.str$ = function (base, sign) {
                 }
             }
 
-            while (tmp.charAt(tmp.length - 1) == "0" && tmp.indexOf("e") < 0) {
-                tmp = tmp.substring(0, tmp.length - 1);
+            if (tmp.indexOf("e") < 0 && tmp.indexOf(".") >= 0) {
+                while (tmp.charAt(tmp.length-1) == "0") {
+                    tmp = tmp.substring(0,tmp.length-1);
+                }
+                if (tmp.charAt(tmp.length-1) == ".") {
+                    tmp = tmp + "0";
+                }
             }
-            if (tmp.charAt(tmp.length - 1) == ".") {
-                tmp = tmp + "0";
-            }
+
             tmp = tmp.replace(new RegExp("\\.0+e"), "e", "i");
             // make exponent two digits instead of one (ie e+09 not e+9)
             tmp = tmp.replace(/(e[-+])([1-9])$/, "$10$2");
             // remove trailing zeroes before the exponent
             tmp = tmp.replace(/0+(e.*)/, "$1");
+
         } else {
             tmp = work.toString();
         }
@@ -16183,6 +16189,9 @@ Sk.builtin.int_ = function (x, base) {
     if (x > Sk.builtin.nmber.threshold$ || x < -Sk.builtin.nmber.threshold$) {
         return new Sk.builtin.lng(x);
     }
+    if ((x > -1) && (x < 1)) {
+        x = 0;
+    }
     return new Sk.builtin.nmber(parseInt(x, base), Sk.builtin.nmber.int$);
 };
 Sk.builtin.int_.co_varnames = [ "base" ];
@@ -16429,8 +16438,7 @@ Sk.builtin.set = function (S) {
 Sk.builtin.set.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("set", Sk.builtin.set);
 
 Sk.builtin.set.prototype.set_iter_ = function () {
-    var ret = Sk.builtin.dict.prototype["keys"].func_code(this["v"]);
-    return ret.tp$iter();
+    return this["v"].tp$iter();
 };
 
 Sk.builtin.set.prototype.set_reset_ = function () {
@@ -16526,6 +16534,10 @@ Sk.builtin.set.prototype.tp$richcompare = function (w, op) {
 Sk.builtin.set.prototype.tp$iter = Sk.builtin.set.prototype.set_iter_;
 Sk.builtin.set.prototype.sq$length = function () {
     return this["v"].mp$length();
+};
+
+Sk.builtin.set.prototype.sq$contains = function(ob) {
+    return this["v"].sq$contains(ob);
 };
 
 Sk.builtin.set.prototype["isdisjoint"] = new Sk.builtin.func(function (self, other) {
