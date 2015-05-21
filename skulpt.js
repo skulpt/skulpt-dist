@@ -5189,7 +5189,7 @@ Sk.builtin.asnum$nofloat = function (a) {
         a = a.toString();
     }
 
-//	Sk.debugout("INITIAL: " + a);
+    //	Sk.debugout("INITIAL: " + a);
 
     //	If not a float, great, just return this
     if (a.indexOf(".") < 0 && a.indexOf("e") < 0 && a.indexOf("E") < 0) {
@@ -5208,16 +5208,9 @@ Sk.builtin.asnum$nofloat = function (a) {
         mantissa = a;
     }
 
-//	Sk.debugout("e:" + expon);
-
     expon = parseInt(expon, 10);
 
-//	Sk.debugout("MANTISSA:" + mantissa);
-//	Sk.debugout("EXPONENT:" + expon);
-
     decimal = mantissa.indexOf(".");
-
-//	Sk.debugout("DECIMAL: " + decimal);
 
     //	Simplest case, no decimal
     if (decimal < 0) {
@@ -5248,26 +5241,16 @@ Sk.builtin.asnum$nofloat = function (a) {
         mantissa = mantissa.substr(0, decimal);
     }
 
-//	Sk.debugout("NO DECIMAL: " + mantissa);
-
     decimal = decimal + expon;
-
-//	Sk.debugout("MOVE DECIM: " + decimal);
-
     while (decimal > mantissa.length) {
         mantissa += "0";
     }
-
-//	Sk.debugout("PADDED    : " + mantissa);
 
     if (decimal <= 0) {
         mantissa = 0;
     } else {
         mantissa = mantissa.substr(0, decimal);
     }
-
-//	Sk.debugout("LENGTH: " + mantissa.length);
-//	Sk.debugout("RETURN: " + mantissa);
 
     return mantissa;
 };
@@ -9099,12 +9082,6 @@ Sk.abstr.numOpAndPromote = function (a, b, opfn) {
     }
 
     if (a.constructor === Sk.builtin.lng) {
-//      if (b.constructor == Sk.builtin.nmber)
-//          if (b.skType == Sk.builtin.nmber.float$) {
-//              var tmp = new Sk.builtin.nmber(a.tp$str(), Sk.builtin.nmber.float$);
-//              return [tmp, b];
-//          } else
-//              return [a, b.v];
         return [a, b];
     } else if (a.constructor === Sk.builtin.nmber) {
         return [a, b];
@@ -9654,7 +9631,6 @@ Sk.quickSort = function (arr, cmp, key, reverse) {
         var tmp;
         var piv = arr[pivot];
 
-//		swap pivot, end-1
         tmp = arr[pivot];
         arr[pivot] = arr[end - 1];
         arr[end - 1] = tmp;
@@ -9667,7 +9643,6 @@ Sk.quickSort = function (arr, cmp, key, reverse) {
                 cmpresult = Sk.misceval.callsim(cmp, arr[ix], piv);
             }
             if (Sk.builtin.asnum$(cmpresult) < 0) {
-//				swap store, ix
                 tmp = arr[store];
                 arr[store] = arr[ix];
                 arr[ix] = tmp;
@@ -9675,7 +9650,6 @@ Sk.quickSort = function (arr, cmp, key, reverse) {
             }
         }
 
-//		swap end-1, store
         tmp = arr[end - 1];
         arr[end - 1] = arr[store];
         arr[store] = tmp;
@@ -13577,7 +13551,6 @@ Sk.builtin.biginteger.prototype.bnIntValue = function () {
     else if (this.t === 0) {
         return 0;
     }
-// assumes 16 < DB < 32
     return ((this[1] & ((1 << (32 - this.DB)) - 1)) << this.DB) | this[0];
 };
 
@@ -14116,7 +14089,6 @@ Sk.builtin.biginteger.prototype.bnpMultiplyUpperTo = function (a, n, r) {
  * @extends Sk.builtin.biginteger
  */
 Sk.builtin.biginteger.Barrett = function (m) {
-// setup Barrett
     this.r2 = Sk.builtin.biginteger.nbi();
     this.q3 = Sk.builtin.biginteger.nbi();
     Sk.builtin.biginteger.ONE.dlShiftTo(2 * m.t, this.r2);
@@ -14214,7 +14186,6 @@ Sk.builtin.biginteger.prototype.bnModPow = function (e, m) {
         z = new Sk.builtin.biginteger.Montgomery(m);
     }
 
-// precomputation
     g = [];
     n = 3;
     k1 = k - 1;
@@ -26751,9 +26722,6 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
         namestr = "new Sk.builtin.str('" + modname + "')";
         finalcode += "\n" + co.funcname + "(" + namestr + ");";
 
-    //	if (Sk.debugCode)
-    //		Sk.debugout(finalcode);
-
         modlocs = goog.global["eval"](finalcode);
 
         return (function finishLoading(modlocs) {
@@ -27766,7 +27734,7 @@ Sk.builtins = {
     "quit"      : Sk.builtin.quit,
     "exit"      : Sk.builtin.quit,
 
-// Functions below are not implemented
+    // Functions below are not implemented
     "bytearray" : Sk.builtin.bytearray,
     "callable"  : Sk.builtin.callable,
     "complex"   : Sk.builtin.complex,
