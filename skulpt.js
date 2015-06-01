@@ -5059,12 +5059,877 @@ Sk.inputfun = function (args) {
 goog.exportSymbol("Sk.python3", Sk.python3);
 goog.exportSymbol("Sk.inputfun", Sk.inputfun);
 goog.require("goog.asserts");
-// builtins are supposed to come from the __builtin__ module, but we don't do
-// that yet.
-Sk.builtin = {};
+if(Sk.builtin === undefined) {
+    Sk.builtin = {};
+}
 
-// todo; these should all be func objects too, otherwise str() of them won't
-// work, etc.
+/**
+ *
+ * @constructor
+ *
+ * @param {*} name name or object to get type of, if only one arg
+ *
+ * @param {Array.<Object>=} bases
+ *
+ * @param {Object=} dict
+ *
+ *
+ * This type represents the type of `type'. *Calling* an instance of
+ * this builtin type named "type" creates class objects. The resulting
+ * class objects will have various tp$xyz attributes on them that allow
+ * for the various operations on that object.
+ *
+ * calling the type or calling an instance of the type? or both?
+ */
+Sk.builtin.type = function (name, bases, dict) {
+    var mro;
+    var obj;
+    var klass;
+    var v;
+    if (bases === undefined && dict === undefined) {
+        // 1 arg version of type()
+        // the argument is an object, not a name and returns a type object
+        obj = name;
+        if (obj.constructor === Sk.builtin.nmber) {
+            if (obj.skType === Sk.builtin.nmber.int$) {
+                return Sk.builtin.int_.prototype.ob$type;
+            }
+            else {
+                return Sk.builtin.float_.prototype.ob$type;
+            }
+        }
+        return obj.ob$type;
+    }
+    else {
+
+        // argument dict must be of type dict
+        if(dict.tp$name !== "dict") {
+            throw new Sk.builtin.TypeError("type() argument 3 must be dict, not " + Sk.abstr.typeName(dict));
+        }
+
+        // checks if name must be string
+        if(!Sk.builtin.checkString(name)) {
+            throw new Sk.builtin.TypeError("type() argument 1 must be str, not " + Sk.abstr.typeName(name));
+        }
+
+        // argument bases must be of type tuple
+        if(bases.tp$name !== "tuple") {
+            throw new Sk.builtin.TypeError("type() argument 2 must be tuple, not " + Sk.abstr.typeName(bases));
+        }
+
+        // type building version of type
+
+        // dict is the result of running the classes code object
+        // (basically the dict of functions). those become the prototype
+        // object of the class).
+        /**
+        * @constructor
+        */
+        klass = function (kwdict, varargseq, kws, args, canSuspend) {
+            var init;
+            var self = this;
+            var s;
+            if (!(this instanceof klass)) {
+                return new klass(kwdict, varargseq, kws, args, canSuspend);
+            }
+
+            args = args || [];
+            self["$d"] = new Sk.builtin.dict([]);
+
+
+            init = Sk.builtin.type.typeLookup(self.ob$type, "__init__");
+            if (init !== undefined) {
+                // return should be None or throw a TypeError otherwise
+                args.unshift(self);
+                s = Sk.misceval.applyOrSuspend(init, kwdict, varargseq, kws, args);
+
+                return (function doSusp(s) {
+                    if (s instanceof Sk.misceval.Suspension) {
+                        // TODO I (Meredydd) don't know whether we are ever called
+                        // from anywhere except Sk.misceval.applyOrSuspend().
+                        // If we're not, we don't need a canSuspend parameter at all.
+                        if (canSuspend) {
+                            return new Sk.misceval.Suspension(doSusp, s);
+                        } else {
+                            return Sk.misceval.retryOptionalSuspensionOrThrow(s);
+                        }
+                    } else {
+                        return self;
+                    }
+                })(s);
+            }
+
+            return self;
+        };
+
+        // set __module__ if not present (required by direct type(name, bases, dict) calls)
+        var module_lk = new Sk.builtin.str("__module__");
+        if(dict.mp$lookup(module_lk) === undefined) {
+            dict.mp$ass_subscript(module_lk, Sk.globals["__name__"]);
+        }
+
+        // copy properties into our klass object
+        // uses python iter methods
+        var it, k;
+        for (it = dict.tp$iter(), k = it.tp$iternext(); k !== undefined; k = it.tp$iternext()) {
+            v = dict.mp$subscript(k);
+            if (v === undefined) {
+                v = null;
+            }
+            klass.prototype[k.v] = v;
+            klass[k.v] = v;
+        }
+
+        var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
+        klass["__class__"] = klass;
+        klass["__name__"] = name;
+        klass.sk$klass = true;
+        klass.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
+        klass.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
+        klass.prototype.tp$descr_get = function () {
+            goog.asserts.fail("in type tp$descr_get");
+        };
+        klass.prototype["$r"] = function () {
+            var cname;
+            var mod;
+            var reprf = this.tp$getattr("__repr__");
+            if (reprf !== undefined) {
+                return Sk.misceval.apply(reprf, undefined, undefined, undefined, []);
+            }
+            mod = dict.mp$subscript(module_lk); // lookup __module__
+            cname = "";
+            if (mod) {
+                cname = mod.v + ".";
+            }
+            return new Sk.builtin.str("<" + cname + _name + " object>");
+        };
+        klass.prototype.tp$str = function () {
+            var strf = this.tp$getattr("__str__");
+            if (strf !== undefined) {
+                return Sk.misceval.apply(strf, undefined, undefined, undefined, []);
+            }
+            return this["$r"]();
+        };
+        klass.prototype.tp$length = function () {
+            var tname;
+            var lenf = this.tp$getattr("__len__");
+            if (lenf !== undefined) {
+                return Sk.misceval.apply(lenf, undefined, undefined, undefined, []);
+            }
+            tname = Sk.abstr.typeName(this);
+            throw new Sk.builtin.AttributeError(tname + " instance has no attribute '__len__'");
+        };
+        klass.prototype.tp$call = function (args, kw) {
+            var callf = this.tp$getattr("__call__");
+            /* todo; vararg kwdict */
+            if (callf) {
+                return Sk.misceval.apply(callf, undefined, undefined, kw, args);
+            }
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object is not callable");
+        };
+        klass.prototype.tp$iter = function () {
+            var ret;
+            var iterf = this.tp$getattr("__iter__");
+            var tname = Sk.abstr.typeName(this);
+            if (iterf) {
+                ret = Sk.misceval.callsim(iterf);
+                // This check does not work for builtin iterators
+                // if (ret.tp$getattr("next") === undefined)
+                //    throw new Sk.builtin.TypeError("iter() return non-iterator of type '" + tname + "'");
+                return ret;
+            }
+            throw new Sk.builtin.TypeError("'" + tname + "' object is not iterable");
+        };
+        klass.prototype.tp$iternext = function () {
+            var iternextf = this.tp$getattr("next");
+            goog.asserts.assert(iternextf !== undefined, "iter() should have caught this");
+            return Sk.misceval.callsim(iternextf);
+        };
+        klass.prototype.tp$getitem = function (key, canSuspend) {
+            var getf = this.tp$getattr("__getitem__"), r;
+            if (getf !== undefined) {
+                r = Sk.misceval.applyOrSuspend(getf, undefined, undefined, undefined, [key]);
+                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+            }
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support indexing");
+        };
+        klass.prototype.tp$setitem = function (key, value, canSuspend) {
+            var setf = this.tp$getattr("__setitem__"), r;
+            if (setf !== undefined) {
+                r = Sk.misceval.applyOrSuspend(setf, undefined, undefined, undefined, [key, value]);
+                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+            }
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support item assignment");
+        };
+
+        klass.prototype.tp$name = _name;
+
+        if (bases) {
+            //print("building mro for", name);
+            //for (var i = 0; i < bases.length; ++i)
+            //print("base[" + i + "]=" + bases[i].tp$name);
+            klass["$d"] = new Sk.builtin.dict([]);
+            klass["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, bases);
+            mro = Sk.builtin.type.buildMRO(klass);
+            klass["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, mro);
+            klass.tp$mro = mro;
+            //print("mro result", Sk.builtin.repr(mro).v);
+        }
+
+        klass.prototype.ob$type = klass;
+        Sk.builtin.type.makeIntoTypeObj(_name, klass);
+
+        // fix for class attributes
+        klass.tp$setattr = Sk.builtin.type.prototype.tp$setattr;
+
+        return klass;
+    }
+
+};
+
+/**
+ *
+ */
+Sk.builtin.type.makeTypeObj = function (name, newedInstanceOfType) {
+    Sk.builtin.type.makeIntoTypeObj(name, newedInstanceOfType);
+    return newedInstanceOfType;
+};
+
+Sk.builtin.type.makeIntoTypeObj = function (name, t) {
+    goog.asserts.assert(name !== undefined);
+    goog.asserts.assert(t !== undefined);
+    t.ob$type = Sk.builtin.type;
+    t.tp$name = name;
+    t["$r"] = function () {
+        var ctype;
+        var mod = t.__module__;
+        var cname = "";
+        if (mod) {
+            cname = mod.v + ".";
+        }
+        ctype = "class";
+        if (!mod && !t.sk$klass && !Sk.python3) {
+            ctype = "type";
+        }
+        return new Sk.builtin.str("<" + ctype + " '" + cname + t.tp$name + "'>");
+    };
+    t.tp$str = undefined;
+    t.tp$getattr = Sk.builtin.type.prototype.tp$getattr;
+    t.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
+    t.tp$richcompare = Sk.builtin.type.prototype.tp$richcompare;
+    t.sk$type = true;
+
+    return t;
+};
+
+Sk.builtin.type.ob$type = Sk.builtin.type;
+Sk.builtin.type.tp$name = "type";
+Sk.builtin.type["$r"] = function () {
+    if(Sk.python3) {
+        return new Sk.builtin.str("<class 'type'>");
+    } else {
+        return new Sk.builtin.str("<type 'type'>");
+    }
+};
+
+//Sk.builtin.type.prototype.tp$descr_get = function() { print("in type descr_get"); };
+
+//Sk.builtin.type.prototype.tp$name = "type";
+
+// basically the same as GenericGetAttr except looks in the proto instead
+Sk.builtin.type.prototype.tp$getattr = function (name) {
+    var res;
+    var tp = this;
+    var descr = Sk.builtin.type.typeLookup(tp, name);
+    var f;
+    //print("type.tpgetattr descr", descr, descr.tp$name, descr.func_code, name);
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        f = descr.ob$type.tp$descr_get;
+        // todo;if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        // return f.call(descr, this, this.ob$type);
+    }
+
+    if (this["$d"]) {
+        res = this["$d"].mp$lookup(new Sk.builtin.str(name));
+        if (res !== undefined) {
+            return res;
+        }
+    }
+
+    if (f) {
+        // non-data descriptor
+        return f.call(descr, null, tp);
+    }
+
+    if (descr !== undefined) {
+        return descr;
+    }
+
+    return undefined;
+};
+
+Sk.builtin.type.prototype.tp$setattr = function (name, value) {
+    // class attributes are direct properties of the object
+    this[name] = value;
+};
+
+Sk.builtin.type.typeLookup = function (type, name) {
+    var mro = type.tp$mro;
+    var pyname = new Sk.builtin.str(name);
+    var base;
+    var res;
+    var i;
+
+    // todo; probably should fix this, used for builtin types to get stuff
+    // from prototype
+    if (!mro) {
+        return type.prototype[name];
+    }
+
+    for (i = 0; i < mro.v.length; ++i) {
+        base = mro.v[i];
+        if (base.hasOwnProperty(name)) {
+            return base[name];
+        }
+        res = base["$d"].mp$lookup(pyname);
+        if (res !== undefined) {
+            return res;
+        }
+    }
+
+    return undefined;
+};
+
+Sk.builtin.type.mroMerge_ = function (seqs) {
+    /*
+     var tmp = [];
+     for (var i = 0; i < seqs.length; ++i)
+     {
+     tmp.push(new Sk.builtin.list(seqs[i]));
+     }
+     print(Sk.builtin.repr(new Sk.builtin.list(tmp)).v);
+     */
+    var seq;
+    var i;
+    var next;
+    var k;
+    var sseq;
+    var j;
+    var cand;
+    var cands;
+    var res = [];
+    for (; ;) {
+        for (i = 0; i < seqs.length; ++i) {
+            seq = seqs[i];
+            if (seq.length !== 0) {
+                break;
+            }
+        }
+        if (i === seqs.length) // all empty
+        {
+            return res;
+        }
+        cands = [];
+        for (i = 0; i < seqs.length; ++i) {
+            seq = seqs[i];
+            //print("XXX", Sk.builtin.repr(new Sk.builtin.list(seq)).v);
+            if (seq.length !== 0) {
+                cand = seq[0];
+                //print("CAND", Sk.builtin.repr(cand).v);
+                OUTER:
+                    for (j = 0; j < seqs.length; ++j) {
+                        sseq = seqs[j];
+                        for (k = 1; k < sseq.length; ++k) {
+                            if (sseq[k] === cand) {
+                                break OUTER;
+                            }
+                        }
+                    }
+
+                // cand is not in any sequences' tail -> constraint-free
+                if (j === seqs.length) {
+                    cands.push(cand);
+                }
+            }
+        }
+
+        if (cands.length === 0) {
+            throw new Sk.builtin.TypeError("Inconsistent precedences in type hierarchy");
+        }
+
+        next = cands[0];
+        // append next to result and remove from sequences
+        res.push(next);
+        for (i = 0; i < seqs.length; ++i) {
+            seq = seqs[i];
+            if (seq.length > 0 && seq[0] === next) {
+                seq.splice(0, 1);
+            }
+        }
+    }
+};
+
+Sk.builtin.type.buildMRO_ = function (klass) {
+    // MERGE(klass + mro(bases) + bases)
+    var i;
+    var bases;
+    var all = [
+        [klass]
+    ];
+
+    //Sk.debugout("buildMRO for", klass.tp$name);
+
+    var kbases = klass["$d"].mp$subscript(Sk.builtin.type.basesStr_);
+    for (i = 0; i < kbases.v.length; ++i) {
+        all.push(Sk.builtin.type.buildMRO_(kbases.v[i]));
+    }
+
+    bases = [];
+    for (i = 0; i < kbases.v.length; ++i) {
+        bases.push(kbases.v[i]);
+    }
+    all.push(bases);
+
+    return Sk.builtin.type.mroMerge_(all);
+};
+
+/*
+ * C3 MRO (aka CPL) linearization. Figures out which order to search through
+ * base classes to determine what should override what. C3 does the "right
+ * thing", and it's what Python has used since 2.3.
+ *
+ * Kind of complicated to explain, but not really that complicated in
+ * implementation. Explanations:
+ *
+ * http://people.csail.mit.edu/jrb/goo/manual.43/goomanual_55.html
+ * http://www.python.org/download/releases/2.3/mro/
+ * http://192.220.96.201/dylan/linearization-oopsla96.html
+ *
+ * This implementation is based on a post by Samuele Pedroni on python-dev
+ * (http://mail.python.org/pipermail/python-dev/2002-October/029176.html) when
+ * discussing its addition to Python.
+ */
+Sk.builtin.type.buildMRO = function (klass) {
+    return new Sk.builtin.tuple(Sk.builtin.type.buildMRO_(klass));
+};
+
+Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
+    var r2;
+    var r1;
+    if (other.ob$type != Sk.builtin.type) {
+        return undefined;
+    }
+
+    if (!this["$r"] || !other["$r"]) {
+        return undefined;
+    }
+
+    r1 = this["$r"]();
+    r2 = other["$r"]();
+
+    return r1.tp$richcompare(r2, op);
+};
+/**
+ * @constructor
+ */
+Sk.builtin.object = function () {
+    if (!(this instanceof Sk.builtin.object)) {
+        return new Sk.builtin.object();
+    }
+    this["$d"] = new Sk.builtin.dict([]);
+    return this;
+};
+
+/**
+ * Special method look up. First try getting the method via
+ * internal dict and getattr. If getattr is not present (builtins)
+ * try if method is defined on the object itself
+ *
+ * Return null if not found or the function
+ */
+Sk.builtin.object.PyObject_LookupSpecial_ = function(op, str) {
+    var res;
+
+    // if op is null, return null
+    if (op == null) {
+        return null;
+    }
+
+    return Sk.builtin.type.typeLookup(op, str);
+};
+
+/**
+ * @return {undefined}
+ */
+Sk.builtin.object.prototype.GenericGetAttr = function (name) {
+    var res;
+    var f;
+    var descr;
+    var tp;
+    goog.asserts.assert(typeof name === "string");
+
+    tp = this.ob$type;
+    goog.asserts.assert(tp !== undefined, "object has no ob$type!");
+
+    //print("getattr", tp.tp$name, name);
+
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    // otherwise, look in the type for a descr
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        f = descr.ob$type.tp$descr_get;
+        // todo;
+        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        //return f.call(descr, this, this.ob$type);
+    }
+
+    // todo; assert? force?
+    if (this["$d"]) {
+        if (this["$d"].mp$lookup) {
+            res = this["$d"].mp$lookup(new Sk.builtin.str(name));
+        }
+        else if (this["$d"].mp$subscript) {
+            try {
+                res = this["$d"].mp$subscript(new Sk.builtin.str(name));
+            } catch (x) {
+                res = undefined;
+            }
+        }
+        else if (typeof this["$d"] === "object") // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
+        {
+            res = this["$d"][name];
+        }
+        if (res !== undefined) {
+            return res;
+        }
+    }
+
+    if (f) {
+        // non-data descriptor
+        return f.call(descr, this, this.ob$type);
+    }
+
+    if (descr !== undefined) {
+        return descr;
+    }
+
+    return undefined;
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericGetAttr", Sk.builtin.object.prototype.GenericGetAttr);
+
+Sk.builtin.object.prototype.GenericPythonGetAttr = function(self, name) {
+    return Sk.builtin.object.prototype.GenericGetAttr.call(self, name.v);
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin.object.prototype.GenericPythonGetAttr);
+
+Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
+    goog.asserts.assert(typeof name === "string");
+    // todo; lots o' stuff
+    if (this["$d"].mp$ass_subscript) {
+        this["$d"].mp$ass_subscript(new Sk.builtin.str(name), value);
+    }
+    else if (typeof this["$d"] === "object") {
+        this["$d"][name] = value;
+    }
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
+
+Sk.builtin.object.prototype.GenericPythonSetAttr = function(self, name, value) {
+    return Sk.builtin.object.prototype.GenericSetAttr.call(self, name.v, value);
+};
+goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonSetAttr", Sk.builtin.object.prototype.GenericPythonSetAttr);
+
+Sk.builtin.object.prototype.HashNotImplemented = function () {
+    throw new Sk.builtin.TypeError("unhashable type: '" + Sk.abstr.typeName(this) + "'");
+};
+
+Sk.builtin.object.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
+Sk.builtin.object.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
+
+// Although actual attribute-getting happens in pure Javascript via tp$getattr, classes
+// overriding __getattr__ etc need to be able to call object.__getattr__ etc from Python
+Sk.builtin.object.prototype["__getattr__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
+Sk.builtin.object.prototype["__setattr__"] = Sk.builtin.object.prototype.GenericPythonSetAttr;
+
+Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
+
+/**
+ * @constructor
+ */
+Sk.builtin.none = function () {
+};
+Sk.builtin.none.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NoneType", Sk.builtin.none);
+Sk.builtin.none.prototype.tp$name = "NoneType";
+Sk.builtin.none.none$ = Object.create(Sk.builtin.none.prototype, {v: {value: null, enumerable: true}});
+
+Sk.builtin.NotImplemented = function() {};
+Sk.builtin.NotImplemented.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NotImplementedType", Sk.builtin.NotImplemented);
+Sk.builtin.NotImplemented.prototype.tp$name = "NotImplementedType";
+Sk.builtin.NotImplemented.prototype["$r"] = function () { return new Sk.builtin.str("NotImplemented"); };
+Sk.builtin.NotImplemented.NotImplemented$ = Object.create(Sk.builtin.NotImplemented.prototype, {v: {value: null, enumerable: false}});
+
+
+goog.exportSymbol("Sk.builtin.none", Sk.builtin.none);
+goog.exportSymbol("Sk.builtin.NotImplemented", Sk.builtin.NotImplemented);
+/**
+ * Check arguments to Python functions to ensure the correct number of
+ * arguments are passed.
+ *
+ * @param {string} name the name of the function
+ * @param {Object} args the args passed to the function
+ * @param {number} minargs the minimum number of allowable arguments
+ * @param {number=} maxargs optional maximum number of allowable
+ * arguments (default: Infinity)
+ * @param {boolean=} kwargs optional true if kwargs, false otherwise
+ * (default: false)
+ * @param {boolean=} free optional true if free vars, false otherwise
+ * (default: false)
+ */
+Sk.builtin.pyCheckArgs = function (name, args, minargs, maxargs, kwargs, free) {
+    var nargs = args.length;
+    var msg = "";
+
+    if (maxargs === undefined) {
+        maxargs = Infinity;
+    }
+    if (kwargs) {
+        nargs -= 1;
+    }
+    if (free) {
+        nargs -= 1;
+    }
+    if ((nargs < minargs) || (nargs > maxargs)) {
+        if (minargs === maxargs) {
+            msg = name + "() takes exactly " + minargs + " arguments";
+        } else if (nargs < minargs) {
+            msg = name + "() takes at least " + minargs + " arguments";
+        } else {
+            msg = name + "() takes at most " + maxargs + " arguments";
+        }
+        msg += " (" + nargs + " given)";
+        throw new Sk.builtin.TypeError(msg);
+    }
+};
+goog.exportSymbol("Sk.builtin.pyCheckArgs", Sk.builtin.pyCheckArgs);
+
+/**
+ * Check type of argument to Python functions.
+ *
+ * @param {string} name the name of the argument
+ * @param {string} exptype string of the expected type name
+ * @param {boolean} check truthy if type check passes, falsy otherwise
+ */
+
+Sk.builtin.pyCheckType = function (name, exptype, check) {
+    if (!check) {
+        throw new Sk.builtin.TypeError(name + " must be a " + exptype);
+    }
+};
+goog.exportSymbol("Sk.builtin.pyCheckType", Sk.builtin.pyCheckType);
+
+Sk.builtin.checkSequence = function (arg) {
+    return (arg !== null && arg.mp$subscript !== undefined);
+};
+goog.exportSymbol("Sk.builtin.checkSequence", Sk.builtin.checkSequence);
+
+Sk.builtin.checkIterable = function (arg) {
+    return (arg !== null && arg.tp$iter !== undefined);
+};
+goog.exportSymbol("Sk.builtin.checkIterable", Sk.builtin.checkIterable);
+
+Sk.builtin.checkCallable = function (arg) {
+    if (typeof arg === "function")
+    {
+        return (!(arg instanceof Sk.builtin.none) && (arg.ob$type !== undefined));
+    }
+    else
+    {
+        return ((arg.tp$call !== undefined) || (arg.__call__ !== undefined));
+    }
+};
+
+Sk.builtin.checkNumber = function (arg) {
+    return (arg !== null && (typeof arg === "number" ||
+        arg instanceof Sk.builtin.nmber ||
+        arg instanceof Sk.builtin.lng ||
+        arg instanceof Sk.builtin.bool));
+};
+goog.exportSymbol("Sk.builtin.checkNumber", Sk.builtin.checkNumber);
+
+/**
+ * Checks for complex type, delegates to internal method
+ * Most skulpt users would search here!
+ */
+Sk.builtin.checkComplex = function (arg) {
+    return Sk.builtin.complex._complex_check(arg);
+};
+goog.exportSymbol("Sk.builtin.checkComplex", Sk.builtin.checkComplex);
+
+Sk.builtin.checkInt = function (arg) {
+    return (arg !== null) && ((typeof arg === "number" && arg === (arg | 0)) ||
+        (arg instanceof Sk.builtin.nmber &&
+            arg.skType === Sk.builtin.nmber.int$) ||
+        arg instanceof Sk.builtin.lng ||
+        arg instanceof Sk.builtin.bool);
+};
+goog.exportSymbol("Sk.builtin.checkInt", Sk.builtin.checkInt);
+
+Sk.builtin.checkFloat = function (arg) {
+    return (arg !== null) && (arg instanceof Sk.builtin.nmber &&
+            arg.skType === Sk.builtin.nmber.float$);
+};
+goog.exportSymbol("Sk.builtin.checkFloat", Sk.builtin.checkFloat);
+
+Sk.builtin.checkString = function (arg) {
+    return (arg !== null && arg.__class__ == Sk.builtin.str);
+};
+goog.exportSymbol("Sk.builtin.checkString", Sk.builtin.checkString);
+
+Sk.builtin.checkClass = function (arg) {
+    return (arg !== null && arg.sk$type);
+};
+goog.exportSymbol("Sk.builtin.checkClass", Sk.builtin.checkClass);
+
+Sk.builtin.checkBool = function (arg) {
+    return (arg instanceof Sk.builtin.bool);
+};
+goog.exportSymbol("Sk.builtin.checkBool", Sk.builtin.checkBool);
+
+Sk.builtin.checkNone = function (arg) {
+    return (arg instanceof Sk.builtin.none);
+};
+goog.exportSymbol("Sk.builtin.checkNone", Sk.builtin.checkNone);
+
+Sk.builtin.checkFunction = function (arg) {
+    return (arg !== null && arg.tp$call !== undefined);
+};
+goog.exportSymbol("Sk.builtin.checkFunction", Sk.builtin.checkFunction);
+
+/**
+ * @constructor
+ *
+ * @param {Function} code the javascript implementation of this function
+ * @param {Object=} globals the globals where this function was defined.
+ * Can be undefined (which will be stored as null) for builtins. (is
+ * that ok?)
+ * @param {Object=} closure dict of free variables
+ * @param {Object=} closure2 another dict of free variables that will be
+ * merged into 'closure'. there's 2 to simplify generated code (one is $free,
+ * the other is $cell)
+ *
+ * closure is the cell variables from the parent scope that we need to close
+ * over. closure2 is the free variables in the parent scope that we also might
+ * need to access.
+ *
+ * NOTE: co_varnames and co_name are defined by compiled code only, so we have
+ * to access them via dict-style lookup for closure.
+ *
+ */
+Sk.builtin.func = function (code, globals, closure, closure2) {
+    var k;
+    this.func_code = code;
+    this.func_globals = globals || null;
+    if (closure2 !== undefined) {
+        // todo; confirm that modification here can't cause problems
+        for (k in closure2) {
+            closure[k] = closure2[k];
+        }
+    }
+    this.func_closure = closure;
+    return this;
+};
+goog.exportSymbol("Sk.builtin.func", Sk.builtin.func);
+
+
+Sk.builtin.func.prototype.tp$name = "function";
+Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
+    goog.asserts.assert(obj !== undefined && objtype !== undefined);
+    if (obj == null) {
+        return this;
+    }
+    return new Sk.builtin.method(this, obj);
+};
+Sk.builtin.func.prototype.tp$call = function (args, kw) {
+    var j;
+    var i;
+    var numvarnames;
+    var varnames;
+    var kwlen;
+    var kwargsarr;
+    var expectskw;
+    var name;
+
+    // note: functions expect 'this' to be globals to avoid having to
+    // slice/unshift onto the main args
+    if (this.func_closure) {
+        // todo; OK to modify?
+        args.push(this.func_closure);
+    }
+
+    expectskw = this.func_code["co_kwargs"];
+    kwargsarr = [];
+
+    if (this.func_code["no_kw"] && kw) {
+        name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
+        throw new Sk.builtin.TypeError(name + "() takes no keyword arguments");
+    }
+
+    if (kw) {
+        // bind the kw args
+        kwlen = kw.length;
+        varnames = this.func_code["co_varnames"];
+        numvarnames = varnames && varnames.length;
+        for (i = 0; i < kwlen; i += 2) {
+            // todo; make this a dict mapping name to offset
+            for (j = 0; j < numvarnames; ++j) {
+                if (kw[i] === varnames[j]) {
+                    break;
+                }
+            }
+            if (varnames && j !== numvarnames) {
+                args[j] = kw[i + 1];
+            }
+            else if (expectskw) {
+                // build kwargs dict
+                kwargsarr.push(new Sk.builtin.str(kw[i]));
+                kwargsarr.push(kw[i + 1]);
+            }
+            else {
+                name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
+                throw new Sk.builtin.TypeError(name + "() got an unexpected keyword argument '" + kw[i] + "'");
+            }
+        }
+    }
+    if (expectskw) {
+        args.unshift(kwargsarr);
+    }
+
+    //print(JSON.stringify(args, null, 2));
+
+    return this.func_code.apply(this.func_globals, args);
+};
+
+Sk.builtin.func.prototype.tp$getattr = function (key) {
+    return this[key];
+};
+Sk.builtin.func.prototype.tp$setattr = function (key, value) {
+    this[key] = value;
+};
+
+//todo; investigate why the other doesn't work
+//Sk.builtin.type.makeIntoTypeObj('function', Sk.builtin.func);
+Sk.builtin.func.prototype.ob$type = Sk.builtin.type.makeTypeObj("function", new Sk.builtin.func(null, null));
+
+Sk.builtin.func.prototype["$r"] = function () {
+    var name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
+    return new Sk.builtin.str("<function " + name + ">");
+};
+/** 
+ * builtins are supposed to come from the __builtin__ module, but we don't do
+ * that yet.
+ * todo; these should all be func objects too, otherwise str() of them won't
+ * work, etc.
+ */
 
 Sk.builtin.range = function range (start, stop, step) {
     var ret = [];
@@ -5257,7 +6122,7 @@ Sk.builtin.asnum$nofloat = function (a) {
 goog.exportSymbol("Sk.builtin.asnum$nofloat", Sk.builtin.asnum$nofloat);
 
 Sk.builtin.round = function round (number, ndigits) {
-    var result, multiplier;
+    var result, multiplier, special;
     Sk.builtin.pyCheckArgs("round", arguments, 1, 2);
 
     if (!Sk.builtin.checkNumber(number)) {
@@ -5272,13 +6137,17 @@ Sk.builtin.round = function round (number, ndigits) {
         ndigits = 0;
     }
 
-    number = Sk.builtin.asnum$(number);
-    ndigits = Sk.misceval.asIndex(ndigits);
+    // for built-in types round is delegated to number.__round__
+    if(Sk.builtin.checkNumber(number)) {
+        return Sk.builtin.nmber.prototype.__round__.call(number, number, ndigits);
+    }
 
-    multiplier = Math.pow(10, ndigits);
-    result = Math.round(number * multiplier) / multiplier;
-
-    return new Sk.builtin.nmber(result, Sk.builtin.nmber.float$);
+    // try calling internal magic method
+    special = Sk.builtin.object.PyObject_LookupSpecial_(number.ob$type, "__round__");
+    if (special != null) {
+        // method on builtin, provide this arg
+        return Sk.misceval.callsim(special, number, ndigits);
+    }
 };
 
 Sk.builtin.len = function len (item) {
@@ -5465,9 +6334,13 @@ Sk.builtin.zip = function zip () {
 
 Sk.builtin.abs = function abs (x) {
     Sk.builtin.pyCheckArgs("abs", arguments, 1, 1);
-    Sk.builtin.pyCheckType("x", "number", Sk.builtin.checkNumber(x));
-
-    return new Sk.builtin.nmber(Math.abs(Sk.builtin.asnum$(x)), x.skType);
+    if (Sk.builtin.checkNumber(x)) {
+        return new Sk.builtin.nmber(Math.abs(Sk.builtin.asnum$(x)), x.skType);
+    } else if (Sk.builtin.checkComplex(x)) {
+        return Sk.misceval.callsim(x.__abs__, x);
+    }
+    
+    throw new TypeError("bad operand type for abs(): '" + Sk.abstr.typeName(x) + "'");
 };
 
 Sk.builtin.ord = function ord (x) {
@@ -5556,7 +6429,6 @@ Sk.builtin.dir = function dir (x) {
     var k;
     var names;
     var getName;
-    // todo; should also be callable with 0 params: gives locals then
     Sk.builtin.pyCheckArgs("dir", arguments, 1, 1);
 
     getName = function (k) {
@@ -5579,48 +6451,68 @@ Sk.builtin.dir = function dir (x) {
 
     names = [];
 
-    // Add all object properties
-    for (k in x.constructor.prototype) {
-        s = getName(k);
-        if (s) {
-            names.push(new Sk.builtin.str(s));
-        }
-    }
+    var _seq;
 
-    // Add all attributes
-    if (x["$d"]) {
-        if (x["$d"].tp$iter) {
-            // Dictionary
-            it = x["$d"].tp$iter();
-            for (i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-                s = new Sk.builtin.str(i);
-                s = getName(s.v);
-                if (s) {
+    // try calling magic method
+    var special = Sk.builtin.object.PyObject_LookupSpecial_(x.ob$type, "__dir__");
+    if(special != null) {
+        // method on builtin, provide this arg
+        _seq = Sk.misceval.callsim(special, x);
+
+        if (!Sk.builtin.checkSequence(_seq)) {
+            throw new Sk.builtin.TypeError("__dir__ must return sequence.");
+        }
+
+        // proper unwrapping
+        _seq = Sk.ffi.remapToJs(_seq);
+       
+        for (i = 0; i < _seq.length; ++i) {
+            names.push(new Sk.builtin.str(_seq[i]));
+        }
+    } else {
+        // Add all object properties
+        for (k in x.constructor.prototype) {
+            s = getName(k);
+            if (s) {
+                names.push(new Sk.builtin.str(s));
+            }
+        }
+
+        // Add all attributes
+        if (x["$d"]) {
+            if (x["$d"].tp$iter) {
+                // Dictionary
+                it = x["$d"].tp$iter();
+                for (i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+                    s = new Sk.builtin.str(i);
+                    s = getName(s.v);
+                    if (s) {
+                        names.push(new Sk.builtin.str(s));
+                    }
+                }
+            }
+            else {
+                // Object
+                for (s in x["$d"]) {
                     names.push(new Sk.builtin.str(s));
                 }
             }
         }
-        else {
-            // Object
-            for (s in x["$d"]) {
-                names.push(new Sk.builtin.str(s));
-            }
-        }
-    }
 
-    // Add all class attributes
-    mro = x.tp$mro;
-    if(!mro && x.ob$type) {
-        mro = x.ob$type.tp$mro;
-    }
-    if (mro) {
-        for (i = 0; i < mro.v.length; ++i) {
-            base = mro.v[i];
-            for (prop in base) {
-                if (base.hasOwnProperty(prop)) {
-                    s = getName(prop);
-                    if (s) {
-                        names.push(new Sk.builtin.str(s));
+        // Add all class attributes
+        mro = x.tp$mro;
+        if(!mro && x.ob$type) {
+            mro = x.ob$type.tp$mro;
+        }
+        if (mro) {
+            for (i = 0; i < mro.v.length; ++i) {
+                base = mro.v[i];
+                for (prop in base) {
+                    if (base.hasOwnProperty(prop)) {
+                        s = getName(prop);
+                        if (s) {
+                            names.push(new Sk.builtin.str(s));
+                        }
                     }
                 }
             }
@@ -5742,6 +6634,11 @@ Sk.builtin.hash = function hash (value) {
     junk = {__hash__: function () {
         return 0;
     }};
+
+    if ((value instanceof Object) && Sk.builtin.checkNone(value.tp$hash)) {
+        // python sets the hash function to None , so we have to catch this case here
+        throw new Sk.builtin.TypeError(new Sk.builtin.str("unhashable type: '" + Sk.abstr.typeName(value) + "'"));
+    }
 
     if ((value instanceof Object) && (value.tp$hash !== undefined)) {
         if (value.$savedHash_) {
@@ -6059,6 +6956,11 @@ Sk.builtin.pow = function pow (a, b, c) {
         c = undefined;
     }
 
+    // add complex type hook here, builtin is messed up anyways
+    if (Sk.builtin.checkComplex(a)) {
+        return a.nb$power(b, c); // call complex pow function
+    }
+
     a_num = Sk.builtin.asnum$(a);
     b_num = Sk.builtin.asnum$(b);
     c_num = Sk.builtin.asnum$(c);
@@ -6123,25 +7025,6 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
         throw new Sk.builtin.TypeError("issubclass() arg 2 must be a classinfo, type, or tuple of classes and types");
     }
 
-    //print("c1 name: " + c1.tp$name);
-
-    if (c2 === Sk.builtin.int_.prototype.ob$type) {
-        return true;
-    }
-
-    if (c2 === Sk.builtin.float_.prototype.ob$type) {
-        return true;
-    }
-
-    if (c2 === Sk.builtin.none.prototype.ob$type) {
-        return true;
-    }
-
-    // Normal case
-    if (c1.ob$type === c2) {
-        return true;
-    }
-
     issubclass_internal = function (klass, base) {
         var i;
         var bases;
@@ -6164,6 +7047,15 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
         return false;
     };
 
+    if (Sk.builtin.checkClass(c2)) {
+        /* Quick test for an exact match */
+        if (c1 === c2) {
+            return true;
+        }
+
+        return issubclass_internal(c1, c2);
+    }
+
     // Handle tuple type argument
     if (c2 instanceof Sk.builtin.tuple) {
         for (i = 0; i < c2.v.length; ++i) {
@@ -6173,9 +7065,6 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
         }
         return false;
     }
-
-    return issubclass_internal(c1, c2);
-
 };
 
 Sk.builtin.globals = function globals () {
@@ -6193,6 +7082,16 @@ Sk.builtin.divmod = function divmod (a, b) {
     return Sk.abstr.numberBinOp(a, b, "DivMod");
 };
 
+/**
+ * Convert a value to a “formatted” representation, as controlled by format_spec. The interpretation of format_spec 
+ * will depend on the type of the value argument, however there is a standard formatting syntax that is used by most
+ * built-in types: Format Specification Mini-Language.
+ */
+Sk.builtin.format = function format (value, format_spec) {
+    Sk.builtin.pyCheckArgs("format", arguments, 1, 2);
+
+    return Sk.abstr.objectFormat(value, format_spec);
+};
 
 Sk.builtin.bytearray = function bytearray () {
     throw new Sk.builtin.NotImplementedError("bytearray is not yet implemented");
@@ -6200,18 +7099,14 @@ Sk.builtin.bytearray = function bytearray () {
 Sk.builtin.callable = function callable () {
     throw new Sk.builtin.NotImplementedError("callable is not yet implemented");
 };
-Sk.builtin.complex = function complex () {
-    throw new Sk.builtin.NotImplementedError("complex is not yet implemented");
-};
+
 Sk.builtin.delattr = function delattr () {
     throw new Sk.builtin.NotImplementedError("delattr is not yet implemented");
 };
 Sk.builtin.execfile = function execfile () {
     throw new Sk.builtin.NotImplementedError("execfile is not yet implemented");
 };
-Sk.builtin.format = function format () {
-    throw new Sk.builtin.NotImplementedError("format is not yet implemented");
-};
+
 Sk.builtin.frozenset = function frozenset () {
     throw new Sk.builtin.NotImplementedError("frozenset is not yet implemented");
 };
@@ -6824,592 +7719,6 @@ goog.exportSymbol("Sk.builtin.SystemError", Sk.builtin.SystemError);
 
 
 goog.exportSymbol("Sk", Sk);
-/**
- *
- * @constructor
- *
- * @param {*} name name or object to get type of, if only one arg
- *
- * @param {Array.<Object>=} bases
- *
- * @param {Object=} dict
- *
- *
- * This type represents the type of `type'. *Calling* an instance of
- * this builtin type named "type" creates class objects. The resulting
- * class objects will have various tp$xyz attributes on them that allow
- * for the various operations on that object.
- *
- * calling the type or calling an instance of the type? or both?
- */
-
-Sk.builtin.type = function (name, bases, dict) {
-    var mro;
-    var obj;
-    var klass;
-    var v;
-    if (bases === undefined && dict === undefined) {
-        // 1 arg version of type()
-        // the argument is an object, not a name and returns a type object
-        obj = name;
-        if (obj.constructor === Sk.builtin.nmber) {
-            if (obj.skType === Sk.builtin.nmber.int$) {
-                return Sk.builtin.int_.prototype.ob$type;
-            }
-            else {
-                return Sk.builtin.float_.prototype.ob$type;
-            }
-        }
-        return obj.ob$type;
-    }
-    else {
-
-        // argument dict must be of type dict
-        if(dict.tp$name !== "dict") {
-            throw new Sk.builtin.TypeError("type() argument 3 must be dict, not " + Sk.abstr.typeName(dict));
-        }
-
-        // checks if name must be string
-        if(!Sk.builtin.checkString(name)) {
-            throw new Sk.builtin.TypeError("type() argument 1 must be str, not " + Sk.abstr.typeName(name));
-        }
-
-        // argument bases must be of type tuple
-        if(bases.tp$name !== "tuple") {
-            throw new Sk.builtin.TypeError("type() argument 2 must be tuple, not " + Sk.abstr.typeName(bases));
-        }
-
-        // type building version of type
-
-        // dict is the result of running the classes code object
-        // (basically the dict of functions). those become the prototype
-        // object of the class).
-        /**
-        * @constructor
-        */
-        klass = function (kwdict, varargseq, kws, args, canSuspend) {
-            var init;
-            var self = this;
-            var s;
-            if (!(this instanceof klass)) {
-                return new klass(kwdict, varargseq, kws, args, canSuspend);
-            }
-
-            args = args || [];
-            self["$d"] = new Sk.builtin.dict([]);
-
-
-            init = Sk.builtin.type.typeLookup(self.ob$type, "__init__");
-            if (init !== undefined) {
-                // return should be None or throw a TypeError otherwise
-                args.unshift(self);
-                s = Sk.misceval.applyOrSuspend(init, kwdict, varargseq, kws, args);
-
-                return (function doSusp(s) {
-                    if (s instanceof Sk.misceval.Suspension) {
-                        // TODO I (Meredydd) don't know whether we are ever called
-                        // from anywhere except Sk.misceval.applyOrSuspend().
-                        // If we're not, we don't need a canSuspend parameter at all.
-                        if (canSuspend) {
-                            return new Sk.misceval.Suspension(doSusp, s);
-                        } else {
-                            return Sk.misceval.retryOptionalSuspensionOrThrow(s);
-                        }
-                    } else {
-                        return self;
-                    }
-                })(s);
-            }
-
-            return self;
-        };
-
-        // set __module__ if not present (required by direct type(name, bases, dict) calls)
-        var module_lk = new Sk.builtin.str("__module__");
-        if(dict.mp$lookup(module_lk) === undefined) {
-            dict.mp$ass_subscript(module_lk, Sk.globals["__name__"]);
-        }
-
-        // copy properties into our klass object
-        // uses python iter methods
-        var it, k;
-        for (it = dict.tp$iter(), k = it.tp$iternext(); k !== undefined; k = it.tp$iternext()) {
-            v = dict.mp$subscript(k);
-            if (v === undefined) {
-                v = null;
-            }
-            klass.prototype[k.v] = v;
-            klass[k.v] = v;
-        }
-
-        var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
-        klass["__class__"] = klass;
-        klass["__name__"] = name;
-        klass.sk$klass = true;
-        klass.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
-        klass.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
-        klass.prototype.tp$descr_get = function () {
-            goog.asserts.fail("in type tp$descr_get");
-        };
-        klass.prototype["$r"] = function () {
-            var cname;
-            var mod;
-            var reprf = this.tp$getattr("__repr__");
-            if (reprf !== undefined) {
-                return Sk.misceval.apply(reprf, undefined, undefined, undefined, []);
-            }
-            mod = dict.mp$subscript(module_lk); // lookup __module__
-            cname = "";
-            if (mod) {
-                cname = mod.v + ".";
-            }
-            return new Sk.builtin.str("<" + cname + _name + " object>");
-        };
-        klass.prototype.tp$str = function () {
-            var strf = this.tp$getattr("__str__");
-            if (strf !== undefined) {
-                return Sk.misceval.apply(strf, undefined, undefined, undefined, []);
-            }
-            return this["$r"]();
-        };
-        klass.prototype.tp$length = function () {
-            var tname;
-            var lenf = this.tp$getattr("__len__");
-            if (lenf !== undefined) {
-                return Sk.misceval.apply(lenf, undefined, undefined, undefined, []);
-            }
-            tname = Sk.abstr.typeName(this);
-            throw new Sk.builtin.AttributeError(tname + " instance has no attribute '__len__'");
-        };
-        klass.prototype.tp$call = function (args, kw) {
-            var callf = this.tp$getattr("__call__");
-            /* todo; vararg kwdict */
-            if (callf) {
-                return Sk.misceval.apply(callf, undefined, undefined, kw, args);
-            }
-            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object is not callable");
-        };
-        klass.prototype.tp$iter = function () {
-            var ret;
-            var iterf = this.tp$getattr("__iter__");
-            var tname = Sk.abstr.typeName(this);
-            if (iterf) {
-                ret = Sk.misceval.callsim(iterf);
-                // This check does not work for builtin iterators
-                // if (ret.tp$getattr("next") === undefined)
-                //    throw new Sk.builtin.TypeError("iter() return non-iterator of type '" + tname + "'");
-                return ret;
-            }
-            throw new Sk.builtin.TypeError("'" + tname + "' object is not iterable");
-        };
-        klass.prototype.tp$iternext = function () {
-            var iternextf = this.tp$getattr("next");
-            goog.asserts.assert(iternextf !== undefined, "iter() should have caught this");
-            return Sk.misceval.callsim(iternextf);
-        };
-        klass.prototype.tp$getitem = function (key, canSuspend) {
-            var getf = this.tp$getattr("__getitem__"), r;
-            if (getf !== undefined) {
-                r = Sk.misceval.applyOrSuspend(getf, undefined, undefined, undefined, [key]);
-                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
-            }
-            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support indexing");
-        };
-        klass.prototype.tp$setitem = function (key, value, canSuspend) {
-            var setf = this.tp$getattr("__setitem__"), r;
-            if (setf !== undefined) {
-                r = Sk.misceval.applyOrSuspend(setf, undefined, undefined, undefined, [key, value]);
-                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
-            }
-            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support item assignment");
-        };
-
-        klass.prototype.tp$name = _name;
-
-        if (bases) {
-            //print("building mro for", name);
-            //for (var i = 0; i < bases.length; ++i)
-            //print("base[" + i + "]=" + bases[i].tp$name);
-            klass["$d"] = new Sk.builtin.dict([]);
-            klass["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, bases);
-            mro = Sk.builtin.type.buildMRO(klass);
-            klass["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, mro);
-            klass.tp$mro = mro;
-            //print("mro result", Sk.builtin.repr(mro).v);
-        }
-
-        klass.prototype.ob$type = klass;
-        Sk.builtin.type.makeIntoTypeObj(_name, klass);
-
-        // fix for class attributes
-        klass.tp$setattr = Sk.builtin.type.prototype.tp$setattr;
-
-        return klass;
-    }
-
-};
-
-/**
- *
- */
-Sk.builtin.type.makeTypeObj = function (name, newedInstanceOfType) {
-    Sk.builtin.type.makeIntoTypeObj(name, newedInstanceOfType);
-    return newedInstanceOfType;
-};
-
-Sk.builtin.type.makeIntoTypeObj = function (name, t) {
-    goog.asserts.assert(name !== undefined);
-    goog.asserts.assert(t !== undefined);
-    t.ob$type = Sk.builtin.type;
-    t.tp$name = name;
-    t["$r"] = function () {
-        var ctype;
-        var mod = t.__module__;
-        var cname = "";
-        if (mod) {
-            cname = mod.v + ".";
-        }
-        ctype = "class";
-        if (!mod && !t.sk$klass) {
-            ctype = "type";
-        }
-        return new Sk.builtin.str("<" + ctype + " '" + cname + t.tp$name + "'>");
-    };
-    t.tp$str = undefined;
-    t.tp$getattr = Sk.builtin.type.prototype.tp$getattr;
-    t.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
-    t.tp$richcompare = Sk.builtin.type.prototype.tp$richcompare;
-    t.sk$type = true;
-    return t;
-};
-
-Sk.builtin.type.ob$type = Sk.builtin.type;
-Sk.builtin.type.tp$name = "type";
-Sk.builtin.type["$r"] = function () {
-    return new Sk.builtin.str("<type 'type'>");
-};
-
-//Sk.builtin.type.prototype.tp$descr_get = function() { print("in type descr_get"); };
-
-//Sk.builtin.type.prototype.tp$name = "type";
-
-// basically the same as GenericGetAttr except looks in the proto instead
-Sk.builtin.type.prototype.tp$getattr = function (name) {
-    var res;
-    var tp = this;
-    var descr = Sk.builtin.type.typeLookup(tp, name);
-    var f;
-    //print("type.tpgetattr descr", descr, descr.tp$name, descr.func_code, name);
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
-        // todo;if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        // return f.call(descr, this, this.ob$type);
-    }
-
-    if (this["$d"]) {
-        res = this["$d"].mp$lookup(new Sk.builtin.str(name));
-        if (res !== undefined) {
-            return res;
-        }
-    }
-
-    if (f) {
-        // non-data descriptor
-        return f.call(descr, null, tp);
-    }
-
-    if (descr !== undefined) {
-        return descr;
-    }
-
-    return undefined;
-};
-
-Sk.builtin.type.prototype.tp$setattr = function (name, value) {
-    // class attributes are direct properties of the object
-    this[name] = value;
-};
-
-Sk.builtin.type.typeLookup = function (type, name) {
-    var mro = type.tp$mro;
-    var pyname = new Sk.builtin.str(name);
-    var base;
-    var res;
-    var i;
-
-    // todo; probably should fix this, used for builtin types to get stuff
-    // from prototype
-    if (!mro) {
-        return type.prototype[name];
-    }
-
-    for (i = 0; i < mro.v.length; ++i) {
-        base = mro.v[i];
-        if (base.hasOwnProperty(name)) {
-            return base[name];
-        }
-        res = base["$d"].mp$lookup(pyname);
-        if (res !== undefined) {
-            return res;
-        }
-    }
-
-    return undefined;
-};
-
-Sk.builtin.type.mroMerge_ = function (seqs) {
-    /*
-     var tmp = [];
-     for (var i = 0; i < seqs.length; ++i)
-     {
-     tmp.push(new Sk.builtin.list(seqs[i]));
-     }
-     print(Sk.builtin.repr(new Sk.builtin.list(tmp)).v);
-     */
-    var seq;
-    var i;
-    var next;
-    var k;
-    var sseq;
-    var j;
-    var cand;
-    var cands;
-    var res = [];
-    for (; ;) {
-        for (i = 0; i < seqs.length; ++i) {
-            seq = seqs[i];
-            if (seq.length !== 0) {
-                break;
-            }
-        }
-        if (i === seqs.length) // all empty
-        {
-            return res;
-        }
-        cands = [];
-        for (i = 0; i < seqs.length; ++i) {
-            seq = seqs[i];
-            //print("XXX", Sk.builtin.repr(new Sk.builtin.list(seq)).v);
-            if (seq.length !== 0) {
-                cand = seq[0];
-                //print("CAND", Sk.builtin.repr(cand).v);
-                OUTER:
-                    for (j = 0; j < seqs.length; ++j) {
-                        sseq = seqs[j];
-                        for (k = 1; k < sseq.length; ++k) {
-                            if (sseq[k] === cand) {
-                                break OUTER;
-                            }
-                        }
-                    }
-
-                // cand is not in any sequences' tail -> constraint-free
-                if (j === seqs.length) {
-                    cands.push(cand);
-                }
-            }
-        }
-
-        if (cands.length === 0) {
-            throw new Sk.builtin.TypeError("Inconsistent precedences in type hierarchy");
-        }
-
-        next = cands[0];
-        // append next to result and remove from sequences
-        res.push(next);
-        for (i = 0; i < seqs.length; ++i) {
-            seq = seqs[i];
-            if (seq.length > 0 && seq[0] === next) {
-                seq.splice(0, 1);
-            }
-        }
-    }
-};
-
-Sk.builtin.type.buildMRO_ = function (klass) {
-    // MERGE(klass + mro(bases) + bases)
-    var i;
-    var bases;
-    var all = [
-        [klass]
-    ];
-
-    // Sk.debugout("buildMRO for", klass.tp$name);
-
-    var kbases = klass["$d"].mp$subscript(Sk.builtin.type.basesStr_);
-    for (i = 0; i < kbases.v.length; ++i) {
-        all.push(Sk.builtin.type.buildMRO_(kbases.v[i]));
-    }
-
-    bases = [];
-    for (i = 0; i < kbases.v.length; ++i) {
-        bases.push(kbases.v[i]);
-    }
-    all.push(bases);
-
-    return Sk.builtin.type.mroMerge_(all);
-};
-
-/*
- * C3 MRO (aka CPL) linearization. Figures out which order to search through
- * base classes to determine what should override what. C3 does the "right
- * thing", and it's what Python has used since 2.3.
- *
- * Kind of complicated to explain, but not really that complicated in
- * implementation. Explanations:
- *
- * http://people.csail.mit.edu/jrb/goo/manual.43/goomanual_55.html
- * http://www.python.org/download/releases/2.3/mro/
- * http://192.220.96.201/dylan/linearization-oopsla96.html
- *
- * This implementation is based on a post by Samuele Pedroni on python-dev
- * (http://mail.python.org/pipermail/python-dev/2002-October/029176.html) when
- * discussing its addition to Python.
- */
-Sk.builtin.type.buildMRO = function (klass) {
-    return new Sk.builtin.tuple(Sk.builtin.type.buildMRO_(klass));
-};
-
-Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
-    var r2;
-    var r1;
-    if (other.ob$type != Sk.builtin.type) {
-        return undefined;
-    }
-
-    if (!this["$r"] || !other["$r"]) {
-        return undefined;
-    }
-
-    r1 = this["$r"]();
-    r2 = other["$r"]();
-
-    return r1.tp$richcompare(r2, op);
-};
-/**
- * @constructor
- */
-Sk.builtin.object = function () {
-    if (!(this instanceof Sk.builtin.object)) {
-        return new Sk.builtin.object();
-    }
-    this["$d"] = new Sk.builtin.dict([]);
-    return this;
-};
-
-/**
- * @return {undefined}
- */
-Sk.builtin.object.prototype.GenericGetAttr = function (name) {
-    var res;
-    var f;
-    var descr;
-    var tp;
-    goog.asserts.assert(typeof name === "string");
-
-    tp = this.ob$type;
-    goog.asserts.assert(tp !== undefined, "object has no ob$type!");
-
-    //print("getattr", tp.tp$name, name);
-
-    descr = Sk.builtin.type.typeLookup(tp, name);
-
-    // otherwise, look in the type for a descr
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
-        // todo;
-        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        //return f.call(descr, this, this.ob$type);
-    }
-
-    // todo; assert? force?
-    if (this["$d"]) {
-        if (this["$d"].mp$lookup) {
-            res = this["$d"].mp$lookup(new Sk.builtin.str(name));
-        }
-        else if (this["$d"].mp$subscript) {
-            try {
-                res = this["$d"].mp$subscript(new Sk.builtin.str(name));
-            } catch (x) {
-                res = undefined;
-            }
-        }
-        else if (typeof this["$d"] === "object") // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
-        {
-            res = this["$d"][name];
-        }
-        if (res !== undefined) {
-            return res;
-        }
-    }
-
-    if (f) {
-        // non-data descriptor
-        return f.call(descr, this, this.ob$type);
-    }
-
-    if (descr !== undefined) {
-        return descr;
-    }
-
-    return undefined;
-};
-goog.exportSymbol("Sk.builtin.object.prototype.GenericGetAttr", Sk.builtin.object.prototype.GenericGetAttr);
-
-Sk.builtin.object.prototype.GenericPythonGetAttr = function(self, name) {
-    return Sk.builtin.object.prototype.GenericGetAttr.call(self, name.v);
-};
-goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin.object.prototype.GenericPythonGetAttr);
-
-Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
-    goog.asserts.assert(typeof name === "string");
-    // todo; lots o' stuff
-    if (this["$d"].mp$ass_subscript) {
-        this["$d"].mp$ass_subscript(new Sk.builtin.str(name), value);
-    }
-    else if (typeof this["$d"] === "object") {
-        this["$d"][name] = value;
-    }
-};
-goog.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
-
-Sk.builtin.object.prototype.GenericPythonSetAttr = function(self, name, value) {
-    return Sk.builtin.object.prototype.GenericSetAttr.call(self, name.v, value);
-};
-goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonSetAttr", Sk.builtin.object.prototype.GenericPythonSetAttr);
-
-Sk.builtin.object.prototype.HashNotImplemented = function () {
-    throw new Sk.builtin.TypeError("unhashable type: '" + Sk.abstr.typeName(this) + "'");
-};
-
-Sk.builtin.object.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
-Sk.builtin.object.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
-
-// Although actual attribute-getting happens in pure Javascript via tp$getattr, classes
-// overriding __getattr__ etc need to be able to call object.__getattr__ etc from Python
-Sk.builtin.object.prototype["__getattr__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
-Sk.builtin.object.prototype["__setattr__"] = Sk.builtin.object.prototype.GenericPythonSetAttr;
-
-Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
-
-/**
- * @constructor
- */
-Sk.builtin.none = function () {
-};
-Sk.builtin.none.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NoneType", Sk.builtin.none);
-Sk.builtin.none.prototype.tp$name = "NoneType";
-Sk.builtin.none.none$ = Object.create(Sk.builtin.none.prototype, {v: {value: null, enumerable: true}});
-
-Sk.builtin.NotImplemented = function() {};
-Sk.builtin.NotImplemented.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("NotImplementedType", Sk.builtin.NotImplemented);
-Sk.builtin.NotImplemented.prototype.tp$name = "NotImplementedType";
-Sk.builtin.NotImplemented.prototype["$r"] = function () { return new Sk.builtin.str("NotImplemented"); };
-Sk.builtin.NotImplemented.NotImplemented$ = Object.create(Sk.builtin.NotImplemented.prototype, {v: {value: null, enumerable: false}});
-
-
-goog.exportSymbol("Sk.builtin.none", Sk.builtin.none);
-goog.exportSymbol("Sk.builtin.NotImplemented", Sk.builtin.NotImplemented);
 Sk.builtin.bool = function (x) {
     Sk.builtin.pyCheckArgs("bool", arguments, 1);
     if (Sk.misceval.isTrue(x)) {
@@ -7430,248 +7739,20 @@ Sk.builtin.bool.prototype["$r"] = function () {
     return new Sk.builtin.str("False");
 };
 
+Sk.builtin.bool.prototype.__int__ = new Sk.builtin.func(function(self) {
+    var v = Sk.builtin.asnum$(self);
+
+    return new Sk.builtin.nmber(v, Sk.builtin.nmber.int$);
+});
+
+Sk.builtin.bool.prototype.__float__ = new Sk.builtin.func(function(self) {
+    return new Sk.builtin.nmber(Sk.ffi.remapToJs(self), Sk.builtin.nmber.float$);
+});
+
 Sk.builtin.bool.true$ = Object.create(Sk.builtin.bool.prototype, {v: {value: true, enumerable: true}});
 Sk.builtin.bool.false$ = Object.create(Sk.builtin.bool.prototype, {v: {value: false, enumerable: true}});
 
-goog.exportSymbol("Sk.builtin.bool", Sk.builtin.bool);/**
- * Check arguments to Python functions to ensure the correct number of
- * arguments are passed.
- *
- * @param {string} name the name of the function
- * @param {Object} args the args passed to the function
- * @param {number} minargs the minimum number of allowable arguments
- * @param {number=} maxargs optional maximum number of allowable
- * arguments (default: Infinity)
- * @param {boolean=} kwargs optional true if kwargs, false otherwise
- * (default: false)
- * @param {boolean=} free optional true if free vars, false otherwise
- * (default: false)
- */
-Sk.builtin.pyCheckArgs = function (name, args, minargs, maxargs, kwargs, free) {
-    var nargs = args.length;
-    var msg = "";
-
-    if (maxargs === undefined) {
-        maxargs = Infinity;
-    }
-    if (kwargs) {
-        nargs -= 1;
-    }
-    if (free) {
-        nargs -= 1;
-    }
-    if ((nargs < minargs) || (nargs > maxargs)) {
-        if (minargs === maxargs) {
-            msg = name + "() takes exactly " + minargs + " arguments";
-        } else if (nargs < minargs) {
-            msg = name + "() takes at least " + minargs + " arguments";
-        } else {
-            msg = name + "() takes at most " + maxargs + " arguments";
-        }
-        msg += " (" + nargs + " given)";
-        throw new Sk.builtin.TypeError(msg);
-    }
-};
-goog.exportSymbol("Sk.builtin.pyCheckArgs", Sk.builtin.pyCheckArgs);
-
-/**
- * Check type of argument to Python functions.
- *
- * @param {string} name the name of the argument
- * @param {string} exptype string of the expected type name
- * @param {boolean} check truthy if type check passes, falsy otherwise
- */
-
-Sk.builtin.pyCheckType = function (name, exptype, check) {
-    if (!check) {
-        throw new Sk.builtin.TypeError(name + " must be a " + exptype);
-    }
-};
-goog.exportSymbol("Sk.builtin.pyCheckType", Sk.builtin.pyCheckType);
-
-Sk.builtin.checkSequence = function (arg) {
-    return (arg !== null && arg.mp$subscript !== undefined);
-};
-goog.exportSymbol("Sk.builtin.checkSequence", Sk.builtin.checkSequence);
-
-Sk.builtin.checkIterable = function (arg) {
-    return (arg !== null && arg.tp$iter !== undefined);
-};
-goog.exportSymbol("Sk.builtin.checkIterable", Sk.builtin.checkIterable);
-
-Sk.builtin.checkCallable = function (arg) {
-    if (typeof arg === "function")
-    {
-        return (!(arg instanceof Sk.builtin.none) && (arg.ob$type !== undefined));
-    }
-    else
-    {
-        return ((arg.tp$call !== undefined) || (arg.__call__ !== undefined));
-    }
-};
-
-Sk.builtin.checkNumber = function (arg) {
-    return (arg !== null && (typeof arg === "number" ||
-        arg instanceof Sk.builtin.nmber ||
-        arg instanceof Sk.builtin.lng ||
-        arg instanceof Sk.builtin.bool));
-};
-goog.exportSymbol("Sk.builtin.checkNumber", Sk.builtin.checkNumber);
-
-Sk.builtin.checkInt = function (arg) {
-    return (arg !== null) && ((typeof arg === "number" && arg === (arg | 0)) ||
-        (arg instanceof Sk.builtin.nmber &&
-            arg.skType === Sk.builtin.nmber.int$) ||
-        arg instanceof Sk.builtin.lng ||
-        arg instanceof Sk.builtin.bool);
-};
-goog.exportSymbol("Sk.builtin.checkInt", Sk.builtin.checkInt);
-
-Sk.builtin.checkString = function (arg) {
-    return (arg !== null && arg.__class__ == Sk.builtin.str);
-};
-goog.exportSymbol("Sk.builtin.checkString", Sk.builtin.checkString);
-
-Sk.builtin.checkClass = function (arg) {
-    return (arg !== null && arg.sk$type);
-};
-goog.exportSymbol("Sk.builtin.checkClass", Sk.builtin.checkClass);
-
-Sk.builtin.checkBool = function (arg) {
-    return (arg instanceof Sk.builtin.bool);
-};
-goog.exportSymbol("Sk.builtin.checkBool", Sk.builtin.checkBool);
-
-Sk.builtin.checkNone = function (arg) {
-    return (arg instanceof Sk.builtin.none);
-};
-goog.exportSymbol("Sk.builtin.checkNone", Sk.builtin.checkNone);
-
-Sk.builtin.checkFunction = function (arg) {
-    return (arg !== null && arg.tp$call !== undefined);
-};
-goog.exportSymbol("Sk.builtin.checkFunction", Sk.builtin.checkFunction);
-
-/**
- * @constructor
- *
- * @param {Function} code the javascript implementation of this function
- * @param {Object=} globals the globals where this function was defined.
- * Can be undefined (which will be stored as null) for builtins. (is
- * that ok?)
- * @param {Object=} closure dict of free variables
- * @param {Object=} closure2 another dict of free variables that will be
- * merged into 'closure'. there's 2 to simplify generated code (one is $free,
- * the other is $cell)
- *
- * closure is the cell variables from the parent scope that we need to close
- * over. closure2 is the free variables in the parent scope that we also might
- * need to access.
- *
- * NOTE: co_varnames and co_name are defined by compiled code only, so we have
- * to access them via dict-style lookup for closure.
- *
- */
-Sk.builtin.func = function (code, globals, closure, closure2) {
-    var k;
-    this.func_code = code;
-    this.func_globals = globals || null;
-    if (closure2 !== undefined) {
-        // todo; confirm that modification here can't cause problems
-        for (k in closure2) {
-            closure[k] = closure2[k];
-        }
-    }
-    this.func_closure = closure;
-    return this;
-};
-goog.exportSymbol("Sk.builtin.func", Sk.builtin.func);
-
-
-Sk.builtin.func.prototype.tp$name = "function";
-Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
-    goog.asserts.assert(obj !== undefined && objtype !== undefined);
-    if (obj == null) {
-        return this;
-    }
-    return new Sk.builtin.method(this, obj);
-};
-Sk.builtin.func.prototype.tp$call = function (args, kw) {
-    var j;
-    var i;
-    var numvarnames;
-    var varnames;
-    var kwlen;
-    var kwargsarr;
-    var expectskw;
-    var name;
-
-    // note: functions expect 'this' to be globals to avoid having to
-    // slice/unshift onto the main args
-    if (this.func_closure) {
-        // todo; OK to modify?
-        args.push(this.func_closure);
-    }
-
-    expectskw = this.func_code["co_kwargs"];
-    kwargsarr = [];
-
-    if (this.func_code["no_kw"] && kw) {
-        name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-        throw new Sk.builtin.TypeError(name + "() takes no keyword arguments");
-    }
-
-    if (kw) {
-        // bind the kw args
-        kwlen = kw.length;
-        varnames = this.func_code["co_varnames"];
-        numvarnames = varnames && varnames.length;
-        for (i = 0; i < kwlen; i += 2) {
-            // todo; make this a dict mapping name to offset
-            for (j = 0; j < numvarnames; ++j) {
-                if (kw[i] === varnames[j]) {
-                    break;
-                }
-            }
-            if (varnames && j !== numvarnames) {
-                args[j] = kw[i + 1];
-            }
-            else if (expectskw) {
-                // build kwargs dict
-                kwargsarr.push(new Sk.builtin.str(kw[i]));
-                kwargsarr.push(kw[i + 1]);
-            }
-            else {
-                name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-                throw new Sk.builtin.TypeError(name + "() got an unexpected keyword argument '" + kw[i] + "'");
-            }
-        }
-    }
-    if (expectskw) {
-        args.unshift(kwargsarr);
-    }
-
-    //print(JSON.stringify(args, null, 2));
-
-    return this.func_code.apply(this.func_globals, args);
-};
-
-Sk.builtin.func.prototype.tp$getattr = function (key) {
-    return this[key];
-};
-Sk.builtin.func.prototype.tp$setattr = function (key, value) {
-    this[key] = value;
-};
-
-//todo; investigate why the other doesn't work
-//Sk.builtin.type.makeIntoTypeObj('function', Sk.builtin.func);
-Sk.builtin.func.prototype.ob$type = Sk.builtin.type.makeTypeObj("function", new Sk.builtin.func(null, null));
-
-Sk.builtin.func.prototype["$r"] = function () {
-    var name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-    return new Sk.builtin.str("<function " + name + ">");
-};
-/*jshint loopfunc: true */
+goog.exportSymbol("Sk.builtin.bool", Sk.builtin.bool);/*jshint loopfunc: true */
 
 /*
  * Object to facilitate building native Javascript functions that
@@ -8144,11 +8225,15 @@ Sk.misceval.richCompareBool = function (v, w, op) {
 
     // use comparison methods if they are given for either object
     if (v.tp$richcompare && (res = v.tp$richcompare(w, op)) !== undefined) {
-        return res;
+        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
+            return res;
+        }
     }
 
     if (w.tp$richcompare && (res = w.tp$richcompare(v, Sk.misceval.swappedOp_[op])) !== undefined) {
-        return res;
+        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
+            return res;
+        }
     }
 
 
@@ -8168,10 +8253,16 @@ Sk.misceval.richCompareBool = function (v, w, op) {
     swapped_method = op2method[Sk.misceval.swappedOp_[op]];
 
     if (v[method]) {
-        return Sk.misceval.isTrue(Sk.misceval.callsim(v[method], v, w));
+        res = Sk.misceval.isTrue(Sk.misceval.callsim(v[method], v, w));
+        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
+            return res;
+        }
     }
     else if (w[swapped_method]) {
-        return Sk.misceval.isTrue(Sk.misceval.callsim(w[swapped_method], w, v));
+        res = Sk.misceval.isTrue(Sk.misceval.callsim(w[swapped_method], w, v));
+        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
+            return res;
+        }
     }
 
     if (v["__cmp__"]) {
@@ -8332,6 +8423,11 @@ Sk.misceval.isTrue = function (x) {
     if (x.constructor === Sk.builtin.none) {
         return false;
     }
+
+    if (x.constructor === Sk.builtin.NotImplemented) {
+        return false;
+    }
+
     if (x.constructor === Sk.builtin.bool) {
         return x.v;
     }
@@ -9111,6 +9207,11 @@ Sk.abstr.numOpAndPromote = function (a, b, opfn) {
 
     if (a.constructor === Sk.builtin.lng) {
         return [a, b];
+    } else if (a.constructor === Sk.builtin.nmber && b.constructor === Sk.builtin.complex) {
+        // special case of upconverting nmber and complex
+        // can we use here the Sk.builtin.checkComplex() method?
+        tmp = new Sk.builtin.complex(a);
+        return [tmp, b];
     } else if (a.constructor === Sk.builtin.nmber) {
         return [a, b];
     } else if (typeof a === "number") {
@@ -9301,8 +9402,20 @@ Sk.abstr.fixSeqIndex_ = function (seq, i) {
 Sk.abstr.sequenceContains = function (seq, ob) {
     var it, i;
     var seqtypename;
+    var special;
+
     if (seq.sq$contains) {
         return seq.sq$contains(ob);
+    }
+
+    /** 
+     *  Look for special method and call it, we have to distinguish between built-ins and 
+     *  python objects
+     */
+    special = Sk.builtin.object.PyObject_LookupSpecial_(seq.ob$type, "__contains__");
+    if (special != null) {
+        // method on builtin, provide this arg
+        return Sk.misceval.callsim(special, seq, ob);
     }
 
     seqtypename = Sk.abstr.typeName(seq);
@@ -9436,6 +9549,30 @@ Sk.abstr.sequenceSetSlice = function (seq, i1, i2, x) {
         seqtypename = Sk.abstr.typeName(seq);
         throw new Sk.builtin.TypeError("'" + seqtypename + "' object doesn't support slice assignment");
     }
+};
+
+Sk.abstr.objectFormat = function (obj, format_spec) {
+    var meth; // PyObject
+    var result; // PyObject
+
+    // If no format_spec is provided, use an empty string
+    if(format_spec == null) {
+        format_spec = "";
+    }
+
+    // Find the (unbound!) __format__ method (a borrowed reference)
+    meth = Sk.builtin.object.PyObject_LookupSpecial_(obj.ob$type, "__format__");
+    if (meth == null) {
+        throw new Sk.builtin.TypeError("Type " + Sk.abstr.typeName(obj) + "doesn't define __format__");
+    }
+
+    // And call it
+    result = Sk.misceval.callsim(meth, obj, format_spec);
+    if (!Sk.builtin.checkString(result)) {
+        throw new Sk.builtin.TypeError("__format__ must return a str, not " + Sk.abstr.typeName(result));
+    }
+
+    return result;
 };
 
 //
@@ -9788,12 +9925,16 @@ Sk.builtin.list.prototype["$r"] = function () {
     var it, i;
     var ret = [];
     for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-        ret.push(Sk.misceval.objectRepr(i).v);
+        if(i === this) {
+            ret.push("[...]");
+        } else {
+            ret.push(Sk.misceval.objectRepr(i).v);
+        }
     }
     return new Sk.builtin.str("[" + ret.join(", ") + "]");
 };
 Sk.builtin.list.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
-Sk.builtin.list.prototype.tp$hash = Sk.builtin.object.prototype.HashNotImplemented;
+Sk.builtin.list.prototype.tp$hash = Sk.builtin.none.none$;
 
 Sk.builtin.list.prototype.tp$richcompare = function (w, op) {
     // todo; can't figure out where cpy handles this silly case (test/run/t96.py)
@@ -9895,7 +10036,26 @@ Sk.builtin.list.prototype.sq$repeat = function (n) {
     return new Sk.builtin.list(ret, false);
 };
 Sk.builtin.list.prototype.nb$multiply = Sk.builtin.list.prototype.sq$repeat;
-Sk.builtin.list.prototype.nb$inplace_multiply = Sk.builtin.list.prototype.sq$repeat;
+Sk.builtin.list.prototype.nb$inplace_multiply = function(n) {
+    var j;
+    var i;
+    var len;
+    if (!Sk.builtin.checkInt(n)) {
+        throw new Sk.builtin.TypeError("can't multiply sequence by non-int of type '" + Sk.abstr.typeName(n) + "'");
+    }
+
+    // works on list itself --> inplace
+    n = Sk.builtin.asnum$(n);
+    len = this.v.length;
+    for (i = 1; i < n; ++i) {
+        for (j = 0; j < len; ++j) {
+            this.v.push(this.v[j]);
+        }
+    }
+
+    return this;
+};
+
 /*
  Sk.builtin.list.prototype.sq$item = list_item;
  Sk.builtin.list.prototype.sq$slice = list_slice;
@@ -11380,7 +11540,15 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                     precision = 7;
                 }
             }
-            result = (convValue)[convName](precision);
+            result = (convValue)[convName](precision); // possible loose of negative zero sign
+            
+            // apply sign to negative zeros, floats only!
+            if(Sk.builtin.checkFloat(value)) {
+                if(convValue === 0 && 1/convValue === -Infinity) {
+                    result = "-" + result; // add sign for zero
+                }
+            }
+
             if ("EFG".indexOf(conversionType) !== -1) {
                 result = result.toUpperCase();
             }
@@ -12164,6 +12332,7 @@ Sk.builtin.dict.prototype.mp$lookup = function (key) {
 };
 
 Sk.builtin.dict.prototype.mp$subscript = function (key) {
+    Sk.builtin.pyCheckArgs("[]", arguments, 1, 2, false, false);
     var s;
     var res = this.mp$lookup(key);
 
@@ -12179,6 +12348,7 @@ Sk.builtin.dict.prototype.mp$subscript = function (key) {
 };
 
 Sk.builtin.dict.prototype.sq$contains = function (ob) {
+    Sk.builtin.pyCheckArgs("__contains__()", arguments, 1, 1, false, false);
     var res = this.mp$lookup(ob);
 
     return (res !== undefined);
@@ -12211,6 +12381,7 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function (key, w) {
 };
 
 Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
+    Sk.builtin.pyCheckArgs("del", arguments, 1, 1, false, false);
     var k = kf(key);
     var bucket = this[k.v];
     var item;
@@ -12287,7 +12458,14 @@ Sk.builtin.dict.prototype["$r"] = function () {
             //print(k, "had undefined v");
             v = null;
         }
-        ret.push(Sk.misceval.objectRepr(k).v + ": " + Sk.misceval.objectRepr(v).v);
+
+        // we need to check if value is same as object
+        // otherwise it would cause an stack overflow
+        if(v === this) {
+            ret.push(Sk.misceval.objectRepr(k).v + ": {...}");
+        } else {
+            ret.push(Sk.misceval.objectRepr(k).v + ": " + Sk.misceval.objectRepr(v).v);
+        }
     }
     return new Sk.builtin.str("{" + ret.join(", ") + "}");
 };
@@ -12297,7 +12475,7 @@ Sk.builtin.dict.prototype.mp$length = function () {
 };
 
 Sk.builtin.dict.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
-Sk.builtin.dict.prototype.tp$hash = Sk.builtin.object.prototype.HashNotImplemented;
+Sk.builtin.dict.prototype.tp$hash = Sk.builtin.none.none$;
 
 Sk.builtin.dict.prototype.tp$richcompare = function (other, op) {
     // if the comparison allows for equality then short-circuit it here
@@ -12354,6 +12532,7 @@ Sk.builtin.dict.prototype.tp$richcompare = function (other, op) {
 };
 
 Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
+    Sk.builtin.pyCheckArgs("get()", arguments, 1, 2, false, true);
     var ret;
 
     if (d === undefined) {
@@ -12369,6 +12548,7 @@ Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
 });
 
 Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
+    Sk.builtin.pyCheckArgs("pop()", arguments, 1, 2, false, true);
     var k = kf(key);
     var bucket = self[k.v];
     var item;
@@ -12392,10 +12572,12 @@ Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
 });
 
 Sk.builtin.dict.prototype["has_key"] = new Sk.builtin.func(function (self, k) {
+    Sk.builtin.pyCheckArgs("has_key()", arguments, 1, 1, false, true);
     return Sk.builtin.bool(self.sq$contains(k));
 });
 
 Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("items()", arguments, 0, 0, false, true);
     var v;
     var iter, k;
     var ret = [];
@@ -12414,6 +12596,7 @@ Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("keys()", arguments, 0, 0, false, true);
     var iter, k;
     var ret = [];
 
@@ -12426,6 +12609,7 @@ Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("values()", arguments, 0, 0, false, true);
     var v;
     var iter, k;
     var ret = [];
@@ -12443,6 +12627,7 @@ Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["clear"] = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("clear()", arguments, 0, 0, false, true);
     var k;
     var iter;
 
@@ -12464,6 +12649,159 @@ Sk.builtin.dict.prototype["setdefault"] = new Sk.builtin.func(function (self, ke
         self.mp$ass_subscript(key, default_);
         return default_;
     }
+});
+
+/*
+    this function mimics the cpython implementation, which is also the reason for the
+    almost similar code, this may be changed in future
+*/
+Sk.builtin.dict.prototype.dict_merge = function(b) {
+    var iter;
+    var k, v;
+    if(b instanceof Sk.builtin.dict) {
+        // fast way
+        for (iter = b.tp$iter(), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext()) {
+            v = b.mp$subscript(k);
+            if (v === undefined) {
+                throw new Sk.builtin.AttributeError("cannot get item for key: " + k.v);
+            }
+            this.mp$ass_subscript(k, v);
+        }
+    } else {
+        // generic slower way
+        var keys = Sk.misceval.callsim(b["keys"], b);
+        for (iter = keys.tp$iter(), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext()) {
+            v = b.tp$getitem(k); // get value
+            if (v === undefined) {
+                throw new Sk.builtin.AttributeError("cannot get item for key: " + k.v);
+            }
+            this.mp$ass_subscript(k, v);
+        }
+    }
+};
+
+/**
+ *   update() accepts either another dictionary object or an iterable of key/value pairs (as tuples or other iterables of length two).
+ *   If keyword arguments are specified, the dictionary is then updated with those key/value pairs: d.update(red=1, blue=2).
+ *   https://hg.python.org/cpython/file/4ff865976bb9/Objects/dictobject.c
+ */
+var update_f = function (kwargs, self, other) {
+    // case another dict or obj with keys and getitem has been provided
+    if(other !== undefined && (other.tp$name === "dict" || other["keys"])) {
+        self.dict_merge(other); // we merge with override
+    } else if(other !== undefined && Sk.builtin.checkIterable(other)) {
+        // 2nd case, we expect an iterable that contains another iterable of length 2
+        var iter;
+        var k, v;
+        var seq_i = 0; // index of current sequence item
+        for (iter = other.tp$iter(), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext(), seq_i++) {
+            // check if value is iter
+            if (!Sk.builtin.checkIterable(k)) {
+                throw new Sk.builtin.TypeError("cannot convert dictionary update sequence element #" + seq_i + " to a sequence");
+            }
+
+            // cpython impl. would transform iterable into sequence
+            // we just call iternext twice if k has length of 2
+            if(k.sq$length() === 2) {
+                var k_iter = k.tp$iter();
+                var k_key = k_iter.tp$iternext();
+                var k_value = k_iter.tp$iternext();
+                self.mp$ass_subscript(k_key, k_value);
+            } else {
+                // throw exception
+                throw new Sk.builtin.ValueError("dictionary update sequence element #" + seq_i + " has length " + k.sq$length() + "; 2 is required");
+            }
+        }
+    } else if(other !== undefined) {
+        // other is not a dict or iterable
+        throw new Sk.builtin.TypeError("'" +Sk.abstr.typeName(other) + "' object is not iterable");
+    }
+
+    // apply all key/value pairs of kwargs
+    // create here kwargs_dict, there could be exceptions in other cases before
+    var kwargs_dict = new Sk.builtins.dict(kwargs);
+    self.dict_merge(kwargs_dict);
+
+    // returns none, when successful or throws exception
+    return  Sk.builtin.none.none$;
+};
+
+update_f.co_kwargs = true;
+Sk.builtin.dict.prototype.update = new Sk.builtin.func(update_f);
+
+Sk.builtin.dict.prototype.__contains__ = new Sk.builtin.func(function (self, item) {
+    Sk.builtin.pyCheckArgs("__contains__", arguments, 1, 1, false, true);
+    return Sk.builtin.dict.prototype.sq$contains.call(self, item);
+});
+
+Sk.builtin.dict.prototype.__cmp__ = new Sk.builtin.func(function (self, other, op) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, op);
+});
+
+Sk.builtin.dict.prototype.__delitem__ = new Sk.builtin.func(function (self, item) {
+    Sk.builtin.pyCheckArgs("__delitem__", arguments, 1, 1, false, true);
+    return Sk.builtin.dict.prototype.mp$del_subscript.call(self, item);
+});
+
+Sk.builtin.dict.prototype.__getitem__ = new Sk.builtin.func(function (self, item) {
+    Sk.builtin.pyCheckArgs("__getitem__", arguments, 1, 1, false, true);
+    return Sk.builtin.dict.prototype.mp$subscript.call(self, item);
+});
+
+Sk.builtin.dict.prototype.__setitem__ = new Sk.builtin.func(function (self, item, value) {
+    Sk.builtin.pyCheckArgs("__setitem__", arguments, 2, 2, false, true);
+    return Sk.builtin.dict.prototype.mp$ass_subscript.call(self, item, value);
+});
+
+Sk.builtin.dict.prototype.__hash__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, false, true);
+    return Sk.builtin.dict.prototype.tp$hash.call(self);
+});
+
+Sk.builtin.dict.prototype.__len__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__len__", arguments, 0, 0, false, true);
+    return Sk.builtin.dict.prototype.mp$length.call(self);
+});
+
+Sk.builtin.dict.prototype.__getattr__ = new Sk.builtin.func(function (self, attr) {
+    Sk.builtin.pyCheckArgs("__getattr__", arguments, 1, 1, false, true);
+    return Sk.builtin.dict.prototype.tp$getattr.call(self, attr);
+});
+
+Sk.builtin.dict.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
+
+    return self.tp$iter();
+});
+
+Sk.builtin.dict.prototype.__repr__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, false, true);
+    return Sk.builtin.dict.prototype["$r"].call(self);
+});
+
+/* python3 recommends implementing simple ops */
+Sk.builtin.dict.prototype.__eq__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "Eq");
+});
+
+Sk.builtin.dict.prototype.__ne__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "NotEq");
+});
+
+Sk.builtin.dict.prototype.__gt__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "NotEq");
+});
+
+Sk.builtin.dict.prototype.__ge__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "NotEq");
+});
+
+Sk.builtin.dict.prototype.__le__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "GtE");
+});
+
+Sk.builtin.dict.prototype.__lt__ = new Sk.builtin.func(function (self, other) {
+    return Sk.builtin.dict.prototype.tp$richcompare.call(self, other, "Lt");
 });
 
 Sk.builtin.dict.prototype["copy"] = new Sk.builtin.func(function (self) {
@@ -12488,10 +12826,6 @@ Sk.builtin.dict.prototype["itervalues"] = new Sk.builtin.func(function (self) {
 
 Sk.builtin.dict.prototype["popitem"] = new Sk.builtin.func(function (self) {
     throw new Sk.builtin.NotImplementedError("dict.popitem is not yet implemented in Skulpt");
-});
-
-Sk.builtin.dict.prototype["update"] = new Sk.builtin.func(function (self, other) {
-    throw new Sk.builtin.NotImplementedError("dict.update is not yet implemented in Skulpt");
 });
 
 Sk.builtin.dict.prototype["viewitems"] = new Sk.builtin.func(function (self) {
@@ -14481,6 +14815,15 @@ Sk.builtin.nmber = function (x, skType)    /* number is a reserved word */ {
         }
     }
 
+    /**
+     * adjust sign of zero
+     * only floats have negative zeros
+     * This can be removed, when we have a proper numeric tower
+     */
+    if (this.skType === Sk.builtin.nmber.int$) {
+        this.v = this.v === 0 ? 0 : this.v;
+    }
+
     return this;
 };
 
@@ -14900,8 +15243,9 @@ Sk.builtin.nmber.prototype.nb$remainder = function (other) {
             }
         }
 
-        //	Javacript logic on negatives doesn't work for Python... do this instead
+        //  Javacript logic on negatives doesn't work for Python... do this instead
         tmp = this.v % other.v;
+
         if (this.v < 0) {
             if (other.v > 0 && tmp < 0) {
                 tmp = tmp + other.v;
@@ -14911,14 +15255,22 @@ Sk.builtin.nmber.prototype.nb$remainder = function (other) {
                 tmp = tmp + other.v;
             }
         }
-        if (this.skType === Sk.builtin.nmber.float$ || other.skType === Sk.builtin.nmber.float$) {
-            result = new Sk.builtin.nmber(tmp, Sk.builtin.nmber.float$);
+
+        if (other.v < 0 && tmp === 0) {
+            tmp = -0.0; // otherwise the sign gets lost by javascript modulo
+        } else if (tmp === 0 && Infinity/tmp === -Infinity) {
+            tmp = 0.0;
         }
-        else {
-            //	tmp = Math.floor(tmp);
+
+        // <float> % <int|long|bool> --> zero must not have negative sign
+        if (this.skType === Sk.builtin.nmber.float$ || other.skType === Sk.builtin.nmber.float$) {        
+            result = new Sk.builtin.nmber(tmp, Sk.builtin.nmber.float$);
+        } else {
+            // <not float> % <not float> --> zero must not have negative sign
+            tmp = tmp === 0 ? 0 : tmp; // transforms negative zero to positive one
             result = new Sk.builtin.nmber(tmp, Sk.builtin.nmber.int$);
             if (result.v > Sk.builtin.nmber.threshold$ || result.v < -Sk.builtin.nmber.threshold$) {
-                //	Promote to long
+                //  Promote to long
                 result = new Sk.builtin.lng(this.v).nb$remainder(other.v);
             }
         }
@@ -14942,6 +15294,7 @@ Sk.builtin.nmber.prototype.nb$remainder = function (other) {
         if (this.skType === Sk.builtin.nmber.float$) {  // float / long --> float
             op2 = parseFloat(other.str$(10, true));
             tmp = this.v % op2;
+                    
             if (tmp < 0) {
                 if (op2 > 0 && tmp !== 0) {
                     tmp = tmp + op2;
@@ -14951,8 +15304,15 @@ Sk.builtin.nmber.prototype.nb$remainder = function (other) {
                     tmp = tmp + op2;
                 }
             }
+
+            if (other.nb$isnegative() && tmp === 0) {
+                tmp = -0.0; // otherwise the sign gets lost by javascript modulo
+            } else if (tmp === 0 && Infinity/tmp === -Infinity) {
+                tmp = 0.0;
+            }
+
             result = new Sk.builtin.nmber(tmp, Sk.builtin.nmber.float$);
-        } else {	//	int - long --> long
+        } else {    //  int - long --> long
             thisAsLong = new Sk.builtin.lng(this.v);
             result = thisAsLong.nb$remainder(other);
         }
@@ -15250,6 +15610,28 @@ Sk.builtin.nmber.prototype.__ge__ = function (me, other) {
     return me.numberCompare(other) >= 0;
 };
 
+Sk.builtin.nmber.prototype.__round__ = function (self, ndigits) {
+    Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
+
+    var result, multiplier, number;
+
+    if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
+    }
+
+    if (ndigits === undefined) {
+        ndigits = 0;
+    }
+
+    number = Sk.builtin.asnum$(self);
+    ndigits = Sk.misceval.asIndex(ndigits);
+
+    multiplier = Math.pow(10, ndigits);
+    result = Math.round(number * multiplier) / multiplier;
+
+    return new Sk.builtin.nmber(result, Sk.builtin.nmber.float$);
+};
+
 Sk.builtin.nmber.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
 
 Sk.builtin.nmber.prototype["$r"] = function () {
@@ -15259,6 +15641,120 @@ Sk.builtin.nmber.prototype["$r"] = function () {
 Sk.builtin.nmber.prototype.tp$str = function () {
     return new Sk.builtin.str(this.str$(10, true));
 };
+
+/**
+ * Convert a double val to a string using supplied format_code, precision, and flags.
+ *
+ * format_code must be one of 'e', 'E', 'f', 'F', 'g', 'G' or 'r'. For 'r', the supplied precision must be 0 and is ignored. The 'r' format code specifies the standard repr() format.
+ *
+ * flags can be zero or more of the values Py_DTSF_SIGN, Py_DTSF_ADD_DOT_0, or Py_DTSF_ALT, or-ed together:
+ *
+ * Py_DTSF_SIGN means to always precede the returned string with a sign character, even if val is non-negative.
+ * Py_DTSF_ADD_DOT_0 means to ensure that the returned string will not look like an integer.
+ * Py_DTSF_ALT means to apply “alternate” formatting rules. See the documentation for the PyOS_snprintf() '#' specifier for details.
+ * If ptype is non-NULL, then the value it points to will be set to one of Py_DTST_FINITE, Py_DTST_INFINITE, or Py_DTST_NAN, signifying that val is a finite number, an 
+ * infinite number, or not a number, respectively.
+ */
+Sk.builtin.nmber.PyOS_double_to_string = function(val, format_code, precision, flags, type) {
+    var format;
+    var buf;
+    var t;
+    var exp;
+    var upper = false;
+
+    // Validate format code, and map upper and lower case
+    switch(format_code) {
+        case "e": /* exponent */
+        case "f": /* fixed */
+        case "g": /* general */
+            break;
+        case "E":
+            upper = true;
+            format_code = "e";
+            break;
+        case "F":
+            upper = true;
+            format_code = "f";
+            break;
+        case "r": /* repr format */
+            // Supplied precision is unused, must be 0.
+            if(precision !== 0) {
+                throw new Error("Bad internall call"); // only happens when somebody messes up calling this in js
+            }
+
+            // repr() precision is 17 significant decimal digits
+            precision = 17;
+            format_code = "g";
+            break;
+        default:
+            throw new Error("Bad internall call");
+    }
+
+    // no need for buffer size calculation like in cpython
+
+    // Handle nan and inf
+    if(isNaN(val)) {
+        buf = "nan";
+        t = Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_NAN;
+    } else if (val === Infinity) {
+        buf = "inf";
+        t = Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_INFINITE;
+    } else if (val === -Infinity) {
+        buf = "-inf";
+        t = Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_INFINITE;       
+    } else {
+        t = Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_FINITE;
+        if(flags & Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_ADD_DOT_0) {
+            format_code = "g"; // "Z"; _PyOS_ascii_formatd converts "Z" to "g"
+        }
+
+        // ToDo: call snprintf here
+        // ToDo: call ascii_formatd
+        var format_str = "%";
+        format_str += flags & Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_ALT ? "#" : "";
+        
+        if(precision != null) {
+            format_str += ".";
+            format_str += precision;
+        }
+
+        format_str += format_code;
+        format_str = new Sk.builtin.str(format_str);
+
+        /** 
+         * We cann call nb$remainder with val, because it gets unwrapped and it doesn't matter if it is
+         * already a javascript number. If we do not pass a float, we can't distinguish between ints and floats
+         * and therefore we can't adjust the sign of the zero accordingly
+         */
+        buf = format_str.nb$remainder(new Sk.builtin.nmber(val, Sk.builtin.nmber.float$));
+        buf = buf.v; // get javascript string
+    }
+
+    /**
+     * Add sign when requested. It's convenient (esp. when formatting complex numbers) to
+     * include sign even for inf and nan.
+     */
+    if(flags & Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_SIGN && buf[0] !== "-") {
+        buf = "+" + buf;
+    }
+
+    if(upper) {
+        // Convert to upper case
+        buf = buf.toUpperCase();
+    }
+
+    return buf;
+};
+
+/* PyOS_double_to_string's "flags" parameter can be set to 0 or more of: */
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_SIGN = 0x01; // always add the sign
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_ADD_DOT_0 = 0x02; // if the result is an integer add ".0"
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_ALT = 0x04; // "alternate" formatting. it's format_code specific
+
+/* PyOS_double_to_string's "type", if non-NULL, will be set to one of: */
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_FINITE = 0; 
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_INFINITE = 1; 
+Sk.builtin.nmber.PyOS_double_to_string.Py_DTST_NAN = 2; 
 
 Sk.builtin.nmber.prototype.str$ = function (base, sign) {
     var post;
@@ -15331,6 +15827,12 @@ Sk.builtin.nmber.prototype.str$ = function (base, sign) {
     if (this.skType !== Sk.builtin.nmber.float$) {
         return tmp;
     }
+
+    // restore negative zero sign, only applies to floats
+    if(this.v === 0 && 1/this.v === -Infinity) {
+        tmp = "-" + tmp;
+    }
+
     if (tmp.indexOf(".") < 0 && tmp.indexOf("E") < 0 && tmp.indexOf("e") < 0) {
         tmp = tmp + ".0";
     }
@@ -15366,7 +15868,7 @@ Sk.builtin.lng = function (x, base) {   /* long is a reserved word */
         this.biginteger = x;
         return this;
     }
-    if (x instanceof String) {
+    if (x instanceof String || typeof x === "string") {
         return Sk.longFromStr(x, base);
     }
     if (x instanceof Sk.builtin.str) {
@@ -15398,6 +15900,22 @@ Sk.builtin.lng.prototype.tp$index = function () {
 Sk.builtin.lng.prototype.tp$hash = function () {
     return new Sk.builtin.nmber(this.tp$index(), Sk.builtin.nmber.int$);
 };
+
+Sk.builtin.lng.prototype.__int__ = new Sk.builtin.func(function(self) {
+    if (self.cantBeInt()) {
+        return new Sk.builtin.lng(self);
+    }
+
+    return new Sk.builtin.nmber(self.toInt$(), Sk.builtin.nmber.int$);
+});
+
+Sk.builtin.lng.prototype.__index__ = new Sk.builtin.func(function(self) {
+    return this.__int__.call(this, self);
+});
+
+Sk.builtin.lng.prototype.__float__ = new Sk.builtin.func(function(self) {
+    return new Sk.builtin.nmber(Sk.ffi.remapToJs(self), Sk.builtin.nmber.float$);
+});
 
 Sk.builtin.lng.prototype.tp$name = "long";
 Sk.builtin.lng.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("long", Sk.builtin.lng);
@@ -15984,22 +16502,39 @@ Sk.str2number = function (s, base, parser, negater, fname) {
     return val;
 };
 
+/*
+ * type int, all integers are created with this method, it is also used
+ * for the builtin int()
+ *
+ * Takes also implemented __int__ and __trunc__ methods for x into account
+ * and tries to use __index__ and/or __int__ if base is not a number
+ */
 Sk.builtin.int_ = function (x, base) {
     "use strict";
     var val;
-    if ((x !== undefined) && (!Sk.builtin.checkString(x) && !Sk.builtin.checkNumber(x))) {
-        if (x instanceof Sk.builtin.bool) {
-            x = Sk.builtin.asnum$(x);
+    var ret; // return value
+    var magicName; // name of magic method
+
+    // if base is not of type int, try calling .__index__
+    if(base !== undefined && !Sk.builtin.checkInt(base)) {
+        if(base.tp$getattr("__index__")) {
+            base = Sk.misceval.callsim(base.__index__, base);
+        } else if(base.tp$getattr("__int__")) {
+            base = Sk.misceval.callsim(base.__int__, base);
+        } else if(Sk.builtin.checkFloat(base)) {
+            throw new Sk.builtin.TypeError("integer argument expected, got " + Sk.abstr.typeName(base));
         } else {
-            throw new Sk.builtin.TypeError("int() argument must be a string or a number, not '" + Sk.abstr.typeName(x) + "'");
+            throw new Sk.builtin.AttributeError(Sk.abstr.typeName(base) + " instance has no attribute '__index__' or '__int__'");
         }
     }
 
     if (x instanceof Sk.builtin.str) {
         base = Sk.builtin.asnum$(base);
+
         val = Sk.str2number(x.v, base, parseInt, function (x) {
             return -x;
         }, "int");
+
         if ((val > Sk.builtin.nmber.threshold$) || (val < -Sk.builtin.nmber.threshold$)) {
             // Too big for int, convert to long
             return new Sk.builtin.lng(x, base);
@@ -16007,6 +16542,7 @@ Sk.builtin.int_ = function (x, base) {
 
         return new Sk.builtin.nmber(val, Sk.builtin.nmber.int$);
     }
+
     if (base !== undefined) {
         throw new Sk.builtin.TypeError("int() can't convert non-string with explicit base");
     }
@@ -16015,11 +16551,39 @@ Sk.builtin.int_ = function (x, base) {
         x = 0;
     }
 
-    if (x instanceof Sk.builtin.lng) {
-        if (x.cantBeInt()) {
-            return new Sk.builtin.lng(x);
-        }
-        return new Sk.builtin.nmber(x.toInt$(), Sk.builtin.nmber.int$);
+    /**
+     * try calling special methods:
+     *  1. __int__
+     *  2. __trunc__
+     */
+    if(x !== undefined && (x.tp$getattr && x.tp$getattr("__int__"))) {
+        // calling a method which contains im_self and im_func
+        // causes skulpt to automatically map the im_self as first argument
+        ret = Sk.misceval.callsim(x.tp$getattr("__int__"));
+        magicName = "__int__";
+    } else if(x !== undefined && x.__int__) {
+        // required for internal types
+        // __int__ method is on prototype
+        ret = Sk.misceval.callsim(x.__int__, x);
+        magicName = "__int__";
+    } else if(x !== undefined && (x.tp$getattr && x.tp$getattr("__trunc__"))) {
+        ret = Sk.misceval.callsim(x.tp$getattr("__trunc__"));
+        magicName = "__trunc__";
+    } else if(x !== undefined && x.__trunc__) {
+        ret = Sk.misceval.callsim(x.__trunc__, x);
+        magicName = "__trunc__";
+    }
+
+    // check return type of magic methods
+    if(ret !== undefined && !Sk.builtin.checkInt(ret)) {
+        throw new Sk.builtin.TypeError(magicName + " returned non-Integral (type " + Sk.abstr.typeName(ret)+")");
+    } else if(ret !== undefined){
+        x = ret; // valid return value, proceed in function
+    }
+
+    // check type even without magic numbers
+    if(!Sk.builtin.checkNumber(x)) {
+        throw new Sk.builtin.TypeError("int() argument must be a string or a number, not '" + Sk.abstr.typeName(x) + "'");
     }
 
     x = Sk.builtin.asnum$(x);
@@ -16035,8 +16599,31 @@ Sk.builtin.int_.co_varnames = [ "base" ];
 Sk.builtin.int_.co_numargs = 2;
 Sk.builtin.int_.$defaults = [ new Sk.builtin.nmber(10, Sk.builtin.nmber.int$) ];
 
+Sk.builtin.int_.prototype.__int__ = new Sk.builtin.func(function(self) {
+    return self;
+});
+
+Sk.builtin.int_.prototype.__trunc__ = new Sk.builtin.func(function(self) {
+    return self;
+});
+
+Sk.builtin.int_.prototype.__index__ = new Sk.builtin.func(function(self) {
+    return self;
+});
+
+Sk.builtin.int_.prototype.__float__ = new Sk.builtin.func(function(self) {
+    return new Sk.builtin.nmber(Sk.ffi.remapToJs(self), Sk.builtin.nmber.float$);
+});
+
+Sk.builtin.int_.prototype.__complex__ = new Sk.builtin.func(function(self) {
+    throw new Sk.builtin.TypeError("__complex__ is not implemented for type 'int'.");
+});
+
 Sk.builtin.int_.prototype.tp$name = "int";
 Sk.builtin.int_.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("int", Sk.builtin.int_);
+/**
+ * @constructor
+ */
 Sk.builtin.float_ = function (x) {
     var tmp;
     if (x === undefined) {
@@ -16077,11 +16664,1170 @@ Sk.builtin.float_ = function (x) {
         return new Sk.builtin.nmber(x, Sk.builtin.nmber.float$);
     }
 
+    // this is a special internal case
+    if(typeof x === "boolean") {
+        x = x ? 1.0 : 0.0;
+        return new Sk.builtin.nmber(x, Sk.builtin.nmber.float$);
+    }
+
+    // try calling __float__
+    var special = Sk.builtin.object.PyObject_LookupSpecial_(x.ob$type, "__float__");
+    if (special != null) {
+        // method on builtin, provide this arg
+        return Sk.misceval.callsim(special, x);
+    }
+
     throw new Sk.builtin.TypeError("float() argument must be a string or a number");
+};
+
+Sk.builtin.float_.prototype.__int__ = new Sk.builtin.func(function(self) {
+    // get value
+    var v = Sk.ffi.remapToJs(self);
+
+    if (v < 0) {
+        v = Math.ceil(v);
+    } else {
+        v = Math.floor(v);
+    }
+
+    // this should take care of int/long fitting
+    return new Sk.builtin.nmber(v, Sk.builtin.nmber.int$);
+});
+
+Sk.builtin.float_.prototype.__float__ = new Sk.builtin.func(function(self) {
+    return self;
+});
+
+/*
+ * This checks also for float subtypes, though skulpt does not allow to
+ * extend them for now.
+ */
+Sk.builtin.float_.PyFloat_Check = function (op) {
+    if (op === undefined) {
+        return false;
+    }
+
+    // this is a little bit hacky
+    // ToDo: subclassable builtins do not require this
+    if (Sk.builtin.checkNumber(op)) {
+        return true;
+    }
+
+    if (Sk.builtin.checkFloat(op)) {
+        return true;
+    }
+
+    if (Sk.builtin.issubclass(op.ob$type, Sk.builtin.float_)) {
+        return true;
+    }
+
+    return false;
+};
+
+/*
+ * This method is just a wrapper, but uses the correct cpython API name
+ */
+Sk.builtin.float_.PyFloat_Check_Exact = function (op) {
+    return Sk.builtin.checkFloat(op);
+};
+
+Sk.builtin.float_.PyFloat_AsDouble = function (op) {
+    var f; // nb_float;
+    var fo; // PyFloatObject *fo;
+    var val;
+
+    // it is a subclass or direct float
+    if (op && Sk.builtin.float_.PyFloat_Check(op)) {
+        return Sk.ffi.remapToJs(op);
+    }
+
+    if (op == null) {
+        throw new Error("bad argument for internal PyFloat_AsDouble function");
+    }
+
+    // check if special method exists (nb_float is not implemented in skulpt, hence we use __float__)
+    f = Sk.builtin.type.typeLookup(op.ob$type, "__float__");
+    if (f == null) {
+        throw new Sk.builtin.TypeError("a float is required");
+    }
+
+    // call internal float method
+    fo = Sk.misceval.callsim(f, op);
+
+    // return value of __float__ must be a python float
+    if (!Sk.builtin.float_.PyFloat_Check(fo)) {
+        throw new Sk.builtin.TypeError("nb_float should return float object");
+    }
+
+    val = Sk.ffi.remapToJs(fo);
+
+    return val;
 };
 
 Sk.builtin.float_.prototype.tp$name = "float";
 Sk.builtin.float_.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("float", Sk.builtin.float_);
+/**
+ * hypot is a ESCMA6 function and maybe not available across all browsers
+ */
+Math.hypot = Math.hypot || function() {
+    var y = 0;
+    var length = arguments.length;
+
+    for (var i = 0; i < length; i++) {
+        if (arguments[i] === Infinity || arguments[i] === -Infinity) {
+            return Infinity;
+        }
+        y += arguments[i] * arguments[i];
+    }
+    return Math.sqrt(y);
+};
+
+/**
+ * complex_new see https://hg.python.org/cpython/file/f0e2caad4200/Objects/complexobject.c#l911
+ * @constructor
+ * @param {Object} real part of the complex number
+ * @param {?Object=} imag part of the complex number
+ * @this {Sk.builtin.object}
+ *
+ * Prefering here == instead of ===, otherwise also undefined has to be matched explicitly
+ *
+ * FIXME: it seems that we somehow need to call __float__/__int__ if arguments provide those methods
+ * 
+ */
+Sk.builtin.complex = function (real, imag) {
+    Sk.builtin.pyCheckArgs("complex", arguments, 0, 2);
+
+    var r, i, tmp; // PyObject
+    var nbr, nbi; // real, imag as numbers
+    var own_r = false;
+    var cr = {}; // PyComplexObject
+    var ci = {}; // PyComplexObject
+    var cr_is_complex = false;
+    var ci_is_complex = false;
+
+    // not sure why this is required
+    if (!(this instanceof Sk.builtin.complex)) {
+        return new Sk.builtin.complex(real, imag);
+    }
+
+    // check if kwargs
+    // ToDo: this is only a temporary replacement
+    r = real == null ? Sk.builtin.bool.false$ : real; // r = Py_False;
+    i = imag;
+
+    // handle case if passed in arguments are of type complex
+    if (r instanceof Sk.builtin.complex && i == null) {
+        return real;
+    }
+
+    if (r != null && Sk.builtin.checkString(r)) {
+        if(i != null) {
+            throw new Sk.builtin.TypeError("complex() can't take second arg if first is a string");
+        }
+
+        return Sk.builtin.complex.complex_subtype_from_string(r);
+    }
+
+    if (i != null && Sk.builtin.checkString(i)) {
+        throw new Sk.builtin.TypeError("complex() second arg can't be a string");
+    }
+
+
+    // try_complex_special_method
+    tmp = Sk.builtin.complex.try_complex_special_method(r);
+    if (tmp != null) {
+        if (!Sk.builtin.checkComplex(tmp)) {
+            throw new Sk.builtin.TypeError("__complex__ should return a complex object");
+        }
+
+        r = tmp;
+    }
+
+    // this check either returns a javascript number or the passed object
+    // but it actually, should check for r->ob_type->tp_as_number
+    // this check is useless
+    nbr = Sk.builtin.asnum$(r);
+    if (i != null) {
+        nbi = Sk.builtin.asnum$(i);
+    }
+
+    // this function mimics the tp_as_number->nb_float check in cpython
+    var nb_float = function(op) {
+        if(Sk.builtin.checkNumber(op)) {
+            return true;
+        }
+
+        if(Sk.builtin.type.typeLookup(op.ob$type, "__float__") !== undefined) {
+            return true;
+        }
+    };
+
+    // check for valid arguments
+    if (nbr == null || (!nb_float(r) && !Sk.builtin.checkComplex(r)) || ((i != null) && (nbi == null || (!nb_float(i) && !Sk.builtin.checkComplex(i))))) {
+        throw new Sk.builtin.TypeError("complex() argument must be a string or number");
+    }
+
+    /* If we get this far, then the "real" and "imag" parts should
+       both be treated as numbers, and the constructor should return a
+       complex number equal to (real + imag*1j).
+
+       Note that we do NOT assume the input to already be in canonical
+       form; the "real" and "imag" parts might themselves be complex
+       numbers, which slightly complicates the code below. */
+
+    if (Sk.builtin.complex._complex_check(r)) {
+        /* Note that if r is of a complex subtype, we're only
+        retaining its real & imag parts here, and the return
+        value is (properly) of the builtin complex type. */
+        cr.real = r.real.v;
+        cr.imag = r.imag.v;
+        cr_is_complex = true;
+    } else {
+        /* The "real" part really is entirely real, and contributes
+        nothing in the imaginary direction.
+        Just treat it as a double. */
+        tmp = Sk.builtin.float_.PyFloat_AsDouble(r); // tmp = PyNumber_Float(r);
+
+        if (tmp == null) {
+            return null;
+        }
+
+        cr.real = tmp;
+        cr.imag = 0.0;
+    }
+
+    if (i == null) {
+        ci.real = 0.0;
+    } else if (Sk.builtin.complex._complex_check(i)) {
+        ci.real = i.real.v;
+        ci.imag = i.imag.v;
+        ci_is_complex = true;
+    } else {
+        /* The "imag" part really is entirely imaginary, and
+        contributes nothing in the real direction.
+        Just treat it as a double. */
+        tmp = Sk.builtin.float_.PyFloat_AsDouble(i);
+
+        if (tmp == null) {
+            return null;
+        }
+
+        ci.real = tmp;
+        ci.imag = 0.0;
+    }
+
+    /*  If the input was in canonical form, then the "real" and "imag"
+    parts are real numbers, so that ci.imag and cr.imag are zero.
+    We need this correction in case they were not real numbers. */
+
+    if (ci_is_complex === true) {
+        cr.real -= ci.imag;
+    }
+
+    if (cr_is_complex === true) {
+        ci.real += cr.imag;
+    }
+
+    // adjust for negated imaginary literal
+    if (cr.real === 0 && (ci.real < 0 || Sk.builtin.complex._isNegativeZero(ci.real))) {
+        cr.real = -0;   
+    }
+
+    // save them as properties
+    this.real = new Sk.builtin.float_(cr.real);
+    this.imag = new Sk.builtin.float_(ci.real);
+
+    this.__class__ = Sk.builtin.complex;
+
+    return this;
+};
+
+Sk.builtin.complex.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("complex", Sk.builtin.complex);
+Sk.builtin.complex.prototype.tp$name = "complex";
+//Sk.builtin.complex.co_kwargs = true;
+
+Sk.builtin.complex.prototype.__doc__ = new Sk.builtin.str("complex(real[, imag]) -> complex number\n\nCreate a complex number from a real part and an optional imaginary part.\nThis is equivalent to (real + imag*1j) where imag defaults to 0.");
+
+Sk.builtin.complex._isNegativeZero = function (val) {
+    if (val !== 0) {
+        return false;
+    }
+
+    return 1/val === -Infinity;
+};
+
+/**
+ * Internal method to check if op has __complex__
+ */
+Sk.builtin.complex.try_complex_special_method = function (op) {
+    var complexstr = new Sk.builtin.str("__complex__");
+    var f; // PyObject
+    var res;
+
+    // return early
+    if (op == null) {
+        return null;
+    }
+
+    // the lookup special method does already all the magic
+    f = Sk.builtin.object.PyObject_LookupSpecial_(op.ob$type, "__complex__");
+
+    if (f != null) {
+        // method on builtin, provide this arg
+        res = Sk.misceval.callsim(f, op);
+
+        return res;
+    }
+
+    return null;
+};
+
+/**
+    Check if given argument is number or complex and always
+    returns complex type.
+ */
+Sk.builtin.complex.check_number_or_complex = function (other) {
+    /* exit early */
+    if (!Sk.builtin.checkNumber(other) && other.tp$name !== "complex") {
+        throw new Sk.builtin.TypeError("unsupported operand type(s) for +: 'complex' and '" + Sk.abstr.typeName(other) + "'");
+    }
+
+    /* converting to complex allows us to use always only one formula */
+    if (Sk.builtin.checkNumber(other)) {
+        other = new Sk.builtin.complex(other); // create complex
+    }
+
+    return other;
+};
+
+/**
+    Parses a string repr of a complex number
+ */
+Sk.builtin.complex.complex_subtype_from_string = function (val) {
+    var index;
+    var start;
+    var val_wws;              // val with removed beginning ws and (
+    var x = 0.0, y = 0.0;     // real, imag parts
+    var got_bracket = false;  // flag for braces
+    var len;                  // total length of val
+    var match;                // regex result
+
+    // first check if val is javascript string or python string
+    if (Sk.builtin.checkString(val)) {
+        val = Sk.ffi.remapToJs(val);
+    } else if (typeof val !== "string") {
+        throw new TypeError("provided unsupported string-alike argument");
+    }
+
+    /* This is an python specific error, this does not do any harm in js, but we want
+     * to be as close to the orginial impl. as possible.
+     * 
+     * Check also for empty strings. They are not allowed.
+     */
+    if (val.indexOf("\0") !== -1 || val.length === 0 || val === "") {
+        throw new Sk.builtin.ValueError("complex() arg is a malformed string");
+    }
+
+    // transform to unicode
+    // ToDo: do we need this?
+    index = 0; // first char
+
+    // do some replacements for javascript floats
+    val = val.replace(/inf|infinity/gi, "Infinity");
+    val = val.replace(/nan/gi, "NaN");
+
+    /* position on first nonblank */
+    start = 0;
+    while (val[index] === " ") {
+        index++;
+    }
+
+    if (val[index] === "(") {
+        /* skip over possible bracket from repr(). */
+        got_bracket = true;
+        index++;
+        while (val[index] === " ") {
+            index++;
+        }
+    }
+
+    /* a valid complex string usually takes one of the three forms:
+
+        <float>                - real part only
+        <float>j               - imaginary part only
+        <float><signed-float>j - real and imaginary parts
+
+        where <float> represents any numeric string that's accepted by the
+        float constructor (including 'nan', 'inf', 'infinity', etc.), and
+        <signed-float> is any string of the form <float> whose first character
+        is '+' or '-'.
+
+        For backwards compatibility, the extra forms
+
+          <float><sign>j
+          <sign>j
+          j
+
+        are also accepted, though support for these forms my be removed from
+        a future version of Python.
+     *      This is a complete regular expression for matching any valid python floats, e.g.:
+     *          - 1.0
+     *          - 0.
+     *          - .1
+     *          - nan/inf/infinity
+     *          - +-1.0
+     *          - +3.E-3
+     *
+     *      In order to work, this pattern requires only lower case characters
+     *      There is case insensitive group option in js.
+     *
+     *      the [eE] could be refactored to soley e
+     */
+    var float_regex2 = /^(?:[+-]?(?:(?:(?:\d*\.\d+)|(?:\d+\.?))(?:[eE][+-]?\d+)?|NaN|Infinity))/;
+    val_wws = val.substr(index); // val with removed whitespace and "("
+
+    /* first try to match a float at the beginning */
+    match = val_wws.match(float_regex2);
+    if (match !== null) {
+        // one of the first 4 cases
+        index += match[0].length;
+
+        /* <float>j */
+        if (val[index] === "j" || val[index] === "J") {
+            y = parseFloat(match[0]);
+            index++;
+        } else if(val[index] === "+" || val[index] === "-") {
+            /* <float><signed-float>j | <float><sign>j */
+            x = parseFloat(match[0]);
+
+            match = val.substr(index).match(float_regex2);
+            if (match !== null) {
+                /* <float><signed-float>j */
+                y = parseFloat(match[0]);
+                index += match[0].length;
+            } else {
+                /* <float><sign>j */
+                y = val[index] === "+" ? 1.0 : -1.0;
+                index++;
+            }
+
+            if (val[index] !== "j" && val[index] !== "J") {
+                throw new Sk.builtin.ValueError("complex() arg is malformed string");
+            }
+
+            index++;
+        } else {
+            /* <float> */
+            x = parseFloat(match[0]);
+        }
+    } else {
+        // maybe <sign>j or j
+        match = match = val_wws.match(/^([+-]?[jJ])/);
+        if (match !== null) {
+            if (match[0].length === 1) {
+                y = 1.0; // must be j
+            } else {
+                y = match[0][0] === "+" ? 1.0 : -1.0;
+            }
+
+            index += match[0].length;
+        }
+    }
+
+    while (val[index] === " ") {
+        index++;
+    }
+
+    if (got_bracket) {
+        /* if there was an opening parenthesis, then the corresponding
+           closing parenthesis should be right here */
+        if (val[index] !== ")") {
+            throw new Sk.builtin.ValueError("complex() arg is malformed string");
+        }
+
+        index++;
+
+        while (val[index] === " ") {
+            index++;
+        }
+    }
+
+    /* we should now be at the end of the string */
+    if (val.length !== index) {
+        throw new Sk.builtin.ValueError("complex() arg is malformed string");
+    }
+
+    // return here complex number parts
+    return new Sk.builtin.complex(new Sk.builtin.float_(x), new Sk.builtin.float_(y));
+};
+
+/**
+    _PyHASH_IMAG refers to _PyHASH_MULTIPLIER which refers to 1000003
+ */
+Sk.builtin.complex.prototype.tp$hash = function () {
+    return new Sk.builtin.nmber(this.tp$getattr("imag").v * 1000003 + this.tp$getattr("real").v, Sk.builtin.nmber.int$);
+};
+
+Sk.builtin.complex.prototype.nb$add = function (other) {
+    var real;
+    var imag;
+
+    other = Sk.builtin.complex.check_number_or_complex(other);
+
+    real = this.tp$getattr("real").v + other.tp$getattr("real").v;
+    imag = this.tp$getattr("imag").v + other.tp$getattr("imag").v;
+
+    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+
+/* internal subtract/diff function that calls internal float diff */
+Sk.builtin.complex._c_diff = function (a, b) {
+    var r, i; // Py_Float
+    r = a.real.nb$subtract.call(a.real, b.real);
+    i = a.imag.nb$subtract.call(a.imag, b.imag);
+
+    return new Sk.builtin.complex(r, i);
+};
+
+Sk.builtin.complex.prototype.nb$subtract = function (other) {
+    var result; // Py_complex
+    var a, b; // Py_complex
+
+    a = Sk.builtin.complex.check_number_or_complex(this);
+    b = Sk.builtin.complex.check_number_or_complex(other);
+
+    result = Sk.builtin.complex._c_diff(a, b);
+
+    return result;
+};
+
+Sk.builtin.complex.prototype.nb$multiply = function (other) {
+    var real;
+    var imag;
+    var a, b; // Py_complex
+
+    a = this;
+    b = Sk.builtin.complex.check_number_or_complex(other);
+
+    real = a.real.v * b.real.v - a.imag.v * b.imag.v;
+    imag = a.real.v * b.imag.v + a.imag.v * b.real.v;
+
+    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+
+/**
+ * Otherwise google closure complains about ZeroDivisionError not being
+ * defined
+ * @suppress {missingProperties}
+ *
+ * implementation based on complexobject.c:c_quot
+ */
+Sk.builtin.complex.prototype.nb$divide = function (other) {
+    var real;
+    var imag;
+
+    other = Sk.builtin.complex.check_number_or_complex(other);
+
+    var ratio;
+    var denom;
+
+    // other == b
+    var breal = other.real.v;
+    var bimag = other.imag.v;
+    // this == a
+    var areal = this.real.v;
+    var aimag = this.imag.v;
+
+    var abs_breal = Math.abs(breal);
+    var abs_bimag = Math.abs(bimag);
+
+    if (abs_breal >= abs_bimag) {
+        // divide tops and bottom by breal
+        if (abs_breal === 0.0) {
+            throw new Sk.builtin.ZeroDivisionError("complex division by zero");
+        } else {
+            ratio = bimag / breal;
+            denom = breal + bimag * ratio;
+            real = (areal + aimag * ratio) / denom;
+            imag = (aimag - areal * ratio) / denom;
+        }
+    } else if (abs_bimag >= abs_breal) {
+        // divide tops and bottom by b.imag
+        ratio = breal / bimag;
+        denom = breal * ratio + bimag;
+        goog.asserts.assert(bimag !== 0.0);
+        real = (areal * ratio + aimag) / denom;
+        imag = (aimag * ratio - areal) / denom;
+    } else {
+        // At least one of b.real or b.imag is a NaN
+        real = NaN;
+        imag = NaN;
+    }
+
+    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+
+Sk.builtin.complex.prototype.nb$floor_divide = function (other) {
+    throw new Sk.builtin.TypeError("can't take floor of complex number.");
+};
+
+Sk.builtin.complex.prototype.nb$remainder = function (other) {
+    throw new Sk.builtin.TypeError("can't mod complex numbers.");
+};
+
+/**
+ * @param {?Object=} z, modulo operation
+ */
+Sk.builtin.complex.prototype.nb$power = function (other, z) {
+    var p;
+    var exponent;
+    var int_exponent;
+    var a, b;
+
+    // none is allowed
+    if (z != null && !Sk.builtin.checkNone(z)) {
+        throw new Sk.builtin.ValueError("complex modulo");  
+    }
+
+    a = this;
+    b = Sk.builtin.complex.check_number_or_complex(other);
+
+    exponent = b;
+    int_exponent = b.real.v | 0; // js convert to int
+    if (exponent.imag.v === 0.0 && exponent.real.v === int_exponent) {
+        p = Sk.builtin.complex.c_powi(a, int_exponent);
+    } else {
+        p = Sk.builtin.complex.c_pow(a, exponent);
+    }
+
+    return p;
+};
+
+// power of complex a and complex exponent b
+Sk.builtin.complex.c_pow = function (a, b) {
+    var real, imag; // Py_complex
+
+    var vabs;
+    var len;
+    var at;
+    var phase;
+
+    // other == b
+    var breal = b.real.v;
+    var bimag = b.imag.v;
+    // this == a
+    var areal = a.real.v;
+    var aimag = a.imag.v;
+
+    if (breal === 0.0 && bimag === 0.0) {
+        real = 1.0;
+        imag = 0.0;
+    } else if (areal === 0.0 && aimag === 0.0) {
+        if(bimag !== 0.0 || breal < 0.0) {
+            throw new Sk.builtin.ZeroDivisionError("complex division by zero");
+        }
+
+        real = 0.0;
+        imag = 0.0;
+    } else {
+        vabs = Math.hypot(areal, aimag);
+        len = Math.pow(vabs, breal);
+        at = Math.atan2(aimag, areal);
+        phase = at * breal;
+
+        if(bimag !== 0.0) {
+            len /= Math.exp(at * bimag);
+            phase += bimag * Math.log(vabs);
+        }
+
+        real = len * Math.cos(phase);
+        imag = len * Math.sin(phase);
+    }
+
+    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+
+// power of complex x and integer exponent n
+Sk.builtin.complex.c_powi = function (x, n) {
+    var cn; // Py_complex
+    var c1;
+
+    if (n > 100 || n < -100) {
+        cn = new Sk.builtin.complex(new Sk.builtin.float_(n), new Sk.builtin.float_(0.0));
+        return Sk.builtin.complex.c_pow(x, cn);
+    } else if (n > 0) {
+        return Sk.builtin.complex.c_powu(x, n);
+    } else {
+        //  return c_quot(c_1,c_powu(x,-n));
+        c1 = new Sk.builtin.complex(new Sk.builtin.float_(1.0), new Sk.builtin.float_(0.0));
+        return c1.nb$divide(Sk.builtin.complex.c_powu(x,-n));
+    }
+};
+
+Sk.builtin.complex.c_powu = function (x, n) {
+    var r, p; // Py_complex
+    var mask = 1;
+    r = new Sk.builtin.complex(new Sk.builtin.float_(1.0), new Sk.builtin.float_(0.0));
+    p = x;
+
+    while (mask > 0 && n >= mask) {
+        if (n & mask) {
+            r = r.nb$multiply(p);
+        }
+
+        mask <<= 1;
+        p = p.nb$multiply(p);
+    }
+
+    return r;
+};
+
+
+Sk.builtin.complex.prototype.nb$inplace_add = Sk.builtin.complex.prototype.nb$add;
+
+Sk.builtin.complex.prototype.nb$inplace_subtract = Sk.builtin.complex.prototype.nb$subtract;
+
+Sk.builtin.complex.prototype.nb$inplace_multiply = Sk.builtin.complex.prototype.nb$multiply;
+
+Sk.builtin.complex.prototype.nb$inplace_divide = Sk.builtin.complex.prototype.nb$divide;
+
+Sk.builtin.complex.prototype.nb$inplace_remainder = Sk.builtin.complex.prototype.nb$remainder;
+
+Sk.builtin.complex.prototype.nb$inplace_floor_divide = Sk.builtin.complex.prototype.nb$floor_divide;
+
+Sk.builtin.complex.prototype.nb$inplace_power = Sk.builtin.complex.prototype.nb$power;
+
+Sk.builtin.complex.prototype.nb$negative = function () {
+    var real;
+    var imag;
+    // this == a
+    var areal = this.real.v;
+    var aimag = this.imag.v;
+
+    real = -areal;
+    imag = -aimag;
+
+    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+
+Sk.builtin.complex.prototype.nb$positive = function () {
+    return Sk.builtin.complex.check_number_or_complex(this);
+};
+
+/**
+ *  check if op is instance of complex or a sub-type
+ */
+Sk.builtin.complex._complex_check = function (op) {
+    if (op === undefined) {
+        return false;
+    }
+
+    if (op instanceof Sk.builtin.complex || (op.tp$name && op.tp$name === "complex")) {
+        return true;
+    }
+
+    // check if type of ob is a subclass
+    if (Sk.builtin.issubclass(new Sk.builtin.type(op), Sk.builtin.complex)) {
+        return true;
+    }
+
+    return false;
+};
+
+Sk.builtin.complex.prototype.tp$richcompare = function (w, op) {
+    var result;
+    var equal;
+    var i;
+
+    if (op !== "Eq" && op !== "NotEq") {
+        if(Sk.builtin.checkNumber(w) || Sk.builtin.complex._complex_check(w)) {
+            throw new Sk.builtin.TypeError("no ordering relation is defined for complex numbers");
+        }
+
+        return Sk.builtin.NotImplemented.NotImplemented$;
+    }
+
+    // assert(PyComplex_Check(v)));
+    i = Sk.builtin.complex.check_number_or_complex(this);
+    var _real = i.tp$getattr("real").v;
+    var _imag = i.tp$getattr("imag").v;
+
+    if (Sk.builtin.checkInt(w)) {
+        /* Check for 0.0 imaginary part first to avoid the rich
+         * comparison when possible.
+         */
+
+        // if true, the complex number has just a real part
+        if (_imag === 0.0) {
+            equal = Sk.misceval.richCompareBool(new Sk.builtin.float_(_real), w, op);
+            result = Sk.builtin.bool(equal);
+            return result;
+        } else {
+            equal = false;
+        }
+    } else if (Sk.builtin.checkFloat(w)) {
+        equal = (_real === Sk.builtin.float_.PyFloat_AsDouble(w) && _imag === 0.0);
+    } else if (Sk.builtin.complex._complex_check(w)) {
+        // ToDo: figure if we need to call to_complex
+        var w_real = w.tp$getattr("real").v;
+        var w_imag = w.tp$getattr("imag").v;
+        equal = _real === w_real && _imag === w_imag;
+    } else {
+        return Sk.builtin.NotImplemented.NotImplemented$;
+    }
+
+    // invert result if op == NotEq
+    if(op === "NotEq") {
+        equal = !equal;
+    }
+
+    // wrap as bool
+    result = Sk.builtin.bool(equal);
+
+    return result;
+};
+
+// Despite what jshint may want us to do, these two  functions need to remain
+// as == and !=  Unless you modify the logic of numberCompare do not change
+// these.
+Sk.builtin.complex.prototype.__eq__ = function (me, other) {
+    return Sk.builtin.complex.prototype.tp$richcompare.call(me, other, "Eq");
+};
+
+Sk.builtin.complex.prototype.__ne__ = function (me, other) {
+    return Sk.builtin.complex.prototype.tp$richcompare.call(me, other, "NotEq");
+};
+
+/**
+ * Do we really need to implement those? Otherwise I can't find in Sk.abstr a place where this particular 
+ * expcetion is thrown.git co
+ */
+Sk.builtin.complex.prototype.__lt__ = function (me, other) {
+    throw new Sk.builtin.TypeError("unorderable types: " + Sk.abstr.typeName(me) + " < " + Sk.abstr.typeName(other));
+};
+
+Sk.builtin.complex.prototype.__le__ = function (me, other) {
+    throw new Sk.builtin.TypeError("unorderable types: " + Sk.abstr.typeName(me) + " <= " + Sk.abstr.typeName(other));
+};
+
+Sk.builtin.complex.prototype.__gt__ = function (me, other) {
+    throw new Sk.builtin.TypeError("unorderable types: " + Sk.abstr.typeName(me) + " > " + Sk.abstr.typeName(other));
+};
+
+Sk.builtin.complex.prototype.__ge__ = function (me, other) {
+    throw new Sk.builtin.TypeError("unorderable types: " + Sk.abstr.typeName(me) + " >= " + Sk.abstr.typeName(other));
+};
+
+Sk.builtin.complex.prototype.__float__ = function (self) {
+    throw new Sk.builtin.TypeError("can't convert complex to float");
+};
+
+Sk.builtin.complex.prototype.__int__ = function (self) {
+    throw new Sk.builtin.TypeError("can't convert complex to int");
+};
+
+
+Sk.builtin.complex.prototype._internalGenericGetAttr = Sk.builtin.object.prototype.GenericGetAttr;
+
+/**
+ * Custom getattr impl. to get the c.real and c.imag to work. Though we should
+ * consider to implement tp$members that always are attributs on the class and
+ * will be used in the genericgetattr method.
+ * Would be super easy to implement the readonly stuff too.
+ *
+ */
+Sk.builtin.complex.prototype.tp$getattr = function (name) {
+    if (name != null && (Sk.builtin.checkString(name) || typeof name === "string")) {
+        var _name = name;
+
+        // get javascript string
+        if (Sk.builtin.checkString(name)) {
+            _name = Sk.ffi.remapToJs(name);
+        }
+
+        if (_name === "real" || _name === "imag") {
+            return this[_name];
+        }
+    }
+
+    // if we have not returned yet, try the genericgetattr
+    return this._internalGenericGetAttr(name);
+};
+
+
+Sk.builtin.complex.prototype.tp$setattr = function (name, value) {
+    if (name != null && (Sk.builtin.checkString(name) || typeof name === "string")) {
+        var _name = name;
+
+        // get javascript string
+        if (Sk.builtin.checkString(name)) {
+            _name = Sk.ffi.remapToJs(name);
+        }
+
+        if (_name === "real" || _name === "imag") {
+            throw new Sk.builtin.AttributeError("readonly attribute");
+        }
+    }
+
+    // builtin: --> all is readonly (I am not happy with this)
+    throw new Sk.builtin.AttributeError("'complex' object attribute '" + name + "' is readonly");
+};
+
+/**
+ * Internal format function for repr and str
+ * It is not intended for __format__ calls
+ *
+ * This functions assumes, that v is always instance of Sk.builtin.complex
+ */
+Sk.builtin.complex.complex_format = function (v, precision, format_code){
+    function copysign (a, b) {
+        return b < 0 ? -Math.abs(a) : Math.abs(a);
+    }
+
+    if (v == null || !Sk.builtin.complex._complex_check(v)) {
+        throw new Error("Invalid internal method call: Sk.complex.complex_format() called with invalid value type.");
+    }
+
+    var result; // PyObject
+
+    var pre = "";
+    var im = "";
+    var re = null;
+    var lead = "";
+    var tail = "";
+
+    if (v.real.v === 0.0 && copysign(1.0, v.real.v) == 1.0) {
+        re = "";
+        im = Sk.builtin.nmber.PyOS_double_to_string(v.imag.v, format_code, precision, 0, null);
+        // im = v.imag.v;
+    } else {
+        /* Format imaginary part with sign, real part without */
+        pre = Sk.builtin.nmber.PyOS_double_to_string(v.real.v, format_code, precision, 0, null);
+        re = pre;
+
+        im = Sk.builtin.nmber.PyOS_double_to_string(v.imag.v, format_code, precision, Sk.builtin.nmber.PyOS_double_to_string.Py_DTSF_SIGN, null);
+        
+        if (v.imag.v === 0 && 1/v.imag.v === -Infinity && im && im[0] !== "-"){
+            im = "-" + im; // force negative zero sign
+        }
+
+        lead = "(";
+        tail = ")";
+    }
+
+    result = "" + lead + re + im + "j" + tail; // concat all parts
+
+    return new Sk.builtin.str(result);
+};
+
+Sk.builtin.complex.prototype["$r"] = function () {
+    return Sk.builtin.complex.complex_format(this, 0, "r");
+};
+
+Sk.builtin.complex.prototype.tp$str = function () {
+    return Sk.builtin.complex.complex_format(this, null, "g"); // g, 12 == Py_Float_STR_PRECISION
+};
+
+/**
+ * https://hg.python.org/cpython/file/3cf2990d19ab/Objects/complexobject.c#l907
+ * also see _PyComplex_FormatAdvanced
+ *
+ * We currently use the signature (self, format_spec) instead of (self, args). So we do
+ * not need to unwrap the args.
+ */
+Sk.builtin.complex.prototype.__format__ = new Sk.builtin.func(function (self, format_spec){
+    var result; // PyObject
+
+    if (format_spec == null) {
+        return null;
+    }
+
+    if (Sk.builtin.checkString(format_spec)) {
+        result = Sk.builtin.complex._PyComplex_FormatAdvanced(self, format_spec);
+
+        return result;
+    }
+
+
+    throw new Sk.builtin.TypeError("__format__ requires str or unicode");
+});
+
+Sk.builtin.complex._PyComplex_FormatAdvanced = function(self, format_spec) {
+    throw new Sk.builtin.NotImplementedError("__format__ is not implemented for complex type.");
+};
+
+/**
+    Return true if float or double are is neither infinite nor NAN, else false
+    Value is already a Javascript object
+ */
+Sk.builtin.complex._is_finite = function (val) {
+    return !isNaN(val) && val !== Infinity && val !== -Infinity;
+};
+
+Sk.builtin.complex._is_infinity = function (val) {
+    return val === Infinity || val === -Infinity;
+};
+
+/**
+ * @suppress {missingProperties}
+ */
+Sk.builtin.complex.prototype.__abs__  = new Sk.builtin.func(function (self) {
+    var result;
+    var _real = self.real.v;
+    var _imag = self.imag.v;
+
+    if (!Sk.builtin.complex._is_finite(_real) || !Sk.builtin.complex._is_finite(_imag)) {
+        /* C99 rules: if either the real or the imaginary part is an
+           infinity, return infinity, even if the other part is a
+           NaN.
+        */
+
+        if (Sk.builtin.complex._is_infinity(_real)) {
+            result = Math.abs(_real);
+            return new Sk.builtin.float_(result);
+        }
+
+        if (Sk.builtin.complex._is_infinity(_imag)) {
+            result = Math.abs(_imag);
+            return new Sk.builtin.float_(result);
+        }
+
+        /* either the real or imaginary part is a NaN,
+           and neither is infinite. Result should be NaN. */
+
+        return new Sk.builtin.nmber(NaN, Sk.builtin.nmber.float$);
+    }
+
+    result = Math.hypot(_real, _imag);
+
+    if (!Sk.builtin.complex._is_finite(result)) {
+        throw new Sk.builtin.OverflowError("absolute value too large");
+    }
+
+    return new Sk.builtin.float_(result);
+});
+
+Sk.builtin.complex.prototype.__bool__   = new Sk.builtin.func(function (self) {
+    return Sk.builtin.bool(self.tp$getattr("real").v || self.tp$getattr("real").v);
+});
+
+Sk.builtin.complex.prototype.__truediv__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__truediv__", arguments, 1, 1, true);
+    return self.nb$divide.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__hash__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, true);
+
+    return self.tp$hash.call(self);
+});
+
+Sk.builtin.complex.prototype.__add__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__add__", arguments, 1, 1, true);
+    return self.nb$add.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__repr__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, true);
+
+    return self["r$"].call(self);
+});
+
+Sk.builtin.complex.prototype.__str__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__str__", arguments, 0, 0, true);
+
+    return self.tp$str.call(self);
+});
+
+Sk.builtin.complex.prototype.__sub__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__sub__", arguments, 1, 1, true);
+    return self.nb$subtract.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__mul__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__mul__", arguments, 1, 1, true);
+    return self.nb$multiply.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__div__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__div__", arguments, 1, 1, true);
+    return self.nb$divide.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__floordiv__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__floordiv__", arguments, 1, 1, true);
+    return self.nb$floor_divide.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__mod__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__mod__", arguments, 1, 1, true);
+    return self.nb$remainder.call(self, other);
+});
+
+Sk.builtin.complex.prototype.__pow__ = new Sk.builtin.func(function (self, other, z){
+    Sk.builtin.pyCheckArgs("__pow__", arguments, 1, 2, true);
+    return self.nb$power.call(self, other, z);
+});
+
+Sk.builtin.complex.prototype.__neg__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__neg__", arguments, 0, 0, true);
+    return self.nb$negative.call(self);
+});
+
+Sk.builtin.complex.prototype.__pos__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__pos__", arguments, 0, 0, true);
+    return self.nb$positive.call(self);
+});
+
+Sk.builtin.complex.prototype.conjugate = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("conjugate", arguments, 0, 0, true);
+    var _imag = self.imag.v;
+    _imag = -_imag;
+
+    return new Sk.builtin.complex(self.real, new Sk.builtin.nmber(_imag, Sk.builtin.nmber.float$));
+});
+
+// deprecated
+Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(function (self, other){
+    Sk.builtin.pyCheckArgs("__divmod__", arguments, 1, 1, true);
+
+    var div, mod; // Py_complex
+    var d, m, z; // PyObject
+    var a, b; // Py_complex
+    a = Sk.builtin.complex.check_number_or_complex(self);
+    b = Sk.builtin.complex.check_number_or_complex(other);
+
+    div = a.nb$divide.call(a, b); // the raw divisor value
+
+    div.real = new Sk.builtin.nmber(Math.floor(div.real.v), Sk.builtin.nmber.float$);
+    div.imag = new Sk.builtin.nmber(0.0, Sk.builtin.nmber.float$);
+
+    mod = a.nb$subtract.call(a, b.nb$multiply.call(b, div));
+
+    z = new Sk.builtin.tuple([div, mod]);
+
+    return z;
+});
+
+Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__getnewargs__", arguments, 0, 0, true);
+
+    return new Sk.builtin.tuple([self.real, self.imag]);
+});
+
+Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(function (self){
+    Sk.builtin.pyCheckArgs("__nonzero__", arguments, 0, 0, true);
+
+    if(self.real.v !== 0.0 || self.imag.v !== 0.0) {
+        return Sk.builtin.bool.true$;
+    } else {
+        return Sk.builtin.bool.false$;
+    }
+});
+
+
+// ToDo: think about inplace methods too
+goog.exportSymbol("Sk.builtin.complex", Sk.builtin.complex);
 /**
  * @constructor
  * @param {Object} start
@@ -16271,7 +18017,6 @@ Sk.builtin.set = function (S) {
     return this;
 };
 
-
 Sk.builtin.set.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("set", Sk.builtin.set);
 
 Sk.builtin.set.prototype.set_iter_ = function () {
@@ -16289,11 +18034,15 @@ Sk.builtin.set.prototype["$r"] = function () {
     for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         ret.push(Sk.misceval.objectRepr(i).v);
     }
-    return new Sk.builtin.str("set([" + ret.join(", ") + "])");
+    if(Sk.python3) {
+        return new Sk.builtin.str("{" + ret.join(", ") + "}");
+    } else {
+        return new Sk.builtin.str("set([" + ret.join(", ") + "])");
+    }
 };
 Sk.builtin.set.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
 // todo; you can't hash a set() -- what should this be?
-Sk.builtin.set.prototype.tp$hash = Sk.builtin.object.prototype.HashNotImplemented;
+Sk.builtin.set.prototype.tp$hash = Sk.builtin.none.none$;
 
 Sk.builtin.set.prototype.tp$richcompare = function (w, op) {
     // todo; NotImplemented if either isn't a set
@@ -16527,7 +18276,93 @@ Sk.builtin.set.prototype["remove"] = new Sk.builtin.func(function (self, item) {
 });
 
 
-goog.exportSymbol("Sk.builtin.set", Sk.builtin.set);/**
+goog.exportSymbol("Sk.builtin.set", Sk.builtin.set);
+/*
+	Implementation of the Python3 print version. Due to Python2 grammar we have
+	to mimic the named keywords after *args as kwargs. Though this does not change
+	anything for the internal implementation
+
+*/
+var print_f = function function_print(kwa) {
+    Sk.builtin.pyCheckArgs("print", arguments, 0, Infinity, true, false);
+    var args = Array.prototype.slice.call(arguments, 1);
+    var kwargs = new Sk.builtins.dict(kwa);
+    var _kwargs = Sk.ffi.remapToJs(kwargs);
+
+    // defaults, null for None
+    var kw_list = {
+        "sep": " ",
+        "end": "\n",
+        "file": null
+    };
+
+    var remap_val;
+    var is_none;
+
+    // check for sep; string or None
+    remap_val = kwargs.mp$lookup(new Sk.builtin.str("sep"));
+    if(remap_val !== undefined) {
+        is_none = Sk.builtin.checkNone(remap_val);
+        if(Sk.builtin.checkString(remap_val) || is_none) {
+            kw_list["sep"] = is_none ? kw_list["sep"] : Sk.ffi.remapToJs(remap_val); // only reassign for string
+        } else {
+            throw new Sk.builtin.TypeError("sep must be None or a string, not " + Sk.abstr.typeName(remap_val));
+        }
+    }
+
+    // check for end; string or None
+    remap_val = kwargs.mp$lookup(new Sk.builtin.str("end"));
+    if(remap_val !== undefined) {
+        is_none = Sk.builtin.checkNone(remap_val);
+        if(Sk.builtin.checkString(remap_val) || is_none) {
+            kw_list["end"] = is_none ? kw_list["end"] : Sk.ffi.remapToJs(remap_val); // only reassign for string
+        } else {
+            throw new Sk.builtin.TypeError("end must be None or a string, not " + Sk.abstr.typeName(remap_val));
+        }
+    }
+
+    // check for file
+    // allow None, though just keep null or check if value has attribute write
+    remap_val = kwargs.mp$lookup(new Sk.builtin.str("file"));
+    if(remap_val !== undefined) {
+        is_none = Sk.builtin.checkNone(remap_val);
+        if(is_none || remap_val.tp$getattr("write") !== undefined) {
+            kw_list["file"] = is_none ? kw_list["file"] : remap_val;
+        } else {
+            throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(remap_val) + "' object has no attribute 'write'");
+        }
+    }
+
+    // loop through outputs and create output string
+    var s = "";
+    var i;
+    for(i = 0; i < args.length; i++) {
+        s += (new Sk.builtin.str(args[i])).v; // get str repr
+        s += kw_list.sep;
+    }
+
+    if(args.length > 0 && kw_list.sep.length > 0) {
+        s = s.substring(0, s.length-kw_list.sep.length);
+    }
+
+    s += kw_list.end;
+
+    if(kw_list.file !== null) {
+        // currently not tested, though it seems that we need to see how we should access the write function in a correct manner
+        Sk.misceval.callsim(kw_list.file.write, kw_list.file, new Sk.builtin.str(s)); // callsim to write function
+    } else {
+        Sk.output(s); // call configurable output function
+    }
+
+    // ToDo:
+    // cpython print function may receive another flush kwarg that flushes the output stream immediatelly
+};
+
+print_f.co_kwargs = true;
+Sk.builtin.print = new Sk.builtin.func(print_f);
+
+Sk.builtin.print.__doc__ = new Sk.builtin.str("print(value, ..., sep=' ', end='\\n', file=sys.stdout, flush=False)\n\nPrints the values to a stream, or to sys.stdout by default.\nOptional keyword arguments:\nfile:  a file-like object (stream); defaults to the current sys.stdout.\nsep:   string inserted between values, default a space.\nend:   string appended after the last value, default a newline.\nflush: whether to forcibly flush the stream.");
+/**
  * @constructor
  */
 Sk.builtin.module = function () {
@@ -19157,9 +20992,23 @@ start: 256
 function Parser (filename, grammar) {
     this.filename = filename;
     this.grammar = grammar;
+    this.p_flags = 0;
     return this;
 }
 
+// all possible parser flags
+Parser.FUTURE_PRINT_FUNCTION = "print_function";
+Parser.FUTURE_UNICODE_LITERALS = "unicode_literals";
+Parser.FUTURE_DIVISION = "division";
+Parser.FUTURE_ABSOLUTE_IMPORT = "absolute_import";
+Parser.FUTURE_WITH_STATEMENT = "with_statement";
+Parser.FUTURE_NESTED_SCOPES = "nested_scopes";
+Parser.FUTURE_GENERATORS = "generators";
+Parser.CO_FUTURE_PRINT_FUNCTION = 0x10000;
+Parser.CO_FUTURE_UNICODE_LITERALS = 0x20000;
+Parser.CO_FUTURE_DIVISON = 0x2000;
+Parser.CO_FUTURE_ABSOLUTE_IMPORT = 0x4000;
+Parser.CO_FUTURE_WITH_STATEMENT = 0x8000;
 
 Parser.prototype.setup = function (start) {
     var stackentry;
@@ -19291,6 +21140,12 @@ Parser.prototype.classify = function (type, value, context) {
     if (type === Sk.Tokenizer.Tokens.T_NAME) {
         this.used_names[value] = true;
         ilabel = this.grammar.keywords.hasOwnProperty(value) && this.grammar.keywords[value];
+
+        /* Check for handling print as an builtin function */
+        if(value === "print" && (this.p_flags & Parser.CO_FUTURE_PRINT_FUNCTION || Sk.python3 === true)) {
+            ilabel = false; // ilabel determines if the value is a keyword
+        }
+
         if (ilabel) {
             //print("is keyword");
             return ilabel;
@@ -19438,7 +21293,9 @@ function makeParser (filename, style) {
             return true;
         }
     });
-    return function (line) {
+
+    // create parser function
+    var parseFunc = function (line) {
         var ret = tokenizer.generateTokens(line);
         //print("tok:"+ret);
         if (ret) {
@@ -19449,6 +21306,10 @@ function makeParser (filename, style) {
         }
         return false;
     };
+
+    // set flags, and return
+    parseFunc.p_flags = p.p_flags;
+    return parseFunc;
 }
 
 Sk.parse = function parse (filename, input) {
@@ -19464,7 +21325,11 @@ Sk.parse = function parse (filename, input) {
     for (i = 0; i < lines.length; ++i) {
         ret = parseFunc(lines[i] + ((i === lines.length - 1) ? "" : "\n"));
     }
-    return ret;
+
+    /*
+     * Small adjustments here in order to return th flags and the cst
+     */
+    return {"cst": ret, "flags": parseFunc.p_flags};
 };
 
 Sk.parseTreeDump = function parseTreeDump (n, indent) {
@@ -20646,9 +22511,10 @@ var COMP_GENEXP = 0;
 var COMP_SETCOMP = 1;
 
 /** @constructor */
-function Compiling (encoding, filename) {
+function Compiling (encoding, filename, c_flags) {
     this.c_encoding = encoding;
     this.c_filename = filename;
+    this.c_flags = c_flags || 0;
 }
 
 /**
@@ -22348,6 +24214,12 @@ function parsestr (c, s) {
     var rawmode = false;
     var unicode = false;
 
+    // treats every sequence as unicodes even if they are not treated with uU prefix
+    // kinda hacking though working for most purposes
+    if((c.c_flags & Parser.CO_FUTURE_UNICODE_LITERALS || Sk.python3 === true)) {
+        unicode = true;
+    }
+
     if (quote === "u" || quote === "U") {
         s = s.substr(1);
         quote = s.charAt(0);
@@ -22398,9 +24270,9 @@ function parsenumber (c, s, lineno) {
     var tmp;
     var end = s.charAt(s.length - 1);
 
-    // todo; no complex support
+    // call internal complex type constructor for complex strings
     if (end === "j" || end === "J") {
-        throw new Sk.builtin.SyntaxError("complex numbers are currently unsupported", c.c_filename, lineno);
+        return Sk.builtin.complex.complex_subtype_from_string(s);
     }
 
     // Handle longs
@@ -22849,12 +24721,12 @@ function astForStmt (c, n) {
     }
 }
 
-Sk.astFromParse = function (n, filename) {
+Sk.astFromParse = function (n, filename, c_flags) {
     var j;
     var num;
     var ch;
     var i;
-    var c = new Compiling("utf-8", filename);
+    var c = new Compiling("utf-8", filename, c_flags);
     var stmts = [];
     var k = 0;
     switch (n.type) {
@@ -24107,7 +25979,7 @@ Compiler.prototype.annotateSource = function (ast) {
         }
         out("^\n//\n");
 
-        out("currLineNo = ", lineno, ";\ncurrColNo = ", col_offset, "\n\n");
+        out("currLineNo = ", lineno, ";\ncurrColNo = ", col_offset, ";\n\n");
     }
 };
 
@@ -24638,6 +26510,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
     var mangled;
     var val;
     var result;
+    var nStr; // used for preserving signs for floats (zeros)
     if (e.lineno > this.u.lineno) {
         this.u.lineno = e.lineno;
         this.u.linenoSet = false;
@@ -24678,10 +26551,19 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
                 return e.n;
             }
             else if (e.n instanceof Sk.builtin.nmber) {
-                return "new Sk.builtin.nmber(" + e.n.v + ",'" + e.n.skType + "')";
+                // Preserve sign of zero for floats
+                nStr = e.n.skType === Sk.builtin.nmber.float$ && e.n.v === 0 && 1/e.n.v === -Infinity ? "-0" : e.n.v;
+                return "new Sk.builtin.nmber(" + nStr + ",'" + e.n.skType + "')";
             }
             else if (e.n instanceof Sk.builtin.lng) {
+                // long uses the tp$str() method which delegates to nmber.str$ which preserves the sign
                 return "Sk.longFromStr('" + e.n.tp$str().v + "')";
+            }
+            else if (e.n instanceof Sk.builtin.complex) {
+                // preserve sign of zero here too
+                var real_val = e.n.real.v === 0 && 1/e.n.real.v === -Infinity ? "-0" : e.n.real.v;
+                var imag_val = e.n.imag.v === 0 && 1/e.n.imag.v === -Infinity ? "-0" : e.n.imag.v;
+                return "new Sk.builtin.complex(new Sk.builtin.float_(" + real_val + "), new Sk.builtin.float_(" + imag_val + "))";
             }
             goog.asserts.fail("unhandled Num type");
         case Str:
@@ -26234,7 +28116,7 @@ Compiler.prototype.cmod = function (mod) {
         "if (Sk.retainGlobals) {" +
         "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl; $loc = $gbl; }" +
         "    else { Sk.globals = $gbl; }" +
-        "} else { Sk.globals = $gbl; }"
+        "} else { Sk.globals = $gbl; }";
 
     // Add the try block that pops the try/except stack if one exists
     // Github Issue #38
@@ -26286,11 +28168,17 @@ Compiler.prototype.cmod = function (mod) {
  */
 Sk.compile = function (source, filename, mode, canSuspend) {
     //print("FILE:", filename);
-    var cst = Sk.parse(filename, source);
-    var ast = Sk.astFromParse(cst, filename);
+    var parse = Sk.parse(filename, source);
+    var ast = Sk.astFromParse(parse.cst, filename, parse.flags);
+
+    // compilers flags, later we can add other ones too
+    var flags = {};
+    flags.cf_flags = parse.flags;
+
     var st = Sk.symboltable(ast, filename);
-    var c = new Compiler(filename, st, 0, canSuspend, source); // todo; CO_xxx
+    var c = new Compiler(filename, st, flags.cf_flags, canSuspend, source); // todo; CO_xxx
     var funcname = c.cmod(ast);
+
     var ret = c.result.join("");
     return {
         funcname: funcname,
@@ -26703,6 +28591,11 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
             }
 
             module["$d"] = modlocs;
+            
+            // doc string is None, when not present
+            if (!modlocs["__doc__"]) {
+                modlocs["__doc__"] = Sk.builtin.none.none$;
+            }
 
             // If an onAfterImport method is defined on the global Sk
             // then call it now after a library has been successfully imported
@@ -27694,21 +29587,22 @@ Sk.builtins = {
     "jsmillis"  : Sk.builtin.jsmillis,
     "quit"      : Sk.builtin.quit,
     "exit"      : Sk.builtin.quit,
+    "print"     : Sk.builtin.print,
+    "divmod"    : Sk.builtin.divmod,
+    "format"    : Sk.builtin.format,
+    "globals"   : Sk.builtin.globals,
+    "issubclass": Sk.builtin.issubclass,
+    "iter"      : Sk.builtin.iter,
+    "complex"   : Sk.builtin.complex,
 
     // Functions below are not implemented
     "bytearray" : Sk.builtin.bytearray,
     "callable"  : Sk.builtin.callable,
-    "complex"   : Sk.builtin.complex,
     "delattr"   : Sk.builtin.delattr,
-    "divmod"    : Sk.builtin.divmod,
     "eval_$rn$" : Sk.builtin.eval_,
     "execfile"  : Sk.builtin.execfile,
-    "format"    : Sk.builtin.format,
     "frozenset" : Sk.builtin.frozenset,
-    "globals"   : Sk.builtin.globals,
     "help"      : Sk.builtin.help,
-    "issubclass": Sk.builtin.issubclass,
-    "iter"      : Sk.builtin.iter,
     "locals"    : Sk.builtin.locals,
     "memoryview": Sk.builtin.memoryview,
     "next"      : Sk.builtin.next_,
