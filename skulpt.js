@@ -5231,18 +5231,27 @@ Sk.builtin.type = function (name, bases, dict) {
             var tname = Sk.abstr.typeName(this);
             if (iterf) {
                 ret = Sk.misceval.callsim(iterf);
-                // This check does not work for builtin iterators
-                // if (ret.tp$getattr("next") === undefined)
-                //    throw new Sk.builtin.TypeError("iter() return non-iterator of type '" + tname + "'");
                 return ret;
             }
             throw new Sk.builtin.TypeError("'" + tname + "' object is not iterable");
         };
         klass.prototype.tp$iternext = function () {
             var iternextf = this.tp$getattr("next");
-            goog.asserts.assert(iternextf !== undefined, "iter() should have caught this");
-            return Sk.misceval.callsim(iternextf);
+            var ret;
+            if (iternextf) {
+                try {
+                    ret = Sk.misceval.callsim(iternextf);
+                } catch (e) {
+                    if (e instanceof Sk.builtin.StopIteration) {
+                        ret = undefined;
+                    } else {
+                        throw e;
+                    }
+                }
+                return ret;
+            }
         };
+
         klass.prototype.tp$getitem = function (key, canSuspend) {
             var getf = this.tp$getattr("__getitem__"), r;
             if (getf !== undefined) {
@@ -5554,6 +5563,55 @@ Sk.builtin.object.PyObject_LookupSpecial_ = function(op, str) {
 
     return Sk.builtin.type.typeLookup(op, str);
 };
+
+/**
+ * @constructor
+ */
+function seqIter(obj) {
+    var ret;
+    this.idx = 0;
+    this.myobj = obj;
+    this.tp$iternext = function () {
+        try {
+            ret = Sk.misceval.callsim(this.myobj["__getitem__"], this.myobj, Sk.ffi.remapToPy(this.idx));
+        } catch (e) {
+            if (e instanceof Sk.builtin.IndexError) {
+                return undefined;
+            } else {
+                throw e;
+            }
+        }
+        this.idx++;
+        return ret;
+    };
+}
+
+Sk.builtin.object.getIter_ = function(obj) {
+    var iter;
+    var getit;
+    var ret;
+    if (obj.tp$getattr) {
+        iter = obj.tp$getattr("__iter__");
+        if (iter) {
+            return Sk.misceval.callsim(iter);
+        }
+    }
+    if (obj.tp$iter) {
+        try {  // catch and ignore not iterable error here.
+            ret = obj.tp$iter();
+            if (ret.tp$iternext) {
+                return ret;
+            }
+        } catch (e) { }
+    }
+    getit = obj.tp$getattr("__getitem__");
+    if (getit) {
+        // create internal iterobject if __getitem__
+        return new seqIter(obj);
+    }
+    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + "' object is not iterable");
+};
+
 
 /**
  * @return {undefined}
@@ -9482,6 +9540,37 @@ Sk.abstr.sequenceSetSlice = function (seq, i1, i2, x) {
     }
 };
 
+// seq - Python object to unpack
+// n   - JavaScript number of items to unpack
+Sk.abstr.sequenceUnpack = function (seq, n) {
+    var res = [];
+    var it, i;
+
+    if (!Sk.builtin.checkIterable(seq)) {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
+    }
+
+    for (it = Sk.builtin.object.getIter_(seq), i = it.tp$iternext();
+         (i !== undefined) && (res.length < n); 
+         i = it.tp$iternext()) {
+        res.push(i);
+    }
+
+    if (res.length < n) {
+        throw new Sk.builtin.ValueError("need more than " + res.length + " values to unpack");
+    }
+    if (i !== undefined) {
+        throw new Sk.builtin.ValueError("too many values to unpack");
+    }
+
+    // Return Javascript array of items
+    return res;
+};
+
+//
+// Object
+//
+
 Sk.abstr.objectFormat = function (obj, format_spec) {
     var meth; // PyObject
     var result; // PyObject
@@ -9505,10 +9594,6 @@ Sk.abstr.objectFormat = function (obj, format_spec) {
 
     return result;
 };
-
-//
-// Object
-//
 
 Sk.abstr.objectAdd = function (a, b) {
     var btypename;
@@ -25966,8 +26051,9 @@ Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
     var items;
     goog.asserts.assert(tuporlist === "tuple" || tuporlist === "list" || tuporlist === "set");
     if (e.ctx === Store) {
+        items = this._gr("items", "Sk.abstr.sequenceUnpack(" + data + "," + e.elts.length + ")");
         for (i = 0; i < e.elts.length; ++i) {
-            this.vexpr(e.elts[i], "Sk.abstr.objectGetItem(" + data + "," + i + ")");
+            this.vexpr(e.elts[i], items + "[" + i + "]");
         }
     }
     else if (e.ctx === Load || tuporlist === "set") { //because set's can't be assigned to.
@@ -26755,7 +26841,7 @@ Compiler.prototype.cfor = function (s) {
         out(iter, "=Sk.abstr.iter(", toiter, ");");
     }
     else {
-        iter = this._gr("iter", "Sk.abstr.iter(", toiter, ")");
+        iter = this._gr("iter", "Sk.builtin.object.getIter_(", toiter, ")");
         this.u.tempsToSave.push(iter); // Save it across suspensions
     }
 
