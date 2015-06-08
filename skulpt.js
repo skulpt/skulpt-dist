@@ -5724,6 +5724,11 @@ Sk.builtin.NotImplemented.NotImplemented$ = Object.create(Sk.builtin.NotImplemen
 goog.exportSymbol("Sk.builtin.none", Sk.builtin.none);
 goog.exportSymbol("Sk.builtin.NotImplemented", Sk.builtin.NotImplemented);
 /**
+ * @namespace Sk.builtin
+ */
+
+
+/**
  * Check arguments to Python functions to ensure the correct number of
  * arguments are passed.
  *
@@ -5856,6 +5861,13 @@ goog.exportSymbol("Sk.builtin.checkFunction", Sk.builtin.checkFunction);
 
 /**
  * @constructor
+ * Sk.builtin.func
+ *
+ * @description
+ * This function converts a Javascript function into a Python object that is callable.  Or just
+ * think of it as a Python function rather than a Javascript function now.  This is an important
+ * distinction in skulpt because once you have Python function you cannot just call it.
+ * You must now use Sk.misceval.callsim to call the Python function.
  *
  * @param {Function} code the javascript implementation of this function
  * @param {Object=} globals the globals where this function was defined.
@@ -7899,6 +7911,10 @@ Sk.builtin.method.prototype["$r"] = function () {
     return new Sk.builtin.str("<bound method " + this.im_self.ob$type.tp$name + "." + name +
         " of " + this.im_self["$r"]().v + ">");
 };
+/**
+ * @namespace Sk.misceval
+ *
+ */
 Sk.misceval = {};
 
 /*
@@ -7912,6 +7928,8 @@ Sk.misceval = {};
 */
 
 /**
+ *
+ * Hi kids lets make a suspension...
  * @constructor
  * @param{function(?)=} resume A function to be called on resume. child is resumed first and its return value is passed to this function.
  * @param{Object=} child A child suspension. 'optional' will be copied from here if supplied.
@@ -7933,6 +7951,9 @@ Sk.misceval.Suspension = function Suspension(resume, child, data) {
 goog.exportSymbol("Sk.misceval.Suspension", Sk.misceval.Suspension);
 
 /**
+ *
+ * Well this seems pretty obvious by the name what it should do..
+ *
  * @param{Sk.misceval.Suspension} susp
  * @param{string=} message
  */
@@ -7947,6 +7968,11 @@ Sk.misceval.retryOptionalSuspensionOrThrow = function (susp, message) {
 };
 goog.exportSymbol("Sk.misceval.retryOptionalSuspensionOrThrow", Sk.misceval.retryOptionalSuspensionOrThrow);
 
+/**
+ * Check if the given object is valid to use as an index. Only ints, or if the object has an `__index__` method.
+ * @param o
+ * @returns {boolean}
+ */
 Sk.misceval.isIndex = function (o) {
     if (Sk.builtin.checkInt(o)) {
         return true;
@@ -8588,7 +8614,6 @@ goog.exportSymbol("Sk.misceval.loadname", Sk.misceval.loadname);
  *
  * TODO I think all the above is out of date.
  */
-
 Sk.misceval.call = function (func, kwdict, varargseq, kws, args) {
     args = Array.prototype.slice.call(arguments, 4);
     // todo; possibly inline apply to avoid extra stack frame creation
@@ -8967,6 +8992,10 @@ Sk.misceval.buildClass = function (globals, func, name, bases) {
     return klass;
 };
 goog.exportSymbol("Sk.misceval.buildClass", Sk.misceval.buildClass);
+/**
+ * @namespace Sk.abstr
+ *
+ */
 Sk.abstr = {};
 
 //
@@ -9003,6 +9032,13 @@ Sk.abstr.unop_type_error = function (v, name) {
     throw new Sk.builtin.TypeError("bad operand type for unary " + uop + ": '" + vtypename + "'");
 };
 
+/**
+ * lookup and return the LHS object slot function method.  This coudl be either a builtin slot function or a dunder method defined by the user.
+ * @param obj
+ * @param name
+ * @returns {Object|null|undefined}
+ * @private
+ */
 Sk.abstr.boNameToSlotFuncLhs_ = function (obj, name) {
     if (obj === null) {
         return undefined;
@@ -18608,6 +18644,11 @@ Sk.builtin.file.prototype["write"] = new Sk.builtin.func(function (self, str) {
 
 
 goog.exportSymbol("Sk.builtin.file", Sk.builtin.file);
+/**
+ * @namespace Sk.ffi
+ *
+ */
+
 Sk.ffi = Sk.ffi || {};
 
 /**
@@ -18646,7 +18687,12 @@ Sk.ffi.remapToPy = function (obj) {
 goog.exportSymbol("Sk.ffi.remapToPy", Sk.ffi.remapToPy);
 
 /**
- * maps from Python dict/list/str to Javascript Object/Array/string.
+ * Maps from Python dict/list/str/number to Javascript Object/Array/string/number.
+ *
+ * If obj is a
+ *
+ * @param obj {Object}  Any Python object (except a function)
+ *
  */
 Sk.ffi.remapToJs = function (obj) {
     var i;
@@ -28038,6 +28084,11 @@ Sk.resetCompiler = function () {
 };
 
 goog.exportSymbol("Sk.resetCompiler", Sk.resetCompiler);
+/**
+ * @namespace Sk
+ *
+ */
+
 // this is stored into sys specially, rather than created by sys
 Sk.sysmodules = new Sk.builtin.dict([]);
 Sk.realsyspath = undefined;
@@ -28485,6 +28536,17 @@ Sk.importMain = function (name, dumpJS, canSuspend) {
     return Sk.importModuleInternal_(name, dumpJS, "__main__", undefined, canSuspend);
 };
 
+/**
+ * **Run Python Code in Skulpt**
+ *
+ * When you want to hand Skulpt a string corresponding to a Python program this is the function.
+ *
+ * @param name {string}  File name to use for messages related to this run
+ * @param dumpJS {boolean} print out the compiled javascript
+ * @param body {string} Python Code
+ * @param canSuspend {boolean}  Use Suspensions for async execution
+ *
+ */
 Sk.importMainWithBody = function (name, dumpJS, body, canSuspend) {
     Sk.dateSet = false;
     Sk.filesLoaded = false;
