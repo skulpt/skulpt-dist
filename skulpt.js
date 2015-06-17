@@ -5401,7 +5401,10 @@ Sk.builtin.type.typeLookup = function (type, name) {
     // todo; probably should fix this, used for builtin types to get stuff
     // from prototype
     if (!mro) {
-        return type.prototype[name];
+        if (type.prototype) {
+            return type.prototype[name];
+        }
+        return undefined;
     }
 
     for (i = 0; i < mro.v.length; ++i) {
@@ -5557,71 +5560,7 @@ Sk.builtin.object = function () {
     return this;
 };
 
-/**
- * Special method look up. First try getting the method via
- * internal dict and getattr. If getattr is not present (builtins)
- * try if method is defined on the object itself
- *
- * Return null if not found or the function
- */
-Sk.builtin.object.PyObject_LookupSpecial_ = function(op, str) {
-    var res;
 
-    // if op is null, return null
-    if (op == null) {
-        return null;
-    }
-
-    return Sk.builtin.type.typeLookup(op, str);
-};
-
-/**
- * @constructor
- */
-function seqIter(obj) {
-    var ret;
-    this.idx = 0;
-    this.myobj = obj;
-    this.tp$iternext = function () {
-        try {
-            ret = Sk.misceval.callsim(this.myobj["__getitem__"], this.myobj, Sk.ffi.remapToPy(this.idx));
-        } catch (e) {
-            if (e instanceof Sk.builtin.IndexError) {
-                return undefined;
-            } else {
-                throw e;
-            }
-        }
-        this.idx++;
-        return ret;
-    };
-}
-
-Sk.builtin.object.getIter_ = function(obj) {
-    var iter;
-    var getit;
-    var ret;
-    if (obj.tp$getattr) {
-        iter = obj.tp$getattr("__iter__");
-        if (iter) {
-            return Sk.misceval.callsim(iter);
-        }
-    }
-    if (obj.tp$iter) {
-        try {  // catch and ignore not iterable error here.
-            ret = obj.tp$iter();
-            if (ret.tp$iternext) {
-                return ret;
-            }
-        } catch (e) { }
-    }
-    getit = obj.tp$getattr("__getitem__");
-    if (getit) {
-        // create internal iterobject if __getitem__
-        return new seqIter(obj);
-    }
-    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + "' object is not iterable");
-};
 
 
 /**
@@ -5787,7 +5726,6 @@ goog.exportSymbol("Sk.builtin.pyCheckArgs", Sk.builtin.pyCheckArgs);
  * @param {string} exptype string of the expected type name
  * @param {boolean} check truthy if type check passes, falsy otherwise
  */
-
 Sk.builtin.pyCheckType = function (name, exptype, check) {
     if (!check) {
         throw new Sk.builtin.TypeError(name + " must be a " + exptype);
@@ -5800,8 +5738,33 @@ Sk.builtin.checkSequence = function (arg) {
 };
 goog.exportSymbol("Sk.builtin.checkSequence", Sk.builtin.checkSequence);
 
+/**
+ * Use this to test whether or not a Python object is iterable.  You should **not** rely
+ * on the presence of tp$iter on the object as a good test, as it could be a user defined
+ * class with `__iter__` defined or ``__getitem__``  This tests for all of those cases
+ *
+ * @param arg {Object}   A Python object
+ * @returns {boolean} true if the object is iterable
+ */
 Sk.builtin.checkIterable = function (arg) {
-    return (arg !== null && arg.tp$iter !== undefined);
+    var ret = false;
+    if (arg !== null ) {
+        try {
+            ret = Sk.abstr.iter(arg);
+            if (ret) {
+                return true;
+            } else {
+                return false;
+            }
+        } catch (e) {
+            if (e instanceof Sk.builtin.TypeError) {
+                return false;
+            } else {
+                throw e;
+            }
+        }
+    }
+    return ret;
 };
 goog.exportSymbol("Sk.builtin.checkIterable", Sk.builtin.checkIterable);
 
@@ -6210,7 +6173,7 @@ Sk.builtin.round = function round (number, ndigits) {
     }
 
     // try calling internal magic method
-    special = Sk.builtin.object.PyObject_LookupSpecial_(number.ob$type, "__round__");
+    special = Sk.abstr.lookupSpecial(number, "__round__");
     if (special != null) {
         // method on builtin, provide this arg
         return Sk.misceval.callsim(special, number, ndigits);
@@ -6280,13 +6243,13 @@ Sk.builtin.max = function max () {
 Sk.builtin.any = function any (iter) {
     var it, i;
 
-    Sk.builtin.pyCheckArgs("any", arguments, 1);
+    Sk.builtin.pyCheckArgs("any", arguments, 1, 1);
     if (!Sk.builtin.checkIterable(iter)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
             "' object is not iterable");
     }
 
-    it = iter.tp$iter();
+    it = Sk.abstr.iter(iter);
     for (i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if (Sk.misceval.isTrue(i)) {
             return Sk.builtin.bool.true$;
@@ -6299,13 +6262,13 @@ Sk.builtin.any = function any (iter) {
 Sk.builtin.all = function all (iter) {
     var it, i;
 
-    Sk.builtin.pyCheckArgs("all", arguments, 1);
+    Sk.builtin.pyCheckArgs("all", arguments, 1, 1);
     if (!Sk.builtin.checkIterable(iter)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
             "' object is not iterable");
     }
 
-    it = iter.tp$iter();
+    it = Sk.abstr.iter(iter);
     for (i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if (!Sk.misceval.isTrue(i)) {
             return Sk.builtin.bool.false$;
@@ -6331,7 +6294,7 @@ Sk.builtin.sum = function sum (iter, start) {
         tot = start;
     }
 
-    it = iter.tp$iter();
+    it = Sk.abstr.iter(iter);
     for (i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if (i.skType === Sk.builtin.nmber.float$) {
             has_float = true;
@@ -6347,7 +6310,7 @@ Sk.builtin.sum = function sum (iter, start) {
             }
         }
 
-        if (tot.nb$add(i) !== undefined) {
+        if ((tot.nb$add !== undefined) && (tot.nb$add(i) !== undefined)) {
             tot = tot.nb$add(i);
         } else {
             throw new Sk.builtin.TypeError("unsupported operand type(s) for +: '" +
@@ -6372,8 +6335,8 @@ Sk.builtin.zip = function zip () {
 
     iters = [];
     for (i = 0; i < arguments.length; i++) {
-        if (arguments[i].tp$iter) {
-            iters.push(arguments[i].tp$iter());
+        if (Sk.builtin.checkIterable(arguments[i])) {
+            iters.push(Sk.abstr.iter(arguments[i]));
         } else {
             throw new Sk.builtin.TypeError("argument " + i + " must support iteration");
         }
@@ -6516,7 +6479,7 @@ Sk.builtin.dir = function dir (x) {
     var _seq;
 
     // try calling magic method
-    var special = Sk.builtin.object.PyObject_LookupSpecial_(x.ob$type, "__dir__");
+    var special = Sk.abstr.lookupSpecial(x, "__dir__");
     if(special != null) {
         // method on builtin, provide this arg
         _seq = Sk.misceval.callsim(special, x);
@@ -6832,7 +6795,7 @@ Sk.builtin.map = function map (fun, seq) {
                 argnum = parseInt(i, 10) + 2;
                 throw new Sk.builtin.TypeError("argument " + argnum + " to map() must support iteration");
             }
-            iterables[i] = iterables[i].tp$iter();
+            iterables[i] = Sk.abstr.iter(iterables[i]);
         }
 
         while (true) {
@@ -6862,7 +6825,7 @@ Sk.builtin.map = function map (fun, seq) {
 
     retval = [];
 
-    for (iter = seq.tp$iter(), item = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(seq), item = iter.tp$iternext();
          item !== undefined;
          item = iter.tp$iternext()) {
         if (fun === Sk.builtin.none.none$) {
@@ -6894,7 +6857,7 @@ Sk.builtin.reduce = function reduce (fun, seq, initializer) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
     }
 
-    iter = seq.tp$iter();
+    iter = Sk.abstr.iter(seq);
     if (initializer === undefined) {
         initializer = iter.tp$iternext();
         if (initializer === undefined) {
@@ -6953,7 +6916,7 @@ Sk.builtin.filter = function filter (fun, iterable) {
 
     retval = ctor();
 
-    for (iter = iterable.tp$iter(), item = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(iterable), item = iter.tp$iternext();
          item !== undefined;
          item = iter.tp$iternext()) {
         if (fun === Sk.builtin.none.none$) {
@@ -7501,6 +7464,24 @@ Sk.builtin.ParseError = function (args) {
 goog.inherits(Sk.builtin.ParseError, Sk.builtin.StandardError);
 Sk.builtin.ParseError.prototype.tp$name = "ParseError";
 
+/**
+ * @constructor
+ * @extends Sk.builtin.StandardError
+ * @param {...*} args
+ */
+Sk.builtin.RuntimeError = function (args) {
+    var o;
+    if (!(this instanceof Sk.builtin.RuntimeError)) {
+        o = Object.create(Sk.builtin.RuntimeError.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    Sk.builtin.StandardError.apply(this, arguments);
+};
+goog.inherits(Sk.builtin.RuntimeError, Sk.builtin.StandardError);
+Sk.builtin.AssertionError.prototype.tp$name = "RuntimeError";
+goog.exportSymbol("Sk.builtin.RuntimeError", Sk.builtin.RuntimeError);
+
 
 /**
  * @constructor
@@ -7988,7 +7969,7 @@ Sk.misceval.isIndex = function (o) {
     if (Sk.builtin.checkInt(o)) {
         return true;
     }
-    if (Sk.builtin.object.PyObject_LookupSpecial_(o.ob$type, "__index__")) {
+    if (Sk.abstr.lookupSpecial(o, "__index__")) {
         return true;
     }
     return false;
@@ -8022,7 +8003,7 @@ Sk.misceval.asIndex = function (o) {
     if (o.constructor === Sk.builtin.bool) {
         return Sk.builtin.asnum$(o);
     }
-    idxfn = Sk.builtin.object.PyObject_LookupSpecial_(o.ob$type, "__index__");
+    idxfn = Sk.abstr.lookupSpecial(o, "__index__");
     if (idxfn) {
         ret = Sk.misceval.callsim(idxfn, o);
         if (!Sk.builtin.checkInt(ret)) {
@@ -8105,10 +8086,10 @@ Sk.misceval.arrayFromArguments = function (args) {
     // shouldn't else if here as the above may output lists to arg.
     if (arg instanceof Sk.builtin.list || arg instanceof Sk.builtin.tuple) {
         return arg.v;
-    } else if (arg.tp$iter !== undefined) {
+    } else if (Sk.builtin.checkIterable(arg)) {
         // handle arbitrary iterable (strings, generators, etc.)
         res = [];
-        for (it = arg.tp$iter(), i = it.tp$iternext();
+        for (it = Sk.abstr.iter(arg), i = it.tp$iternext();
              i !== undefined; i = it.tp$iternext()) {
             res.push(i);
         }
@@ -8145,7 +8126,8 @@ Sk.misceval.richCompareBool = function (v, w, op) {
         swapped_method,
         method,
         op2method,
-        res,
+        vcmp,
+        wcmp,
         w_seq_type,
         w_num_type,
         v_seq_type,
@@ -8285,15 +8267,15 @@ Sk.misceval.richCompareBool = function (v, w, op) {
 
 
     // use comparison methods if they are given for either object
-    if (v.tp$richcompare && (res = v.tp$richcompare(w, op)) !== undefined) {
-        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
-            return res;
+    if (v.tp$richcompare && (ret = v.tp$richcompare(w, op)) !== undefined) {
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
         }
     }
 
-    if (w.tp$richcompare && (res = w.tp$richcompare(v, Sk.misceval.swappedOp_[op])) !== undefined) {
-        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
-            return res;
+    if (w.tp$richcompare && (ret = w.tp$richcompare(v, Sk.misceval.swappedOp_[op])) !== undefined) {
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
         }
     }
 
@@ -8310,55 +8292,62 @@ Sk.misceval.richCompareBool = function (v, w, op) {
         "LtE"  : "__le__"
     };
 
-    method = op2method[op];
-    swapped_method = op2method[Sk.misceval.swappedOp_[op]];
-
-    if (v[method]) {
-        res = Sk.misceval.isTrue(Sk.misceval.callsim(v[method], v, w));
-        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
-            return res;
-        }
-    } else if (w[swapped_method]) {
-        res = Sk.misceval.isTrue(Sk.misceval.callsim(w[swapped_method], w, v));
-        if (res != Sk.builtin.NotImplemented.NotImplemented$) {
-            return res;
+    method = Sk.abstr.lookupSpecial(v, op2method[op]);
+    if (method) {
+        ret = Sk.misceval.callsim(method, v, w);
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
         }
     }
 
-    if (v["__cmp__"]) {
-        ret = Sk.misceval.callsim(v["__cmp__"], v, w);
-        ret = Sk.builtin.asnum$(ret);
-        if (op === "Eq") {
-            return ret === 0;
-        } else if (op === "NotEq") {
-            return ret !== 0;
-        } else if (op === "Lt") {
-            return ret < 0;
-        } else if (op === "Gt") {
-            return ret > 0;
-        } else if (op === "LtE") {
-            return ret <= 0;
-        } else if (op === "GtE") {
-            return ret >= 0;
+    swapped_method = Sk.abstr.lookupSpecial(w, op2method[Sk.misceval.swappedOp_[op]]);
+    if (swapped_method) {
+        ret = Sk.misceval.callsim(swapped_method, w, v);
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
         }
     }
 
-    if (w["__cmp__"]) {
+    vcmp = Sk.abstr.lookupSpecial(v, "__cmp__");
+    if (vcmp) {
+        ret = Sk.misceval.callsim(vcmp, v, w);
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            ret = Sk.builtin.asnum$(ret);
+            if (op === "Eq") {
+                return ret === 0;
+            } else if (op === "NotEq") {
+                return ret !== 0;
+            } else if (op === "Lt") {
+                return ret < 0;
+            } else if (op === "Gt") {
+                return ret > 0;
+            } else if (op === "LtE") {
+                return ret <= 0;
+            } else if (op === "GtE") {
+                return ret >= 0;
+            }
+        }
+    }
+
+    wcmp = Sk.abstr.lookupSpecial(w, "__cmp__");
+    if (wcmp) {
         // note, flipped on return value and call
-        ret = Sk.misceval.callsim(w["__cmp__"], w, v);
-        ret = Sk.builtin.asnum$(ret);
-        if (op === "Eq") {
-            return ret === 0;
-        } else if (op === "NotEq") {
-            return ret !== 0;
-        } else if (op === "Lt") {
-            return ret > 0;
-        } else if (op === "Gt") {
-            return ret < 0;
-        } else if (op === "LtE") {
-            return ret >= 0;
-        } else if (op === "GtE") {
-            return ret <= 0;
+        ret = Sk.misceval.callsim(wcmp, w, v);
+        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+            ret = Sk.builtin.asnum$(ret);
+            if (op === "Eq") {
+                return ret === 0;
+            } else if (op === "NotEq") {
+                return ret !== 0;
+            } else if (op === "Lt") {
+                return ret > 0;
+            } else if (op === "Gt") {
+                return ret < 0;
+            } else if (op === "LtE") {
+                return ret >= 0;
+            } else if (op === "GtE") {
+                return ret <= 0;
+            }
         }
     }
 
@@ -9451,18 +9440,18 @@ Sk.abstr.sequenceContains = function (seq, ob) {
      *  Look for special method and call it, we have to distinguish between built-ins and 
      *  python objects
      */
-    special = Sk.builtin.object.PyObject_LookupSpecial_(seq.ob$type, "__contains__");
+    special = Sk.abstr.lookupSpecial(seq, "__contains__");
     if (special != null) {
         // method on builtin, provide this arg
-        return Sk.misceval.callsim(special, seq, ob);
+        return Sk.misceval.isTrue(Sk.misceval.callsim(special, seq, ob));
     }
 
-    seqtypename = Sk.abstr.typeName(seq);
-    if (!seq.tp$iter) {
+    if (!Sk.builtin.checkIterable(seq)) {
+        seqtypename = Sk.abstr.typeName(seq);
         throw new Sk.builtin.TypeError("argument of type '" + seqtypename + "' is not iterable");
     }
 
-    for (it = seq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(seq), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if (Sk.misceval.richCompareBool(i, ob, "Eq")) {
             return true;
         }
@@ -9481,21 +9470,43 @@ Sk.abstr.sequenceConcat = function (seq1, seq2) {
 
 Sk.abstr.sequenceGetIndexOf = function (seq, ob) {
     var seqtypename;
+    var i, it;
+    var index;
     if (seq.index) {
         return Sk.misceval.callsim(seq.index, seq, ob);
     }
+    if (Sk.builtin.checkIterable(seq)) {
+        index = 0;
+        for (it = Sk.abstr.iter(seq), i = it.tp$iternext();
+             i !== undefined; i = it.tp$iternext()) {
+            if (Sk.misceval.richCompareBool(ob, i, "Eq")) {
+                return Sk.builtin.assk$(index, Sk.builtin.nmber.int$);
+            }
+            index += 1;
+        }
+        throw new Sk.builtin.ValueError("sequence.index(x): x not in sequence");
+    }
 
     seqtypename = Sk.abstr.typeName(seq);
-    if (seqtypename === "dict") {
-        throw new Sk.builtin.NotImplementedError("looking up dict key from value is not yet implemented (supported in Python 2.6)");
-    }
     throw new Sk.builtin.TypeError("argument of type '" + seqtypename + "' is not iterable");
 };
 
 Sk.abstr.sequenceGetCountOf = function (seq, ob) {
     var seqtypename;
+    var i, it;
+    var count;
     if (seq.count) {
         return Sk.misceval.callsim(seq.count, seq, ob);
+    }
+    if (Sk.builtin.checkIterable(seq)) {
+        count = 0;
+        for (it = Sk.abstr.iter(seq), i = it.tp$iternext();
+             i !== undefined; i = it.tp$iternext()) {
+            if (Sk.misceval.richCompareBool(ob, i, "Eq")) {
+                count += 1;
+            }
+        }
+        return Sk.builtin.assk$(count, Sk.builtin.nmber.int$);
     }
 
     seqtypename = Sk.abstr.typeName(seq);
@@ -9597,7 +9608,7 @@ Sk.abstr.sequenceUnpack = function (seq, n) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
     }
 
-    for (it = Sk.builtin.object.getIter_(seq), i = it.tp$iternext();
+    for (it = Sk.abstr.iter(seq), i = it.tp$iternext();
          (i !== undefined) && (res.length < n); 
          i = it.tp$iternext()) {
         res.push(i);
@@ -9628,7 +9639,7 @@ Sk.abstr.objectFormat = function (obj, format_spec) {
     }
 
     // Find the (unbound!) __format__ method (a borrowed reference)
-    meth = Sk.builtin.object.PyObject_LookupSpecial_(obj.ob$type, "__format__");
+    meth = Sk.abstr.lookupSpecial(obj, "__format__");
     if (meth == null) {
         throw new Sk.builtin.TypeError("Type " + Sk.abstr.typeName(obj) + "doesn't define __format__");
     }
@@ -9809,19 +9820,100 @@ Sk.abstr.sattr = function (obj, nameJS, data, canSuspend) {
 };
 goog.exportSymbol("Sk.abstr.sattr", Sk.abstr.sattr);
 
-Sk.abstr.iter = function (obj) {
-    if (obj.tp$iter) {
-        return obj.tp$iter();
-    } else {
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + "' object is not iterable");
-    }
-};
-goog.exportSymbol("Sk.abstr.iter", Sk.abstr.iter);
 
 Sk.abstr.iternext = function (it, canSuspend) {
     return it.tp$iternext(canSuspend);
 };
 goog.exportSymbol("Sk.abstr.iternext", Sk.abstr.iternext);
+
+
+/**
+ * Get the iterator for a Python object  This iterator could be one of the following.
+ * This is the preferred mechanism for consistently getting the correct iterator.  You should
+ * not just use tp$iter because that could lead to incorrect behavior of a user created class.
+ *
+ * - tp$iter
+ * - A user defined `__iter__` method
+ * - A user defined `__getitem__` method
+ *
+ * @param obj
+ *
+ * @throws {Sk.builtin.TypeError}
+ * @returns {Object}
+ */
+
+Sk.abstr.iter = function(obj) {
+    var iter;
+    var getit;
+    var ret;
+
+    /**
+     * Builds an iterator around classes that have a __getitem__ method.
+     * 
+     * @constructor
+     */
+    var seqIter = function (obj) {
+        this.idx = 0;
+        this.myobj = obj;
+        this.getitem = Sk.abstr.lookupSpecial(obj, "__getitem__");
+        this.tp$iternext = function () {
+            var ret;
+            try {
+                ret = Sk.misceval.callsim(this.getitem, this.myobj, Sk.ffi.remapToPy(this.idx));
+            } catch (e) {
+                if (e instanceof Sk.builtin.IndexError) {
+                    return undefined;
+                } else {
+                    throw e;
+                }
+            }
+            this.idx++;
+            return ret;
+        };
+    };
+
+    if (obj.tp$getattr) {
+        iter =  Sk.abstr.lookupSpecial(obj,"__iter__");
+        if (iter) {
+            return Sk.misceval.callsim(iter,obj);
+        }
+    }
+    if (obj.tp$iter) {
+        try {  // catch and ignore not iterable error here.
+            ret = obj.tp$iter();
+            if (ret.tp$iternext) {
+                return ret;
+            }
+        } catch (e) { }
+    }
+    getit = Sk.abstr.lookupSpecial(obj, "__getitem__");
+    if (getit) {
+        // create internal iterobject if __getitem__
+        return new seqIter(obj);
+    }
+    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + "' object is not iterable");
+};
+goog.exportSymbol("Sk.abstr.iter", Sk.abstr.iter);
+
+/**
+ * Special method look up. First try getting the method via
+ * internal dict and getattr. If getattr is not present (builtins)
+ * try if method is defined on the object itself
+ *
+ * @returns {null|Object} Return null if not found or the function
+ */
+Sk.abstr.lookupSpecial = function(op, str) {
+    var res;
+    var obtp;
+    if (op.ob$type) {
+        obtp = op.ob$type;
+    } else {
+        return null;
+    }
+
+    return Sk.builtin.type.typeLookup(obtp, str);
+};
+goog.exportSymbol("Sk.abstr.lookupSpecial", Sk.abstr.lookupSpecial);
 /**
  * @constructor
  * @param {Array.<Object>=} L
@@ -9842,9 +9934,9 @@ Sk.builtin.list = function (L, canSuspend) {
         v = [];
     } else if (Object.prototype.toString.apply(L) === "[object Array]") {
         v = L;
-    } else if (L.tp$iter) {
+    } else if (Sk.builtin.checkIterable(L)) {
         v = [];
-        it = L.tp$iter();
+        it = Sk.abstr.iter(L);
         return (function next(i) {
             while(true) {
                 if (i instanceof Sk.misceval.Suspension) {
@@ -9859,7 +9951,7 @@ Sk.builtin.list = function (L, canSuspend) {
             }
         })(it.tp$iternext(canSuspend));
     } else {
-        throw new Sk.builtin.ValueError("expecting Array or iterable");
+        throw new Sk.builtin.TypeError("expecting Array or iterable");
     }
 
     if (!(this instanceof Sk.builtin.list)) {
@@ -9918,14 +10010,14 @@ Sk.builtin.list.prototype.list_extend_ = function (other) {
     if (this == other) {
         // Handle extending list with itself
         newb = [];
-        for (it = other.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+        for (it = Sk.abstr.iter(other), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
             newb.push(i);
         }
 
         // Concatenate
         this.v.push.apply(this.v, newb);
     } else {
-        for (it = other.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+        for (it = Sk.abstr.iter(other), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
             this.v.push(i);
         }
     }
@@ -9964,7 +10056,7 @@ Sk.builtin.list.prototype.list_ass_slice_ = function (ilow, ihigh, v) {
     ilow = Sk.builtin.asnum$(ilow);
     ihigh = Sk.builtin.asnum$(ihigh);
 
-    if (v.tp$iter) {
+    if (Sk.builtin.checkIterable(v)) {
         args = new Sk.builtin.list(v, false).v.slice(0);
     } else {
         throw new Sk.builtin.TypeError("can only assign an iterable");
@@ -9978,7 +10070,7 @@ Sk.builtin.list.prototype.tp$name = "list";
 Sk.builtin.list.prototype["$r"] = function () {
     var it, i;
     var ret = [];
-    for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(this), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         if(i === this) {
             ret.push("[...]");
         } else {
@@ -10597,7 +10689,7 @@ Sk.builtin.str.prototype.sq$slice = function (i1, i2) {
 };
 
 Sk.builtin.str.prototype.sq$contains = function (ob) {
-    if (ob.v === undefined || ob.v.constructor != String) {
+    if (!(ob instanceof Sk.builtin.str)) {
         throw new Sk.builtin.TypeError("TypeError: 'In <string> requires string as left operand");
     }
     return this.v.indexOf(ob.v) != -1;
@@ -11949,13 +12041,13 @@ Sk.builtin.tuple = function (L) {
     if (Object.prototype.toString.apply(L) === "[object Array]") {
         this.v = L;
     } else {
-        if (L.tp$iter) {
+        if (Sk.builtin.checkIterable(L)) {
             this.v = [];
-            for (it = L.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+            for (it = Sk.abstr.iter(L), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
                 this.v.push(i);
             }
         } else {
-            throw new Sk.builtin.ValueError("expecting Array or iterable");
+            throw new Sk.builtin.TypeError("expecting Array or iterable");
         }
     }
 
@@ -12223,7 +12315,7 @@ Sk.builtin.dict = function dict (L) {
         }
     } else if (L instanceof Sk.builtin.dict) {
         // Handle calls of type "dict(mapping)" from Python code
-        for (it = L.tp$iter(), k = it.tp$iternext();
+        for (it = Sk.abstr.iter(L), k = it.tp$iternext();
              k !== undefined;
              k = it.tp$iternext()) {
             v = L.mp$subscript(k);
@@ -12233,9 +12325,9 @@ Sk.builtin.dict = function dict (L) {
             }
             this.mp$ass_subscript(k, v);
         }
-    } else if (L.tp$iter) {
+    } else if (Sk.builtin.checkIterable(L)) {
         // Handle calls of type "dict(iterable)" from Python code
-        for (it = L.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+        for (it = Sk.abstr.iter(L), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
             if (i.mp$subscript) {
                 this.mp$ass_subscript(i.mp$subscript(0), i.mp$subscript(1));
             } else {
@@ -12425,7 +12517,7 @@ Sk.builtin.dict.prototype["$r"] = function () {
     var v;
     var iter, k;
     var ret = [];
-    for (iter = this.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(this), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         v = this.mp$subscript(k);
@@ -12492,7 +12584,7 @@ Sk.builtin.dict.prototype.tp$richcompare = function (other, op) {
         return op !== "Eq";
     }
 
-    for (iter = this.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(this), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         v = this.mp$subscript(k);
@@ -12557,7 +12649,7 @@ Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(function (self) {
     var iter, k;
     var ret = [];
 
-    for (iter = self.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(self), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         v = self.mp$subscript(k);
@@ -12575,7 +12667,7 @@ Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(function (self) {
     var iter, k;
     var ret = [];
 
-    for (iter = self.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(self), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         ret.push(k);
@@ -12589,7 +12681,7 @@ Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(function (self) {
     var iter, k;
     var ret = [];
 
-    for (iter = self.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(self), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         v = self.mp$subscript(k);
@@ -12606,7 +12698,7 @@ Sk.builtin.dict.prototype["clear"] = new Sk.builtin.func(function (self) {
     var k;
     var iter;
 
-    for (iter = self.tp$iter(), k = iter.tp$iternext();
+    for (iter = Sk.abstr.iter(self), k = iter.tp$iternext();
          k !== undefined;
          k = iter.tp$iternext()) {
         self.mp$del_subscript(k);
@@ -12645,7 +12737,7 @@ Sk.builtin.dict.prototype.dict_merge = function(b) {
     } else {
         // generic slower way
         var keys = Sk.misceval.callsim(b["keys"], b);
-        for (iter = keys.tp$iter(), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext()) {
+        for (iter = Sk.abstr.iter(keys), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext()) {
             v = b.tp$getitem(k); // get value
             if (v === undefined) {
                 throw new Sk.builtin.AttributeError("cannot get item for key: " + k.v);
@@ -12669,7 +12761,7 @@ var update_f = function (kwargs, self, other) {
         var iter;
         var k, v;
         var seq_i = 0; // index of current sequence item
-        for (iter = other.tp$iter(), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext(), seq_i++) {
+        for (iter = Sk.abstr.iter(other), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext(), seq_i++) {
             // check if value is iter
             if (!Sk.builtin.checkIterable(k)) {
                 throw new Sk.builtin.TypeError("cannot convert dictionary update sequence element #" + seq_i + " to a sequence");
@@ -12678,7 +12770,7 @@ var update_f = function (kwargs, self, other) {
             // cpython impl. would transform iterable into sequence
             // we just call iternext twice if k has length of 2
             if(k.sq$length() === 2) {
-                var k_iter = k.tp$iter();
+                var k_iter = Sk.abstr.iter(k);
                 var k_key = k_iter.tp$iternext();
                 var k_value = k_iter.tp$iternext();
                 self.mp$ass_subscript(k_key, k_value);
@@ -16561,7 +16653,7 @@ Sk.builtin.float_ = function (x) {
     }
 
     // try calling __float__
-    var special = Sk.builtin.object.PyObject_LookupSpecial_(x.ob$type, "__float__");
+    var special = Sk.abstr.lookupSpecial(x, "__float__");
     if (special != null) {
         // method on builtin, provide this arg
         return Sk.misceval.callsim(special, x);
@@ -16860,7 +16952,7 @@ Sk.builtin.complex.try_complex_special_method = function (op) {
     }
 
     // the lookup special method does already all the magic
-    f = Sk.builtin.object.PyObject_LookupSpecial_(op.ob$type, "__complex__");
+    f = Sk.abstr.lookupSpecial(op, "__complex__");
 
     if (f != null) {
         // method on builtin, provide this arg
@@ -17921,7 +18013,7 @@ Sk.builtin.set = function (S) {
     // python sorts sets on init, but not thereafter.
     // Skulpt seems to init a new set each time you add/remove something
     //Sk.builtin.list.prototype['sort'].func_code(S);
-    for (it = S_list.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(S_list), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         Sk.builtin.set.prototype["add"].func_code(this, i);
     }
 
@@ -17945,7 +18037,7 @@ Sk.builtin.set.prototype.tp$name = "set";
 Sk.builtin.set.prototype["$r"] = function () {
     var it, i;
     var ret = [];
-    for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(this), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         ret.push(Sk.misceval.objectRepr(i).v);
     }
     if(Sk.python3) {
@@ -18044,7 +18136,7 @@ Sk.builtin.set.prototype["isdisjoint"] = new Sk.builtin.func(function (self, oth
     // requires all items in self to not be in other
     var isIn;
     var it, item;
-    for (it = self.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(self), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         isIn = Sk.abstr.sequenceContains(other, item);
         if (isIn) {
             return Sk.builtin.bool.false$;
@@ -18062,7 +18154,7 @@ Sk.builtin.set.prototype["issubset"] = new Sk.builtin.func(function (self, other
         // every item in this set can't be in other if it's shorter!
         return Sk.builtin.bool.false$;
     }
-    for (it = self.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(self), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         isIn = Sk.abstr.sequenceContains(other, item);
         if (!isIn) {
             return Sk.builtin.bool.false$;
@@ -18105,7 +18197,7 @@ Sk.builtin.set.prototype["difference"] = new Sk.builtin.func(function (self, oth
 Sk.builtin.set.prototype["symmetric_difference"] = new Sk.builtin.func(function (self, other) {
     var it, item;
     var S = Sk.builtin.set.prototype["union"].func_code(self, other);
-    for (it = S.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(S), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         if (Sk.abstr.sequenceContains(self, item) && Sk.abstr.sequenceContains(other, item)) {
             Sk.builtin.set.prototype["discard"].func_code(S, item);
         }
@@ -18119,7 +18211,7 @@ Sk.builtin.set.prototype["copy"] = new Sk.builtin.func(function (self) {
 
 Sk.builtin.set.prototype["update"] = new Sk.builtin.func(function (self, other) {
     var it, item;
-    for (it = other.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(other), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         Sk.builtin.set.prototype["add"].func_code(self, item);
     }
     return Sk.builtin.none.none$;
@@ -18128,7 +18220,7 @@ Sk.builtin.set.prototype["update"] = new Sk.builtin.func(function (self, other) 
 Sk.builtin.set.prototype["intersection_update"] = new Sk.builtin.func(function (self, other) {
     var i;
     var it, item;
-    for (it = self.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(self), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         for (i = 1; i < arguments.length; i++) {
             if (!Sk.abstr.sequenceContains(arguments[i], item)) {
                 Sk.builtin.set.prototype["discard"].func_code(self, item);
@@ -18142,7 +18234,7 @@ Sk.builtin.set.prototype["intersection_update"] = new Sk.builtin.func(function (
 Sk.builtin.set.prototype["difference_update"] = new Sk.builtin.func(function (self, other) {
     var i;
     var it, item;
-    for (it = self.tp$iter(), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
+    for (it = Sk.abstr.iter(self), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
         for (i = 1; i < arguments.length; i++) {
             if (Sk.abstr.sequenceContains(arguments[i], item)) {
                 Sk.builtin.set.prototype["discard"].func_code(self, item);
@@ -18178,7 +18270,7 @@ Sk.builtin.set.prototype["pop"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.KeyError("pop from an empty set");
     }
 
-    it = self.tp$iter();
+    it = Sk.abstr.iter(self);
     item = it.tp$iternext();
     Sk.builtin.set.prototype["discard"].func_code(self, item);
     return item;
@@ -26898,7 +26990,7 @@ Compiler.prototype.cfor = function (s) {
         out(iter, "=Sk.abstr.iter(", toiter, ");");
     }
     else {
-        iter = this._gr("iter", "Sk.builtin.object.getIter_(", toiter, ")");
+        iter = this._gr("iter", "Sk.abstr.iter(", toiter, ")");
         this.u.tempsToSave.push(iter); // Save it across suspensions
     }
 
@@ -29459,6 +29551,7 @@ Sk.builtins = {
     "SystemExit"         : Sk.builtin.SystemExit,
     "OverflowError"      : Sk.builtin.OverflowError,
     "OperationError"     : Sk.builtin.OperationError,
+    "RuntimeError"       : Sk.builtin.RuntimeError,
 
     "dict"      : Sk.builtin.dict,
     "file"      : Sk.builtin.file,
