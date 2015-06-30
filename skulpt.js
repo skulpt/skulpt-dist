@@ -5075,12 +5075,58 @@ if(Sk.builtin === undefined) {
 }
 
 /**
+ * Maps Python dunder names to the Skulpt Javascript function names that
+ * implement them.
+ *
+ * Note: __add__, __mul__, and __rmul__ can be used for either numeric or
+ * sequence types. Here, they default to the numeric versions (i.e. nb$add,
+ * nb$multiply, and nb$reflected_multiply). This works because Sk.abstr.binary_op_
+ * checks for the numeric shortcuts and not the sequence shortcuts when computing
+ * a binary operation.
+ *
+ * @type {Object}
+ */
+Sk.dunderToSkulpt = {
+    "__eq__": "ob$eq",
+    "__ne__": "ob$ne",
+    "__lt__": "ob$lt",
+    "__le__": "ob$le",
+    "__gt__": "ob$gt",
+    "__ge__": "ob$ge",
+    "__hash__": "tp$hash",
+    "__abs__": "nb$abs",
+    "__neg__": "nb$negative",
+    "__pos__": "nb$positive",
+    "__int__": "nb$int_",
+    "__long__": "nb$lng",
+    "__float__": "nb$float_",
+    "__add__": "nb$add",
+    "__radd__": "nb$reflected_add",
+    "__sub__": "nb$subtract",
+    "__rsub__": "nb$reflected_subtract",
+    "__mul__": "nb$multiply",
+    "__rmul__": "nb$reflected_multiply",
+    "__div__": "nb$divide",
+    "__rdiv__": "nb$reflected_divide",
+    "__floordiv__": "nb$floor_divide",
+    "__rfloordiv__": "nb$reflected_floor_divide",
+    "__mod__": "nb$remainder",
+    "__rmod__": "nb$reflected_remainder",
+    "__divmod__": "nb$divmod",
+    "__rdivmod__": "nb$reflected_divmod",
+    "__pow__": "nb$power",
+    "__rpow__": "nb$reflected_power",
+    "__contains__": "sq$contains",
+    "__len__": "sq$length"
+};
+
+/**
  *
  * @constructor
  *
  * @param {*} name name or object to get type of, if only one arg
  *
- * @param {Array.<Object>=} bases
+ * @param {Sk.builtin.tuple=} bases
  *
  * @param {Object=} dict
  *
@@ -5131,6 +5177,7 @@ Sk.builtin.type = function (name, bases, dict) {
             var init;
             var self = this;
             var s;
+            var args_copy;
             if (!(this instanceof klass)) {
                 return new klass(kwdict, varargseq, kws, args, canSuspend);
             }
@@ -5138,6 +5185,16 @@ Sk.builtin.type = function (name, bases, dict) {
             args = args || [];
             self["$d"] = new Sk.builtin.dict([]);
 
+            if (klass.prototype.tp$base !== undefined) {
+                if (klass.prototype.tp$base.sk$klass) {
+                    klass.prototype.tp$base.call(this, kwdict, varargseq, kws, args.slice(), canSuspend);
+                } else {
+                    // Call super constructor if subclass of a builtin
+                    args_copy = args.slice();
+                    args_copy.unshift(klass, this);
+                    Sk.abstr.superConstructor.apply(undefined, args_copy);
+                }
+            }
 
             init = Sk.builtin.type.typeLookup(self.ob$type, "__init__");
             if (init !== undefined) {
@@ -5164,6 +5221,60 @@ Sk.builtin.type = function (name, bases, dict) {
             return self;
         };
 
+        var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
+
+        var inheritsFromObject = false, inheritsBuiltin = false;
+
+        if (bases.v.length === 0 && Sk.python3) {
+            // new style class, inherits from object by default
+            inheritsFromObject = true;
+            Sk.abstr.setUpInheritance(_name, klass, Sk.builtin.object);
+        }
+
+        var parent, it, firstAncestor, builtin_bases = [];
+        // Set up inheritance from any builtins
+        for (it = bases.tp$iter(), parent = it.tp$iternext(); parent !== undefined; parent = it.tp$iternext()) {
+            if (firstAncestor === undefined) {
+                firstAncestor = parent;
+            }
+            if (parent.prototype instanceof Sk.builtin.object || parent === Sk.builtin.object) {
+
+                while (parent.sk$klass && parent.prototype.tp$base) {
+                    parent = parent.prototype.tp$base;
+                }
+
+                if (!parent.sk$klass && builtin_bases.indexOf(parent) < 0) {
+                    builtin_bases.push(parent);
+                }
+
+                // This class inherits from Sk.builtin.object at some level
+                inheritsFromObject = true;
+            }
+        }
+
+        if (builtin_bases.length > 1) {
+            throw new Sk.builtin.TypeError("Multiple inheritance with more than one builtin type is unsupported");
+        }
+
+        // Javascript does not support multiple inheritance, so only the first
+        // base (if any) will directly inherit in Javascript
+        if (firstAncestor !== undefined) {
+            goog.inherits(klass, firstAncestor);
+
+            if (firstAncestor.prototype instanceof Sk.builtin.object || firstAncestor === Sk.builtin.object) {
+                klass.prototype.tp$base = firstAncestor;
+            }
+        }
+
+        klass.prototype.tp$name = _name;
+        klass.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj(_name, klass);
+
+        if (!inheritsFromObject) {
+            // old style class, does not inherit from object
+            klass.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
+            klass.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
+        }
+
         // set __module__ if not present (required by direct type(name, bases, dict) calls)
         var module_lk = new Sk.builtin.str("__module__");
         if(dict.mp$lookup(module_lk) === undefined) {
@@ -5172,7 +5283,7 @@ Sk.builtin.type = function (name, bases, dict) {
 
         // copy properties into our klass object
         // uses python iter methods
-        var it, k;
+        var k;
         for (it = dict.tp$iter(), k = it.tp$iternext(); k !== undefined; k = it.tp$iternext()) {
             v = dict.mp$subscript(k);
             if (v === undefined) {
@@ -5182,12 +5293,9 @@ Sk.builtin.type = function (name, bases, dict) {
             klass[k.v] = v;
         }
 
-        var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
         klass["__class__"] = klass;
         klass["__name__"] = name;
         klass.sk$klass = true;
-        klass.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
-        klass.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
         klass.prototype.tp$descr_get = function () {
             goog.asserts.fail("in type tp$descr_get");
         };
@@ -5195,20 +5303,35 @@ Sk.builtin.type = function (name, bases, dict) {
             var cname;
             var mod;
             var reprf = this.tp$getattr("__repr__");
-            if (reprf !== undefined) {
+            if (reprf !== undefined && reprf.im_func !== Sk.builtin.object.prototype["__repr__"]) {
                 return Sk.misceval.apply(reprf, undefined, undefined, undefined, []);
             }
-            mod = dict.mp$subscript(module_lk); // lookup __module__
-            cname = "";
-            if (mod) {
-                cname = mod.v + ".";
+
+            if ((klass.prototype.tp$base !== undefined) &&
+                (klass.prototype.tp$base !== Sk.builtin.object) &&
+                (klass.prototype.tp$base.prototype["$r"] !== undefined)) {
+                // If subclass of a builtin which is not object, use that class' repr
+                return klass.prototype.tp$base.prototype["$r"].call(this);
+            } else {
+                // Else, use default repr for a user-defined class instance
+                mod = dict.mp$subscript(module_lk); // lookup __module__
+                cname = "";
+                if (mod) {
+                    cname = mod.v + ".";
+                }
+                return new Sk.builtin.str("<" + cname + _name + " object>");
             }
-            return new Sk.builtin.str("<" + cname + _name + " object>");
         };
         klass.prototype.tp$str = function () {
             var strf = this.tp$getattr("__str__");
-            if (strf !== undefined) {
+            if (strf !== undefined && strf.im_func !== Sk.builtin.object.prototype["__str__"]) {
                 return Sk.misceval.apply(strf, undefined, undefined, undefined, []);
+            }
+            if ((klass.prototype.tp$base !== undefined) &&
+                (klass.prototype.tp$base !== Sk.builtin.object) &&
+                (klass.prototype.tp$base.prototype.tp$str !== undefined)) {
+                // If subclass of a builtin which is not object, use that class' repr
+                return klass.prototype.tp$base.prototype.tp$str.call(this);
             }
             return this["$r"]();
         };
@@ -5273,8 +5396,6 @@ Sk.builtin.type = function (name, bases, dict) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support item assignment");
         };
 
-        klass.prototype.tp$name = _name;
-
         if (bases) {
             //print("building mro for", name);
             //for (var i = 0; i < bases.length; ++i)
@@ -5287,11 +5408,27 @@ Sk.builtin.type = function (name, bases, dict) {
             //print("mro result", Sk.builtin.repr(mro).v);
         }
 
-        klass.prototype.ob$type = klass;
-        Sk.builtin.type.makeIntoTypeObj(_name, klass);
-
         // fix for class attributes
         klass.tp$setattr = Sk.builtin.type.prototype.tp$setattr;
+
+        var shortcutDunder = function (skulpt_name, magic_name, magic_func) {
+            klass.prototype[skulpt_name] = function () {
+                var args = Array.prototype.slice.call(arguments);
+                args.unshift(magic_func, this);
+                return Sk.misceval.callsim.apply(undefined, args);
+            };
+        };
+
+        // Register skulpt shortcuts to magic methods defined by this class
+        var dunder, skulpt_name;
+        for (dunder in Sk.dunderToSkulpt) {
+            skulpt_name = Sk.dunderToSkulpt[dunder];
+
+            if (klass[dunder]) {
+                // scope workaround
+                shortcutDunder(skulpt_name, dunder, klass[dunder]);
+            }
+        }
 
         return klass;
     }
@@ -5408,6 +5545,9 @@ Sk.builtin.type.typeLookup = function (type, name) {
         res = base["$d"].mp$lookup(pyname);
         if (res !== undefined) {
             return res;
+        }
+        if (base.prototype && base.prototype[name] !== undefined) {
+            return base.prototype[name];
         }
     }
 
@@ -5629,31 +5769,31 @@ Sk.abstr.boNameToSlotFuncRhs_ = function (obj, name) {
 
     switch (name) {
     case "Add":
-        return obj.nb$add ? obj.nb$add : obj["__radd__"];
+        return obj.nb$reflected_add ? obj.nb$reflected_add : obj["__radd__"];
     case "Sub":
-        return obj.nb$subtract ? obj.nb$subtract : obj["__rsub__"];
+        return obj.nb$reflected_subtract ? obj.nb$reflected_subtract : obj["__rsub__"];
     case "Mult":
-        return obj.nb$multiply ? obj.nb$multiply : obj["__rmul__"];
+        return obj.nb$reflected_multiply ? obj.nb$reflected_multiply : obj["__rmul__"];
     case "Div":
-        return obj.nb$divide ? obj.nb$divide : obj["__rdiv__"];
+        return obj.nb$reflected_divide ? obj.nb$reflected_divide : obj["__rdiv__"];
     case "FloorDiv":
-        return obj.nb$floor_divide ? obj.nb$floor_divide : obj["__rfloordiv__"];
+        return obj.nb$reflected_floor_divide ? obj.nb$reflected_floor_divide : obj["__rfloordiv__"];
     case "Mod":
-        return obj.nb$remainder ? obj.nb$remainder : obj["__rmod__"];
+        return obj.nb$reflected_remainder ? obj.nb$reflected_remainder : obj["__rmod__"];
     case "DivMod":
-        return obj.nb$divmod ? obj.nb$divmod : obj["__rdivmod__"];
+        return obj.nb$reflected_divmod ? obj.nb$reflected_divmod : obj["__rdivmod__"];
     case "Pow":
-        return obj.nb$power ? obj.nb$power : obj["__rpow__"];
+        return obj.nb$reflected_power ? obj.nb$reflected_power : obj["__rpow__"];
     case "LShift":
-        return obj.nb$lshift ? obj.nb$lshift : obj["__rlshift__"];
+        return obj.nb$reflected_lshift ? obj.nb$reflected_lshift : obj["__rlshift__"];
     case "RShift":
-        return obj.nb$rshift ? obj.nb$rshift : obj["__rrshift__"];
+        return obj.nb$reflected_rshift ? obj.nb$reflected_rshift : obj["__rrshift__"];
     case "BitAnd":
-        return obj.nb$and ? obj.nb$and : obj["__rand__"];
+        return obj.nb$reflected_and ? obj.nb$reflected_and : obj["__rand__"];
     case "BitXor":
-        return obj.nb$xor ? obj.nb$xor : obj["__rxor__"];
+        return obj.nb$reflected_xor ? obj.nb$reflected_xor : obj["__rxor__"];
     case "BitOr":
-        return obj.nb$or ? obj.nb$or : obj["__ror__"];
+        return obj.nb$reflected_or ? obj.nb$reflected_or : obj["__ror__"];
     }
 };
 
@@ -5702,7 +5842,37 @@ Sk.abstr.uoNameToSlotFunc_ = function (obj, name) {
 Sk.abstr.binary_op_ = function (v, w, opname) {
     var wop;
     var ret;
-    var vop = Sk.abstr.boNameToSlotFuncLhs_(v, opname);
+    var vop;
+
+    // All Python inheritance is now enforced with Javascript inheritance
+    // (see Sk.abstr.setUpInheritance). This checks if w's type is a strict
+    // subclass of v's type
+    var w_is_subclass = w.constructor.prototype instanceof v.constructor;
+
+    // From the Python 2.7 docs:
+    //
+    // "If the right operand’s type is a subclass of the left operand’s type and
+    // that subclass provides the reflected method for the operation, this
+    // method will be called before the left operand’s non-reflected method.
+    // This behavior allows subclasses to override their ancestors’ operations."
+    //
+    // -- https://docs.python.org/2/reference/datamodel.html#index-92
+
+    if (w_is_subclass) {
+        wop = Sk.abstr.boNameToSlotFuncRhs_(w, opname);
+        if (wop !== undefined) {
+            if (wop.call) {
+                ret = wop.call(w, v);
+            } else {
+                ret = Sk.misceval.callsim(wop, w, v);
+            }
+            if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+                return ret;
+            }
+        }
+    }
+
+    vop = Sk.abstr.boNameToSlotFuncLhs_(v, opname);
     if (vop !== undefined) {
         if (vop.call) {
             ret = vop.call(v, w);
@@ -5713,15 +5883,18 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
             return ret;
         }
     }
-    wop = Sk.abstr.boNameToSlotFuncRhs_(w, opname);
-    if (wop !== undefined) {
-        if (wop.call) {
-            ret = wop.call(w, v);
-        } else {
-            ret = Sk.misceval.callsim(wop, w, v);
-        }
-        if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
-            return ret;
+    // Don't retry RHS if failed above
+    if (!w_is_subclass) {
+        wop = Sk.abstr.boNameToSlotFuncRhs_(w, opname);
+        if (wop !== undefined) {
+            if (wop.call) {
+                ret = wop.call(w, v);
+            } else {
+                ret = Sk.misceval.callsim(wop, w, v);
+            }
+            if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+                return ret;
+            }
         }
     }
     Sk.abstr.binop_type_error(v, w, opname);
@@ -6282,12 +6455,12 @@ goog.exportSymbol("Sk.abstr.objectDelItem", Sk.abstr.objectDelItem);
 Sk.abstr.objectGetItem = function (o, key, canSuspend) {
     var otypename;
     if (o !== null) {
-        if (o.mp$subscript) {
+        if (o.tp$getitem) {
+            return o.tp$getitem(key, canSuspend);
+        } else if (o.mp$subscript) {
             return o.mp$subscript(key, canSuspend);
         } else if (Sk.misceval.isIndex(key) && o.sq$item) {
             return Sk.abstr.sequenceGetItem(o, Sk.misceval.asIndex(key), canSuspend);
-        } else if (o.tp$getitem) {
-            return o.tp$getitem(key, canSuspend);
         }
     }
 
@@ -6299,12 +6472,12 @@ goog.exportSymbol("Sk.abstr.objectGetItem", Sk.abstr.objectGetItem);
 Sk.abstr.objectSetItem = function (o, key, v, canSuspend) {
     var otypename;
     if (o !== null) {
-        if (o.mp$ass_subscript) {
+        if (o.tp$setitem) {
+            return o.tp$setitem(key, v, canSuspend);
+        } else if (o.mp$ass_subscript) {
             return o.mp$ass_subscript(key, v, canSuspend);
         } else if (Sk.misceval.isIndex(key) && o.sq$ass_item) {
             return Sk.abstr.sequenceSetItem(o, Sk.misceval.asIndex(key), v, canSuspend);
-        } else if (o.tp$setitem) {
-            return o.tp$setitem(key, v, canSuspend);
         }
     }
 
@@ -6475,37 +6648,58 @@ Sk.abstr.lookupSpecial = function(op, str) {
 };
 goog.exportSymbol("Sk.abstr.lookupSpecial", Sk.abstr.lookupSpecial);
 
-Sk.abstr.registerPythonFunctions = function (thisClass, funcNames) {
-    for (var i = 0; i < funcNames.length; i++) {
-        thisClass.prototype.pythonFunctions.push(funcNames[i]);
-    }
-};
-
+/**
+ * Mark a class as unhashable and prevent its `__hash__` function from being called.
+ * @param  {function(...[?])} thisClass The class to mark as unhashable.
+ * @return {undefined}
+ */
 Sk.abstr.markUnhashable = function (thisClass) {
     var proto = thisClass.prototype;
-    proto.pythonFunctions.splice(proto.pythonFunctions.indexOf("__hash__"), 1);
     proto.__hash__ = Sk.builtin.none.none$;
     proto.tp$hash = Sk.builtin.none.none$;
 };
 
+/**
+ * Set up inheritance between two Python classes. This allows only for single
+ * inheritance -- multiple inheritance is not supported by Javascript.
+ *
+ * Javascript's inheritance is prototypal. This means that properties must
+ * be defined on the superclass' prototype in order for subclasses to inherit
+ * them.
+ *
+ * ```
+ * Sk.superclass.myProperty                 # will NOT be inherited
+ * Sk.superclass.prototype.myProperty       # will be inherited
+ * ```
+ *
+ * In order for a class to be subclassable, it must (directly or indirectly)
+ * inherit from Sk.builtin.object so that it will be properly initialized in
+ * {@link Sk.doOneTimeInitialization} (in src/import.js). Further, all Python
+ * builtins should inherit from Sk.builtin.object.
+ *
+ * @param {string} childName The Python name of the child (subclass).
+ * @param {function(...[?])} child     The subclass.
+ * @param {function(...[?])} parent    The superclass.
+ * @return {undefined}
+ */
 Sk.abstr.setUpInheritance = function (childName, child, parent) {
     goog.inherits(child, parent);
     child.prototype.tp$base = parent;
     child.prototype.tp$name = childName;
     child.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj(childName, child);
-    child.prototype.pythonFunctions = parent.prototype.pythonFunctions.slice();
 };
 
-Sk.abstr.setUpObject = function (self) {
-    // Python builtin instances do not maintain an internal Python dictionary
-    // (this causes problems when calling the super constructor on a dict
-    // instance). Instead, they maintain a Javascript object.
-    self["$d"] = {
-        "Sk.builtin.object": true   // Indicates this is a builtin object
-    };
-};
-
-Sk.abstr.superConstructor = function (thisClass, self) {
+/**
+ * Call the super constructor of the provided class, with the object `self` as
+ * the `this` value of that constructor. Any arguments passed to this function
+ * after `self` will be passed as-is to the constructor.
+ *
+ * @param  {function(...[?])} thisClass The subclass.
+ * @param  {Object} self      The instance of the subclas.
+ * @param  {...?} args Arguments to pass to the constructor.
+ * @return {undefined}
+ */
+Sk.abstr.superConstructor = function (thisClass, self, args) {
     var argumentsForConstructor = Array.prototype.slice.call(arguments, 2);
     thisClass.prototype.tp$base.apply(self, argumentsForConstructor);
 };
@@ -6539,6 +6733,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
     var f;
     var descr;
     var tp;
+    var dict;
     var pyName = new Sk.builtin.str(name);
     goog.asserts.assert(typeof name === "string");
 
@@ -6547,6 +6742,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
 
     //print("getattr", tp.tp$name, name);
 
+    dict = this["$d"] || this.constructor["$d"];
     descr = Sk.builtin.type.typeLookup(tp, name);
 
     // otherwise, look in the type for a descr
@@ -6558,28 +6754,22 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
     }
 
     // todo; assert? force?
-    if (this["$d"]) {
-        if (this["$d"].mp$lookup) {
-            res = this["$d"].mp$lookup(pyName);
-        } else if (this["$d"].mp$subscript) {
+    if (dict) {
+        if (dict.mp$lookup) {
+            res = dict.mp$lookup(pyName);
+        } else if (dict.mp$subscript) {
             try {
-                res = this["$d"].mp$subscript(pyName);
+                res = dict.mp$subscript(pyName);
             } catch (x) {
                 res = undefined;
             }
-        } else if (typeof this["$d"] === "object") {
+        } else if (typeof dict === "object") {
             // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
-            res = this["$d"][name];
+            res = dict[name];
         }
         if (res !== undefined) {
             return res;
         }
-    } else if (this instanceof Sk.builtin.object) {
-        // Initialize inner dictionary for builtin types
-        // This is not done upon instantiation to improve performance
-        this["$d"] = {
-            "Sk.builtin.object": true   // Indicates this is a builtin object
-        };
     }
 
     if (f) {
@@ -6602,26 +6792,24 @@ goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin
 
 Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
     var objname = Sk.abstr.typeName(this);
+    var pyname;
+    var dict;
     goog.asserts.assert(typeof name === "string");
     // todo; lots o' stuff
 
-    if (this["$d"] === undefined && this instanceof Sk.builtin.object) {
-        // Initialize inner dictionary for builtin types
-        // This is not done upon instantiation to improve performance
-        this["$d"] = {
-            "Sk.builtin.object": true   // Indicates this is a builtin object
-        };
-    }
+    dict = this["$d"] || this.constructor["$d"];
 
-    if (this["$d"].mp$ass_subscript) {
-        this["$d"].mp$ass_subscript(new Sk.builtin.str(name), value);
-    } else if (typeof this["$d"] === "object") {
-        // Cannot add new attributes to a builtin object
-        if (this["$d"]["Sk.builtin.object"] && this["$d"][name] === undefined) {
+    if (dict.mp$ass_subscript) {
+        pyname = new Sk.builtin.str(name);
+
+        if (this instanceof Sk.builtin.object && !(this.ob$type.sk$klass) &&
+            dict.mp$lookup(pyname) === undefined) {
+            // Cannot add new attributes to a builtin object
             throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + name + "'");
         }
-
-        this["$d"][name] = value;
+        dict.mp$ass_subscript(new Sk.builtin.str(name), value);
+    } else if (typeof dict === "object") {
+        dict[name] = value;
     }
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
@@ -6654,6 +6842,7 @@ Sk.builtin.object.prototype.tp$name = "object";
  * @type {Sk.builtin.type}
  */
 Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
+Sk.builtin.object.prototype.ob$type.sk$klass = undefined;   // Nonsense for closure compiler
 
 /** Default implementations of dunder methods found in all Python objects */
 
@@ -6894,7 +7083,7 @@ Sk.builtin.object.prototype.ob$ge = function (other) {
  * Array of all the Python functions which are methods of this class.
  * @type {Array}
  */
-Sk.builtin.object.prototype.pythonFunctions = ["__repr__", "__str__", "__hash__",
+Sk.builtin.object.pythonFunctions = ["__repr__", "__str__", "__hash__",
 "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__", "__getattr__", "__setattr__"];
 
 /**
@@ -7279,10 +7468,10 @@ Sk.builtin.asnum$ = function (a) {
     if (a === null) {
         return a;
     }
-    if (a.constructor === Sk.builtin.none) {
+    if (a instanceof Sk.builtin.none) {
         return null;
     }
-    if (a.constructor === Sk.builtin.bool) {
+    if (a instanceof Sk.builtin.bool) {
         if (a.v) {
             return 1;
         }
@@ -7294,13 +7483,13 @@ Sk.builtin.asnum$ = function (a) {
     if (typeof a === "string") {
         return a;
     }
-    if (a.constructor === Sk.builtin.int_) {
+    if (a instanceof Sk.builtin.int_) {
         return a.v;
     }
-    if (a.constructor === Sk.builtin.float_) {
+    if (a instanceof Sk.builtin.float_) {
         return a.v;
     }
-    if (a.constructor === Sk.builtin.lng) {
+    if (a instanceof Sk.builtin.lng) {
         if (a.cantBeInt()) {
             return a.str$(10, true);
         }
@@ -7755,7 +7944,10 @@ Sk.builtin.dir = function dir (x) {
 
     getName = function (k) {
         var s = null;
-        var internal = ["__bases__", "__mro__", "__class__", "__name__"];
+        var internal = [
+            "__bases__", "__mro__", "__class__", "__name__", "GenericGetAttr",
+            "GenericSetAttr", "GenericPythonGetAttr", "GenericPythonSetAttr",
+            "pythonFunctions", "HashNotImplemented", "constructor"];
         if (internal.indexOf(k) !== -1) {
             return null;
         }
@@ -7951,8 +8143,6 @@ Sk.builtin.hash = function hash (value) {
         }
         value.$savedHash_ = value.tp$hash();
         return value.$savedHash_;
-    } else if ((value instanceof Object) && (value.__hash__ !== undefined)) {
-        return Sk.misceval.callsim(value.__hash__, value);
     } else if (value instanceof Sk.builtin.bool) {
         if (value.v) {
             return new Sk.builtin.int_(1);
@@ -8500,7 +8690,7 @@ Sk.builtin.BaseException = function (args) {
                              filename: this.args.v[1].v || "<unknown>"});
     }
 };
-Sk.builtin.BaseException.prototype.tp$name = "BaseException";
+Sk.abstr.setUpInheritance("BaseException", Sk.builtin.BaseException, Sk.builtin.object);
 
 Sk.builtin.BaseException.prototype.tp$str = function () {
     var i;
@@ -8554,8 +8744,7 @@ Sk.builtin.Exception = function (args) {
     }
     Sk.builtin.BaseException.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.Exception, Sk.builtin.BaseException);
-Sk.builtin.Exception.prototype.tp$name = "Exception";
+Sk.abstr.setUpInheritance("Exception", Sk.builtin.Exception, Sk.builtin.BaseException);
 goog.exportSymbol("Sk.builtin.Exception", Sk.builtin.Exception);
 
 /**
@@ -8572,8 +8761,7 @@ Sk.builtin.StandardError = function (args) {
     }
     Sk.builtin.Exception.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.StandardError, Sk.builtin.Exception);
-Sk.builtin.StandardError.prototype.tp$name = "StandardError";
+Sk.abstr.setUpInheritance("StandardError", Sk.builtin.StandardError, Sk.builtin.Exception);
 goog.exportSymbol("Sk.builtin.StandardError", Sk.builtin.StandardError);
 
 /**
@@ -8590,8 +8778,7 @@ Sk.builtin.AssertionError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.AssertionError, Sk.builtin.StandardError);
-Sk.builtin.AssertionError.prototype.tp$name = "AssertionError";
+Sk.abstr.setUpInheritance("AssertionError", Sk.builtin.AssertionError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.AssertionError", Sk.builtin.AssertionError);
 
 /**
@@ -8608,8 +8795,7 @@ Sk.builtin.AttributeError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.AttributeError, Sk.builtin.StandardError);
-Sk.builtin.AttributeError.prototype.tp$name = "AttributeError";
+Sk.abstr.setUpInheritance("AttributeError", Sk.builtin.AttributeError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8625,8 +8811,7 @@ Sk.builtin.ImportError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.ImportError, Sk.builtin.StandardError);
-Sk.builtin.ImportError.prototype.tp$name = "ImportError";
+Sk.abstr.setUpInheritance("ImportError", Sk.builtin.ImportError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8642,8 +8827,7 @@ Sk.builtin.IndentationError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.IndentationError, Sk.builtin.StandardError);
-Sk.builtin.IndentationError.prototype.tp$name = "IndentationError";
+Sk.abstr.setUpInheritance("IndentationError", Sk.builtin.IndentationError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8659,8 +8843,7 @@ Sk.builtin.IndexError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.IndexError, Sk.builtin.StandardError);
-Sk.builtin.IndexError.prototype.tp$name = "IndexError";
+Sk.abstr.setUpInheritance("IndexError", Sk.builtin.IndexError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8676,8 +8859,7 @@ Sk.builtin.KeyError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.KeyError, Sk.builtin.StandardError);
-Sk.builtin.KeyError.prototype.tp$name = "KeyError";
+Sk.abstr.setUpInheritance("KeyError", Sk.builtin.KeyError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8693,8 +8875,7 @@ Sk.builtin.NameError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.NameError, Sk.builtin.StandardError);
-Sk.builtin.NameError.prototype.tp$name = "NameError";
+Sk.abstr.setUpInheritance("NameError", Sk.builtin.NameError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8710,8 +8891,7 @@ Sk.builtin.UnboundLocalError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.UnboundLocalError, Sk.builtin.StandardError);
-Sk.builtin.UnboundLocalError.prototype.tp$name = "UnboundLocalError";
+Sk.abstr.setUpInheritance("UnboundLocalError", Sk.builtin.UnboundLocalError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8727,8 +8907,7 @@ Sk.builtin.OverflowError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.OverflowError, Sk.builtin.StandardError);
-Sk.builtin.OverflowError.prototype.tp$name = "OverflowError";
+Sk.abstr.setUpInheritance("OverflowError", Sk.builtin.OverflowError, Sk.builtin.StandardError);
 
 
 /**
@@ -8745,8 +8924,7 @@ Sk.builtin.ParseError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.ParseError, Sk.builtin.StandardError);
-Sk.builtin.ParseError.prototype.tp$name = "ParseError";
+Sk.abstr.setUpInheritance("ParseError", Sk.builtin.ParseError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8762,8 +8940,7 @@ Sk.builtin.RuntimeError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.RuntimeError, Sk.builtin.StandardError);
-Sk.builtin.AssertionError.prototype.tp$name = "RuntimeError";
+Sk.abstr.setUpInheritance("RuntimeError", Sk.builtin.RuntimeError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.RuntimeError", Sk.builtin.RuntimeError);
 
 
@@ -8781,8 +8958,7 @@ Sk.builtin.SuspensionError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.SuspensionError, Sk.builtin.StandardError);
-Sk.builtin.SuspensionError.prototype.tp$name = "SuspensionError";
+Sk.abstr.setUpInheritance("SuspensionError", Sk.builtin.SuspensionError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.SuspensionError", Sk.builtin.SuspensionError);
 
 
@@ -8800,8 +8976,7 @@ Sk.builtin.SystemExit = function (args) {
     }
     Sk.builtin.BaseException.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.SystemExit, Sk.builtin.BaseException);
-Sk.builtin.SystemExit.prototype.tp$name = "SystemExit";
+Sk.abstr.setUpInheritance("SystemExit", Sk.builtin.SystemExit, Sk.builtin.BaseException);
 goog.exportSymbol("Sk.builtin.SystemExit", Sk.builtin.SystemExit);
 
 
@@ -8819,8 +8994,7 @@ Sk.builtin.SyntaxError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.SyntaxError, Sk.builtin.StandardError);
-Sk.builtin.SyntaxError.prototype.tp$name = "SyntaxError";
+Sk.abstr.setUpInheritance("SyntaxError", Sk.builtin.SyntaxError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8836,8 +9010,7 @@ Sk.builtin.TokenError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.TokenError, Sk.builtin.StandardError);
-Sk.builtin.TokenError.prototype.tp$name = "TokenError";
+Sk.abstr.setUpInheritance("TokenError", Sk.builtin.TokenError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8853,8 +9026,7 @@ Sk.builtin.TypeError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.TypeError, Sk.builtin.StandardError);
-Sk.builtin.TypeError.prototype.tp$name = "TypeError";
+Sk.abstr.setUpInheritance("TypeError", Sk.builtin.TypeError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.TypeError", Sk.builtin.TypeError);
 /**
  * @constructor
@@ -8870,8 +9042,7 @@ Sk.builtin.ValueError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.ValueError, Sk.builtin.StandardError);
-Sk.builtin.ValueError.prototype.tp$name = "ValueError";
+Sk.abstr.setUpInheritance("ValueError", Sk.builtin.ValueError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.ValueError", Sk.builtin.ValueError);
 
 /**
@@ -8888,8 +9059,7 @@ Sk.builtin.ZeroDivisionError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.ZeroDivisionError, Sk.builtin.StandardError);
-Sk.builtin.ZeroDivisionError.prototype.tp$name = "ZeroDivisionError";
+Sk.abstr.setUpInheritance("ZeroDivisionError", Sk.builtin.ZeroDivisionError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -8905,8 +9075,7 @@ Sk.builtin.TimeLimitError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.TimeLimitError, Sk.builtin.StandardError);
-Sk.builtin.TimeLimitError.prototype.tp$name = "TimeLimitError";
+Sk.abstr.setUpInheritance("TimeLimitError", Sk.builtin.TimeLimitError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.TimeLimitError", Sk.builtin.TimeLimitError);
 
 /**
@@ -8923,8 +9092,7 @@ Sk.builtin.IOError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.IOError, Sk.builtin.StandardError);
-Sk.builtin.IOError.prototype.tp$name = "IOError";
+Sk.abstr.setUpInheritance("IOError", Sk.builtin.IOError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.IOError", Sk.builtin.IOError);
 
 
@@ -8942,8 +9110,7 @@ Sk.builtin.NotImplementedError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.NotImplementedError, Sk.builtin.StandardError);
-Sk.builtin.NotImplementedError.prototype.tp$name = "NotImplementedError";
+Sk.abstr.setUpInheritance("NotImplementedError", Sk.builtin.NotImplementedError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.NotImplementedError", Sk.builtin.NotImplementedError);
 
 /**
@@ -8960,8 +9127,7 @@ Sk.builtin.NegativePowerError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.NegativePowerError, Sk.builtin.StandardError);
-Sk.builtin.NegativePowerError.prototype.tp$name = "NegativePowerError";
+Sk.abstr.setUpInheritance("NegativePowerError", Sk.builtin.NegativePowerError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.NegativePowerError", Sk.builtin.NegativePowerError);
 
 /**
@@ -8986,8 +9152,7 @@ Sk.builtin.ExternalError = function (nativeError, args) {
     }
     Sk.builtin.StandardError.apply(this, args);
 };
-goog.inherits(Sk.builtin.ExternalError, Sk.builtin.StandardError);
-Sk.builtin.ExternalError.prototype.tp$name = "ExternalError";
+Sk.abstr.setUpInheritance("ExternalError", Sk.builtin.ExternalError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.ExternalError", Sk.builtin.ExternalError);
 
 /**
@@ -9004,8 +9169,7 @@ Sk.builtin.OperationError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.OperationError, Sk.builtin.StandardError);
-Sk.builtin.OperationError.prototype.tp$name = "OperationError";
+Sk.abstr.setUpInheritance("OperationError", Sk.builtin.OperationError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.OperationError", Sk.builtin.OperationError);
 
 /**
@@ -9022,8 +9186,7 @@ Sk.builtin.SystemError = function (args) {
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-goog.inherits(Sk.builtin.SystemError, Sk.builtin.StandardError);
-Sk.builtin.SystemError.prototype.tp$name = "SystemError";
+Sk.abstr.setUpInheritance("SystemError", Sk.builtin.SystemError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.SystemError", Sk.builtin.SystemError);
 
 
@@ -9514,10 +9677,10 @@ Sk.misceval.richCompareBool = function (v, w, op) {
     }
 
     if (op === "In") {
-        return Sk.abstr.sequenceContains(w, v);
+        return Sk.misceval.isTrue(Sk.abstr.sequenceContains(w, v));
     }
     if (op === "NotIn") {
-        return !Sk.abstr.sequenceContains(w, v);
+        return !Sk.misceval.isTrue(Sk.abstr.sequenceContains(w, v));
     }
 
 
@@ -9748,12 +9911,6 @@ Sk.misceval.isTrue = function (x) {
     if (x.constructor === Sk.builtin.float_) {
         return x.v !== 0;
     }
-    if (x.mp$length) {
-        return x.mp$length() !== 0;
-    }
-    if (x.sq$length) {
-        return x.sq$length() !== 0;
-    }
     if (x["__nonzero__"]) {
         ret = Sk.misceval.callsim(x["__nonzero__"], x);
         if (!Sk.builtin.checkInt(ret)) {
@@ -9767,6 +9924,12 @@ Sk.misceval.isTrue = function (x) {
             throw new Sk.builtin.TypeError("__len__ should return an int");
         }
         return Sk.builtin.asnum$(ret) !== 0;
+    }
+    if (x.mp$length) {
+        return Sk.builtin.asnum$(x.mp$length()) !== 0;
+    }
+    if (x.sq$length) {
+        return Sk.builtin.asnum$(x.sq$length()) !== 0;
     }
     return true;
 };
@@ -10287,6 +10450,8 @@ Sk.builtin.seqtype = function () {
 
 Sk.abstr.setUpInheritance("SequenceType", Sk.builtin.seqtype, Sk.builtin.object);
 
+Sk.builtin.seqtype.sk$abstract = true;
+
 /**
  * Python wrapper of `__len__` method.
  *
@@ -10399,24 +10564,23 @@ Sk.builtin.seqtype.prototype["__rmul__"] = new Sk.builtin.func(function (self, n
     return self.sq$repeat(n);    
 
 });
-
-Sk.abstr.registerPythonFunctions(Sk.builtin.seqtype, 
-    ["__len__", "__iter__", "__contains__", "__getitem__", "__add__",
-     "__mul__", "__rmul__"]);/**
+/**
  * @constructor
  * @param {Array.<Object>=} L
  * @param {boolean=} canSuspend (defaults to true in this case, as list() is used directly from Python)
  * @extends Sk.builtin.object
  */
 Sk.builtin.list = function (L, canSuspend) {
-    var v, it;
+    var v, it, thisList;
 
     if (this instanceof Sk.builtin.list) {
-        canSuspend = false;
-    } else if (canSuspend === undefined) {
+        canSuspend = canSuspend || false;
+    } else {
         // Default to true in this case, because 'list' gets called directly from Python
-        canSuspend = true;
+        return new Sk.builtin.list(L, canSuspend || true);
     }
+
+    this.__class__ = Sk.builtin.list;
 
     if (L === undefined) {
         v = [];
@@ -10425,13 +10589,17 @@ Sk.builtin.list = function (L, canSuspend) {
     } else if (Sk.builtin.checkIterable(L)) {
         v = [];
         it = Sk.abstr.iter(L);
+
+        thisList = this;
+
         return (function next(i) {
             while(true) {
                 if (i instanceof Sk.misceval.Suspension) {
                     return new Sk.misceval.Suspension(next, i);
                 } else if (i === undefined) {
                     // done!
-                    return new Sk.builtin.list(v);
+                    thisList.v = v;
+                    return thisList;
                 } else {
                     v.push(i);
                     i = it.tp$iternext(canSuspend);
@@ -10441,12 +10609,6 @@ Sk.builtin.list = function (L, canSuspend) {
     } else {
         throw new Sk.builtin.TypeError("expecting Array or iterable");
     }
-
-    if (!(this instanceof Sk.builtin.list)) {
-        return new Sk.builtin.list(v);
-    }
-
-    this.__class__ = Sk.builtin.list;
 
     this["v"] = this.v = v;
     return this;
@@ -11052,7 +11214,7 @@ Sk.builtin.list.prototype["sort"] = new Sk.builtin.func(Sk.builtin.list.prototyp
 // why this was chosen - csev
 Sk.builtin.list.prototype["sort"].func_code["co_varnames"] = ["__self__", "cmp", "key", "reverse"];
 goog.exportSymbol("Sk.builtin.list", Sk.builtin.list);
-var interned = {};
+Sk.builtin.interned = {};
 
 /**
  * @constructor
@@ -11105,16 +11267,14 @@ Sk.builtin.str = function (x) {
     }
 
     // interning required for strings in py
-    if (Object.prototype.hasOwnProperty.call(interned, "1" + ret)) {
-        // note, have to use Object to avoid __proto__, etc.
-        // failing
-        return interned["1" + ret];
+    if (Sk.builtin.interned["1" + ret]) {
+        return Sk.builtin.interned["1" + ret];
     }
 
     this.__class__ = Sk.builtin.str;
     this.v = ret;
     this["v"] = this.v;
-    interned["1" + ret] = this;
+    Sk.builtin.interned["1" + ret] = this;
     return this;
 
 };
@@ -13026,12 +13186,6 @@ Sk.builtin.dict.prototype.tp$iter = function () {
     return ret;
 };
 
-Sk.builtin.dict.prototype["__iter__"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 1, 1);
-
-    return self.tp$iter();
-});
-
 Sk.builtin.dict.prototype["$r"] = function () {
     var v;
     var iter, k;
@@ -13301,7 +13455,7 @@ Sk.builtin.dict.prototype.__getattr__ = new Sk.builtin.func(function (self, attr
 Sk.builtin.dict.prototype.__iter__ = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
 
-    return self.tp$iter();
+    return Sk.builtin.dict.prototype.tp$iter.call(self);
 });
 
 Sk.builtin.dict.prototype.__repr__ = new Sk.builtin.func(function (self) {
@@ -13409,6 +13563,8 @@ Sk.builtin.numtype = function () {
 };
 
 Sk.abstr.setUpInheritance("NumericType", Sk.builtin.numtype, Sk.builtin.object);
+
+Sk.builtin.numtype.sk$abstract = true;
 
 /**
  * Python wrapper of `__abs__` method.
@@ -13819,12 +13975,6 @@ Sk.builtin.numtype.prototype["__coerce__"] = new Sk.builtin.func(function (self,
 
 });
 
-Sk.abstr.registerPythonFunctions(Sk.builtin.numtype,
-    ["__abs__", "__neg__", "__pos__", "__int__", "__long__", "__float__",
-     "__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__",
-     "__div__", "__rdiv__", "__floordiv__", "__rfloordiv__",
-     "__mod__", "__rmod__", "__divmod__", "__rdivmod__", "__coerce__"]);
-
 /**
  * Add a Python object to this instance and return the result (i.e. this + other).
  *
@@ -13840,7 +13990,7 @@ Sk.builtin.numtype.prototype.nb$add = function (other) {
 };
 
 Sk.builtin.numtype.prototype.nb$reflected_add = function (other) {
-    return this.nb$add(other);
+    return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
 Sk.builtin.numtype.prototype.nb$inplace_add = function (other) {
@@ -13862,8 +14012,7 @@ Sk.builtin.numtype.prototype.nb$subtract = function (other) {
 };
 
 Sk.builtin.numtype.prototype.nb$reflected_subtract = function (other) {
-    var negative_this = this.nb$negative();
-    return negative_this.nb$add(other);
+    return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
 Sk.builtin.numtype.prototype.nb$inplace_subtract = function (other) {
@@ -13886,7 +14035,7 @@ Sk.builtin.numtype.prototype.nb$multiply = function (other) {
 
 
 Sk.builtin.numtype.prototype.nb$reflected_multiply = function (other) {
-    return this.nb$multiply(other);
+    return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
 Sk.builtin.numtype.prototype.nb$inplace_multiply = function (other) {
@@ -13904,11 +14053,11 @@ Sk.builtin.numtype.prototype.nb$inplace_multiply = function (other) {
  * @return {(Sk.builtin.numtype|Sk.builtin.NotImplemented)} The result of the division
  */
 Sk.builtin.numtype.prototype.nb$divide = function (other) {
-    return this.nb$floor_divide(other);
+    return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
 Sk.builtin.numtype.prototype.nb$reflected_divide = function (other) {
-    return this.nb$reflected_floor_divide(other);
+    return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
 Sk.builtin.numtype.prototype.nb$inplace_divide = function (other) {
@@ -16156,6 +16305,13 @@ Sk.builtin.int_.prototype.nb$add = function (other) {
 };
 
 /** @override */
+Sk.builtin.int_.prototype.nb$reflected_add = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    return Sk.builtin.int_.prototype.nb$add.call(this, other);
+};
+
+/** @override */
 Sk.builtin.int_.prototype.nb$subtract = function (other) {
     var thisAsLong, thisAsFloat;
 
@@ -16174,6 +16330,14 @@ Sk.builtin.int_.prototype.nb$subtract = function (other) {
     }
 
     return Sk.builtin.NotImplemented.NotImplemented$;
+};
+
+/** @override */
+Sk.builtin.int_.prototype.nb$reflected_subtract = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    var negative_this = this.nb$negative();
+    return Sk.builtin.int_.prototype.nb$add.call(negative_this, other);
 };
 
 /** @override */
@@ -16203,6 +16367,13 @@ Sk.builtin.int_.prototype.nb$multiply = function (other) {
     }
 
     return Sk.builtin.NotImplemented.NotImplemented$;
+};
+
+/** @override */
+Sk.builtin.int_.prototype.nb$reflected_multiply = function (other) {
+    // Should not automatically call this.nb$multiply, as nb$multiply may have
+    // been overridden by a subclass
+    return Sk.builtin.int_.prototype.nb$multiply.call(this, other);
 };
 
 /** @override */
@@ -16713,7 +16884,11 @@ Sk.builtin.int_.prototype.nb$inplace_lshift = Sk.builtin.int_.prototype.nb$lshif
  */
 Sk.builtin.int_.prototype.nb$inplace_rshift = Sk.builtin.int_.prototype.nb$rshift;
 
-/** @override */
+/**
+ * @override
+ *
+ * @return {Sk.builtin.int_} A copy of this instance with the value negated.
+ */
 Sk.builtin.int_.prototype.nb$negative = function () {
     return new Sk.builtin.int_(-this.v);
 };
@@ -17112,7 +17287,7 @@ Sk.builtin.float_ = function (x) {
     }
 
     // Floats are just numbers
-    if (typeof x === "number" || x instanceof Sk.builtin.int_ || x instanceof Sk.builtin.lng) {
+    if (typeof x === "number" || x instanceof Sk.builtin.int_ || x instanceof Sk.builtin.lng || x instanceof Sk.builtin.float_) {
         this.v = Sk.builtin.asnum$(x);
         return this;
     }
@@ -17298,6 +17473,13 @@ Sk.builtin.float_.prototype.nb$add = function (other) {
 };
 
 /** @override */
+Sk.builtin.float_.prototype.nb$reflected_add = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    return Sk.builtin.float_.prototype.nb$add.call(this, other);
+};
+
+/** @override */
 Sk.builtin.float_.prototype.nb$subtract = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.float_) {
         return new Sk.builtin.float_(this.v - other.v);
@@ -17309,6 +17491,14 @@ Sk.builtin.float_.prototype.nb$subtract = function (other) {
 };
 
 /** @override */
+Sk.builtin.float_.prototype.nb$reflected_subtract = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    var negative_this = this.nb$negative();
+    return Sk.builtin.float_.prototype.nb$add.call(negative_this, other);
+};
+
+/** @override */
 Sk.builtin.float_.prototype.nb$multiply = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.float_) {
         return new Sk.builtin.float_(this.v * other.v);
@@ -17317,6 +17507,13 @@ Sk.builtin.float_.prototype.nb$multiply = function (other) {
     }
 
     return Sk.builtin.NotImplemented.NotImplemented$;
+};
+
+/** @override */
+Sk.builtin.float_.prototype.nb$reflected_multiply = function (other) {
+    // Should not automatically call this.nb$multiply, as nb$multiply may have
+    // been overridden by a subclass
+    return Sk.builtin.float_.prototype.nb$multiply.call(this, other);
 };
 
 /** @override */
@@ -17654,7 +17851,11 @@ Sk.builtin.float_.prototype.nb$inplace_floor_divide = Sk.builtin.float_.prototyp
 /** @override */
 Sk.builtin.float_.prototype.nb$inplace_power = Sk.builtin.float_.prototype.nb$power;
 
-/** @override */
+/**
+ * @override
+ *
+ * @return {Sk.builtin.float_} A copy of this instance with the value negated.
+ */
 Sk.builtin.float_.prototype.nb$negative = function () {
     return new Sk.builtin.float_(-this.v);
 };
@@ -18391,6 +18592,13 @@ Sk.builtin.lng.prototype.nb$add = function (other) {
     return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
+/** @override */
+Sk.builtin.lng.prototype.nb$reflected_add = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    return Sk.builtin.lng.prototype.nb$add.call(this, other);
+};
+
 Sk.builtin.lng.prototype.nb$inplace_add = Sk.builtin.lng.prototype.nb$add;
 
 Sk.builtin.lng.prototype.nb$subtract = function (other) {
@@ -18417,6 +18625,14 @@ Sk.builtin.lng.prototype.nb$subtract = function (other) {
     return Sk.builtin.NotImplemented.NotImplemented$;
 };
 
+/** @override */
+Sk.builtin.lng.prototype.nb$reflected_subtract = function (other) {
+    // Should not automatically call this.nb$add, as nb$add may have
+    // been overridden by a subclass
+    var negative_this = this.nb$negative();
+    return Sk.builtin.lng.prototype.nb$add.call(negative_this, other);
+};
+
 Sk.builtin.lng.prototype.nb$inplace_subtract = Sk.builtin.lng.prototype.nb$subtract;
 
 Sk.builtin.lng.prototype.nb$multiply = function (other) {
@@ -18440,6 +18656,13 @@ Sk.builtin.lng.prototype.nb$multiply = function (other) {
     }
 
     return Sk.builtin.NotImplemented.NotImplemented$;
+};
+
+/** @override */
+Sk.builtin.lng.prototype.nb$reflected_multiply = function (other) {
+    // Should not automatically call this.nb$multiply, as nb$multiply may have
+    // been overridden by a subclass
+    return Sk.builtin.lng.prototype.nb$multiply.call(this, other);
 };
 
 Sk.builtin.lng.prototype.nb$inplace_multiply = Sk.builtin.lng.prototype.nb$multiply;
@@ -18858,6 +19081,11 @@ Sk.builtin.lng.prototype.nb$reflected_xor = Sk.builtin.lng.prototype.nb$xor;
 
 Sk.builtin.lng.prototype.nb$inplace_xor = Sk.builtin.lng.prototype.nb$xor;
 
+/**
+ * @override
+ *
+ * @return {Sk.builtin.lng} A copy of this instance with the value negated.
+ */
 Sk.builtin.lng.prototype.nb$negative = function () {
     return new Sk.builtin.lng(this.biginteger.negate());
 };
@@ -20427,7 +20655,8 @@ Sk.builtin.set.prototype.ob$eq = function (other) {
         return Sk.builtin.bool.false$;
     }
 
-    if (this.sq$length() !== other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) !==
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.false$;
     }
 
@@ -20444,7 +20673,8 @@ Sk.builtin.set.prototype.ob$ne = function (other) {
         return Sk.builtin.bool.true$;
     }
 
-    if (this.sq$length() !== other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) !==
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.true$;
     }
 
@@ -20461,7 +20691,8 @@ Sk.builtin.set.prototype.ob$lt = function (other) {
         return Sk.builtin.bool.false$;
     }
 
-    if (this.sq$length() >= other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) >=
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.false$;
     }
 
@@ -20474,7 +20705,8 @@ Sk.builtin.set.prototype.ob$le = function (other) {
         return Sk.builtin.bool.true$;
     }
 
-    if (this.sq$length() > other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) >
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.false$;
     }
 
@@ -20487,7 +20719,8 @@ Sk.builtin.set.prototype.ob$gt = function (other) {
         return Sk.builtin.bool.false$;
     }
 
-    if (this.sq$length() <= other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) <=
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.false$;
     }
 
@@ -20500,7 +20733,8 @@ Sk.builtin.set.prototype.ob$ge = function (other) {
         return Sk.builtin.bool.true$;
     }
 
-    if (this.sq$length() < other.sq$length()) {
+    if (Sk.builtin.set.prototype.sq$length.call(this) <
+        Sk.builtin.set.prototype.sq$length.call(other)) {
         return Sk.builtin.bool.false$;
     }
 
@@ -20511,7 +20745,7 @@ Sk.builtin.set.prototype["__iter__"] = new Sk.builtin.func(function(self) {
 
     Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
 
-    return self.tp$iter();
+    return Sk.builtin.set.prototype.tp$iter.call(self);
 
 });
 
@@ -30774,23 +31008,54 @@ Sk.importSearchPathForName = function (name, ext, failok, canSuspend) {
     })();
 };
 
+/**
+ * Complete any initialization of Python classes which relies on internal
+ * dependencies.
+ *
+ * This includes making Python classes subclassable and ensuring that the
+ * {@link Sk.builtin.object} magic methods are wrapped inside Python functions.
+ *
+ * @return {undefined}
+ */
 Sk.doOneTimeInitialization = function () {
-    var proto, name, i;
+    var proto, name, i, x, func;
+    var builtins = [];
 
     // can't fill these out when making the type because tuple/dict aren't
     // defined yet.
     Sk.builtin.type.basesStr_ = new Sk.builtin.str("__bases__");
     Sk.builtin.type.mroStr_ = new Sk.builtin.str("__mro__");
-    Sk.builtin.object["$d"] = new Sk.builtin.dict([]);
-    Sk.builtin.object["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple([]));
-    Sk.builtin.object["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([Sk.builtin.object]));
+
+    // Register a Python class with an internal dictionary, which allows it to
+    // be subclassed
+    var setUpClass = function (child) {
+        var parent = child.tp$base;
+        var bases = [];
+        var base;
+
+        for (base = parent; base !== undefined; base = base.tp$base) {
+            bases.push(base);
+        }
+
+        child["$d"] = new Sk.builtin.dict([]);
+        child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
+        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([child]));
+    };
+
+    for (x in Sk.builtin) {
+        func = Sk.builtin[x];
+        if ((func.prototype instanceof Sk.builtin.object ||
+             func === Sk.builtin.object) && !func.sk$abstract) {
+            setUpClass(func);
+        }
+    }
 
     // Wrap the inner Javascript code of Sk.builtin.object's Python methods inside
     // Sk.builtin.func, as that class was undefined when these functions were declared
     proto = Sk.builtin.object.prototype;
 
-    for (i = 0; i < proto.pythonFunctions.length; i++) {
-        name = proto.pythonFunctions[i];
+    for (i = 0; i < Sk.builtin.object.pythonFunctions.length; i++) {
+        name = Sk.builtin.object.pythonFunctions[i];
 
         if (proto[name] instanceof Sk.builtin.func) {
             // If functions have already been initialized, do not wrap again.
@@ -31973,6 +32238,7 @@ Sk.builtins = {
     "NameError"          : Sk.builtin.NameError,
     "IOError"            : Sk.builtin.IOError,
     "NotImplementedError": Sk.builtin.NotImplementedError,
+    "StandardError"      : Sk.builtin.StandardError,
     "SystemExit"         : Sk.builtin.SystemExit,
     "OverflowError"      : Sk.builtin.OverflowError,
     "OperationError"     : Sk.builtin.OperationError,
@@ -32047,11 +32313,6 @@ Sk.builtin.bool.true$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin
  * @memberOf Sk.builtin.bool
  */
 Sk.builtin.bool.false$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin.bool.prototype, {v: {value: 0, enumerable: true}}));
-
-// Manually call super constructors on boolean singletons
-Sk.abstr.setUpObject(Sk.builtin.bool.true$);
-Sk.abstr.setUpObject(Sk.builtin.bool.false$);
-
 
 /* Constants used for kwargs */
 
