@@ -5488,20 +5488,23 @@ Sk.builtin.type["$r"] = function () {
 Sk.builtin.type.prototype.tp$getattr = function (name) {
     var res;
     var tp = this;
-    var descr = Sk.builtin.type.typeLookup(tp, name);
+    var descr;
     var f;
-    //print("type.tpgetattr descr", descr, descr.tp$name, descr.func_code, name);
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
-        // todo;if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        // return f.call(descr, this, this.ob$type);
-    }
 
     if (this["$d"]) {
         res = this["$d"].mp$lookup(new Sk.builtin.str(name));
         if (res !== undefined) {
             return res;
         }
+    }
+
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    //print("type.tpgetattr descr", descr, descr.tp$name, descr.func_code, name);
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        f = descr.ob$type.tp$descr_get;
+        // todo;if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        // return f.call(descr, this, this.ob$type);
     }
 
     if (f) {
@@ -6740,18 +6743,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
     tp = this.ob$type;
     goog.asserts.assert(tp !== undefined, "object has no ob$type!");
 
-    //print("getattr", tp.tp$name, name);
-
     dict = this["$d"] || this.constructor["$d"];
-    descr = Sk.builtin.type.typeLookup(tp, name);
-
-    // otherwise, look in the type for a descr
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
-        // todo;
-        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        //return f.call(descr, this, this.ob$type);
-    }
 
     // todo; assert? force?
     if (dict) {
@@ -6770,6 +6762,16 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
         if (res !== undefined) {
             return res;
         }
+    }
+
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    // otherwise, look in the type for a descr
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        f = descr.ob$type.tp$descr_get;
+        // todo;
+        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        //return f.call(descr, this, this.ob$type);
     }
 
     if (f) {
@@ -8132,30 +8134,23 @@ Sk.builtin.hash = function hash (value) {
         return 0;
     }};
 
-    if ((value instanceof Object) && Sk.builtin.checkNone(value.tp$hash)) {
-        // python sets the hash function to None , so we have to catch this case here
-        throw new Sk.builtin.TypeError(new Sk.builtin.str("unhashable type: '" + Sk.abstr.typeName(value) + "'"));
-    }
-
-    if ((value instanceof Object) && (value.tp$hash !== undefined)) {
-        if (value.$savedHash_) {
+    if (value instanceof Object) {
+        if (Sk.builtin.checkNone(value.tp$hash)) {
+            // python sets the hash function to None , so we have to catch this case here
+            throw new Sk.builtin.TypeError(new Sk.builtin.str("unhashable type: '" + Sk.abstr.typeName(value) + "'"));
+        } else if (value.tp$hash !== undefined) {
+            if (value.$savedHash_) {
+                return value.$savedHash_;
+            }
+            value.$savedHash_ = value.tp$hash();
             return value.$savedHash_;
+        } else {
+            if (value.__id === undefined) {
+                Sk.builtin.hashCount += 1;
+                value.__id = Sk.builtin.hashCount;
+            }
+            return new Sk.builtin.int_(value.__id);
         }
-        value.$savedHash_ = value.tp$hash();
-        return value.$savedHash_;
-    } else if (value instanceof Sk.builtin.bool) {
-        if (value.v) {
-            return new Sk.builtin.int_(1);
-        }
-        return new Sk.builtin.int_(0);
-    } else if (value instanceof Sk.builtin.none) {
-        return new Sk.builtin.int_(0);
-    } else if (value instanceof Object) {
-        if (value.__id === undefined) {
-            Sk.builtin.hashCount += 1;
-            value.__id = Sk.builtin.hashCount;
-        }
-        return new Sk.builtin.int_(value.__id);
     } else if (typeof value === "number" || value === null ||
         value === true || value === false) {
         throw new Sk.builtin.TypeError("unsupported Javascript type");
@@ -9539,7 +9534,12 @@ Sk.misceval.richCompareBool = function (v, w, op) {
         ret,
         swapped_method,
         method,
+        swapped_shortcut,
+        shortcut,
+        v_has_shortcut,
+        w_has_shortcut,
         op2method,
+        op2shortcut,
         vcmp,
         wcmp,
         w_seq_type,
@@ -9683,6 +9683,33 @@ Sk.misceval.richCompareBool = function (v, w, op) {
         return !Sk.misceval.isTrue(Sk.abstr.sequenceContains(w, v));
     }
 
+    // Call Javascript shortcut method if exists for either object
+
+    op2shortcut = {
+        "Eq"   : "ob$eq",
+        "NotEq": "ob$ne",
+        "Gt"   : "ob$gt",
+        "GtE"  : "ob$ge",
+        "Lt"   : "ob$lt",
+        "LtE"  : "ob$le"
+    };
+
+    shortcut = op2shortcut[op];
+    v_has_shortcut = v.constructor.prototype.hasOwnProperty(shortcut);
+    if (v_has_shortcut) {
+        if ((ret = v[shortcut](w)) !== Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
+        }
+    }
+
+    swapped_shortcut = op2shortcut[Sk.misceval.swappedOp_[op]];
+    w_has_shortcut = w.constructor.prototype.hasOwnProperty(swapped_shortcut);
+    if (w_has_shortcut) {
+
+        if ((ret = w[swapped_shortcut](v)) !== Sk.builtin.NotImplemented.NotImplemented$) {
+            return Sk.misceval.isTrue(ret);
+        }
+    }
 
     // use comparison methods if they are given for either object
     if (v.tp$richcompare && (ret = v.tp$richcompare(w, op)) !== undefined) {
@@ -9711,7 +9738,7 @@ Sk.misceval.richCompareBool = function (v, w, op) {
     };
 
     method = Sk.abstr.lookupSpecial(v, op2method[op]);
-    if (method) {
+    if (method && !v_has_shortcut) {
         ret = Sk.misceval.callsim(method, v, w);
         if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
@@ -9719,7 +9746,7 @@ Sk.misceval.richCompareBool = function (v, w, op) {
     }
 
     swapped_method = Sk.abstr.lookupSpecial(w, op2method[Sk.misceval.swappedOp_[op]]);
-    if (swapped_method) {
+    if (swapped_method && !w_has_shortcut) {
         ret = Sk.misceval.callsim(swapped_method, w, v);
         if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
