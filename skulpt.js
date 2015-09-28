@@ -17071,6 +17071,10 @@ Sk.builtin.int_.prototype.__round__ = function (self, ndigits) {
     return new Sk.builtin.int_(result);
 };
 
+Sk.builtin.int_.prototype.conjugate = new Sk.builtin.func(function (self) {
+    return new Sk.builtin.int_(self.v);
+});
+
 /** @override */
 Sk.builtin.int_.prototype["$r"] = function () {
     return new Sk.builtin.str(this.str$(10, true));
@@ -18060,6 +18064,10 @@ Sk.builtin.float_.prototype.__round__ = function (self, ndigits) {
     return new Sk.builtin.float_(result);
 };
 
+Sk.builtin.float_.prototype.conjugate = new Sk.builtin.func(function (self) {
+    return new Sk.builtin.float_(self.v);
+});
+
 /** @override */
 Sk.builtin.float_.prototype["$r"] = function () {
     return new Sk.builtin.str(this.str$(10, true));
@@ -18599,6 +18607,10 @@ Sk.builtin.lng.prototype.toInt$ = function () {
 Sk.builtin.lng.prototype.clone = function () {
     return new Sk.builtin.lng(this);
 };
+
+Sk.builtin.lng.prototype.conjugate = new Sk.builtin.func(function (self) {
+    return self.clone();
+});
 
 Sk.builtin.lng.prototype.nb$add = function (other) {
     var thisAsFloat;
