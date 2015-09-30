@@ -7883,6 +7883,24 @@ Sk.builtin.chr = function chr (x) {
     return new Sk.builtin.str(String.fromCharCode(x));
 };
 
+Sk.builtin.unichr = function unichr (x) {
+    Sk.builtin.pyCheckArgs("chr", arguments, 1, 1);
+    if (!Sk.builtin.checkInt(x)) {
+        throw new Sk.builtin.TypeError("an integer is required");
+    }
+    x = Sk.builtin.asnum$(x);
+
+    try {
+        return new Sk.builtin.str(String.fromCodePoint(x));
+    }
+    catch (err) {
+        if (err instanceof RangeError) {
+            throw new Sk.builtin.ValueError(err.message);
+        }
+        throw err;
+    }
+};
+
 Sk.builtin.int2str_ = function helper_ (x, radix, prefix) {
     var suffix;
     var str = "";
@@ -8611,9 +8629,6 @@ Sk.builtin.reload = function reload () {
 Sk.builtin.reversed = function reversed () {
     throw new Sk.builtin.NotImplementedError("reversed is not yet implemented");
 };
-Sk.builtin.unichr = function unichr () {
-    throw new Sk.builtin.NotImplementedError("unichr is not yet implemented");
-};
 Sk.builtin.vars = function vars () {
     throw new Sk.builtin.NotImplementedError("vars is not yet implemented");
 };
@@ -8641,6 +8656,69 @@ Sk.builtin.intern = function intern () {
  };
  Sk.builtinFiles = undefined;
  */
+/*! https://mths.be/fromcodepoint v0.2.1 by @mathias */
+if (!String.fromCodePoint) {
+    (function() {
+        var defineProperty = (function() {
+            // IE 8 only supports `Object.defineProperty` on DOM elements
+            var result;
+            try {
+                var object = {};
+                var $defineProperty = Object.defineProperty;
+                result = $defineProperty(object, "foo", object) && $defineProperty;
+            } catch(error) {}
+            return result;
+        }());
+        var stringFromCharCode = String.fromCharCode;
+        var floor = Math.floor;
+        var fromCodePoint = function(_) {
+            var MAX_SIZE = 0x4000;
+            var codeUnits = [];
+            var highSurrogate;
+            var lowSurrogate;
+            var index = -1;
+            var length = arguments.length;
+            if (!length) {
+                return "";
+            }
+            var result = "";
+            while (++index < length) {
+                var codePoint = Number(arguments[index]);
+                if (
+                    !isFinite(codePoint) || // `NaN`, `+Infinity`, or `-Infinity`
+                    codePoint < 0 || // not a valid Unicode code point
+                    codePoint > 0x10FFFF || // not a valid Unicode code point
+                    floor(codePoint) != codePoint // not an integer
+                ) {
+                    throw RangeError("Invalid code point: " + codePoint);
+                }
+                if (codePoint <= 0xFFFF) { // BMP code point
+                    codeUnits.push(codePoint);
+                } else { // Astral code point; split in surrogate halves
+                    // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
+                    codePoint -= 0x10000;
+                    highSurrogate = (codePoint >> 10) + 0xD800;
+                    lowSurrogate = (codePoint % 0x400) + 0xDC00;
+                    codeUnits.push(highSurrogate, lowSurrogate);
+                }
+                if (index + 1 == length || codeUnits.length > MAX_SIZE) {
+                    result += stringFromCharCode.apply(null, codeUnits);
+                    codeUnits.length = 0;
+                }
+            }
+            return result;
+        };
+        if (defineProperty) {
+            defineProperty(String, "fromCodePoint", {
+                "value": fromCodePoint,
+                "configurable": true,
+                "writable": true
+            });
+        } else {
+            String.fromCodePoint = fromCodePoint;
+        }
+    }());
+}
 /*
  * The filename, line number, and column number of exceptions are
  * stored within the exception object.  Note that not all exceptions
