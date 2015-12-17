@@ -11755,6 +11755,7 @@ Sk.builtin.str.prototype["rpartition"] = new Sk.builtin.func(function (self, sep
 });
 
 Sk.builtin.str.prototype["count"] = new Sk.builtin.func(function (self, pat, start, end) {
+    var normaltext;
     var ctl;
     var slice;
     var m;
@@ -11783,7 +11784,8 @@ Sk.builtin.str.prototype["count"] = new Sk.builtin.func(function (self, pat, sta
         end = end >= 0 ? end : self.v.length + end;
     }
 
-    m = new RegExp(pat.v, "g");
+    normaltext = pat.v.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+    m = new RegExp(normaltext, "g");
     slice = self.v.slice(start, end);
     ctl = slice.match(m);
     if (!ctl) {
