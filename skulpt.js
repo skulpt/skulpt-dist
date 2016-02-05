@@ -4940,7 +4940,7 @@ Sk.configure = function (options) {
 
     Sk.inputfun = options["inputfun"] || Sk.inputfun;
     goog.asserts.assert(typeof Sk.inputfun === "function");
-
+    
     Sk.retainGlobals = options["retainglobals"] || false;
     goog.asserts.assert(typeof Sk.retainGlobals === "boolean");
 
@@ -8086,9 +8086,7 @@ Sk.builtin.open = function open (filename, mode, bufsize) {
     if (mode === undefined) {
         mode = new Sk.builtin.str("r");
     }
-    if (mode.v !== "r" && mode.v !== "rb") {
-        throw "todo; haven't implemented non-read opens";
-    }
+
     return new Sk.builtin.file(filename, mode, bufsize);
 };
 
@@ -8218,33 +8216,9 @@ Sk.builtin.setattr = function setattr (obj, name, value) {
 };
 
 Sk.builtin.raw_input = function (prompt) {
-    var x, resolution, susp;
-
-    prompt = prompt ? prompt.v : "";
-    x = Sk.inputfun(prompt);
-
-    if (x instanceof Promise) {
-        susp = new Sk.misceval.Suspension();
-
-        susp.resume = function() {
-            return new Sk.builtin.str(resolution);
-        };
-
-        susp.data = {
-            type: "Sk.promise",
-            promise: x.then(function(value) {
-                resolution = value;
-                return value;
-            }, function(err) {
-                resolution = "";
-                return err;
-            })
-        };
-
-        return susp;
-    } else {
-        return new Sk.builtin.str(x);
-    }
+    var sys = Sk.importModule("sys");
+    Sk.misceval.callsimOrSuspend(sys["$d"]["stdout"]["write"], sys["$d"]["stdout"], prompt);
+    return Sk.misceval.callsimOrSuspend(sys["$d"]["stdin"]["readline"], sys["$d"]["stdin"]);
 };
 
 Sk.builtin.input = Sk.builtin.raw_input;
@@ -10058,7 +10032,8 @@ Sk.misceval.print_ = function (x) {
         Sk.misceval.softspace_ = false;
     }
     s = new Sk.builtin.str(x);
-    Sk.output(s.v);
+    var sys = Sk.importModule("sys");
+    Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], s]);
     isspace = function (c) {
         return c === "\n" || c === "\t" || c === "\r";
     };
@@ -21121,7 +21096,8 @@ var print_f = function function_print(kwa) {
         // currently not tested, though it seems that we need to see how we should access the write function in a correct manner
         Sk.misceval.callsim(kw_list.file.write, kw_list.file, new Sk.builtin.str(s)); // callsim to write function
     } else {
-        Sk.output(s); // call configurable output function
+        var sys = Sk.importModule("sys");
+        Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
     }
 
     // ToDo:
@@ -21378,30 +21354,43 @@ Sk.builtin.file = function (name, mode, buffering) {
         return new Sk.builtin.file(name, mode, buffering);
     }
 
-
     this.mode = mode;
-    this.name = name;
+    this.name = Sk.ffi.remapToJs(name);
     this.closed = false;
-    if (Sk.inBrowser) {  // todo:  Maybe provide a replaceable function for non-import files
-        elem = document.getElementById(name.v);
-        if (elem == null) {
-            throw new Sk.builtin.IOError("[Errno 2] No such file or directory: '" + name.v + "'");
-        } else {
-            if (elem.nodeName.toLowerCase() == "textarea") {
-                this.data$ = elem.value;
-            } else {
-                this.data$ = elem.textContent;
-            }
-        }
+
+    if (this.name === "/dev/stdout") {
+        this.data$ = Sk.builtin.none.none$;
+        this.fileno = 1;
+    } else if (this.name === "/dev/stdin") {
+        this.fileno = 0;
+    } else if (this.name === "/dev/stderr") {
+        this.fileno = 2;
     } else {
-        this.data$ = Sk.read(name.v);
+        if (Sk.inBrowser) {  // todo:  Maybe provide a replaceable function for non-import files
+            this.fileno = 10;
+            elem = document.getElementById(name.v);
+            if (elem == null) {
+                throw new Sk.builtin.IOError("[Errno 2] No such file or directory: '" + name.v + "'");
+            } else {
+                if (elem.nodeName.toLowerCase() == "textarea") {
+                    this.data$ = elem.value;
+                } else {
+                    this.data$ = elem.textContent;
+                }
+            }
+        } else {
+            this.fileno = 11;
+            this.data$ = Sk.read(name.v);
+        }
+
+        this.lineList = this.data$.split("\n");
+        this.lineList = this.lineList.slice(0, -1);
+
+        for (i in this.lineList) {
+            this.lineList[i] = this.lineList[i] + "\n";
+        }
+        this.currentLine = 0;
     }
-    this.lineList = this.data$.split("\n");
-    this.lineList = this.lineList.slice(0, -1);
-    for (i in this.lineList) {
-        this.lineList[i] = this.lineList[i] + "\n";
-    }
-    this.currentLine = 0;
     this.pos$ = 0;
 
     this.__class__ = Sk.builtin.file;
@@ -21442,21 +21431,20 @@ Sk.builtin.file.prototype.tp$iter = function () {
     return ret;
 };
 
-
 Sk.builtin.file.prototype["close"] = new Sk.builtin.func(function (self) {
     self.closed = true;
 });
 
-
 Sk.builtin.file.prototype["flush"] = new Sk.builtin.func(function (self) {
 });
+
 Sk.builtin.file.prototype["fileno"] = new Sk.builtin.func(function (self) {
-    return 10;
+    return this.fileno;
 }); // > 0, not 1/2/3
+
 Sk.builtin.file.prototype["isatty"] = new Sk.builtin.func(function (self) {
     return false;
 });
-
 
 Sk.builtin.file.prototype["read"] = new Sk.builtin.func(function (self, size) {
     var ret;
@@ -21477,15 +21465,49 @@ Sk.builtin.file.prototype["read"] = new Sk.builtin.func(function (self, size) {
 });
 
 Sk.builtin.file.prototype["readline"] = new Sk.builtin.func(function (self, size) {
-    var line = "";
-    if (self.currentLine < self.lineList.length) {
-        line = self.lineList[self.currentLine];
-        self.currentLine++;
+    if (self.fileno === 0) {
+        var x, resolution, susp;
+
+        var prompt = prompt ? prompt.v : "";
+        x = Sk.inputfun(prompt);
+
+        if (x instanceof Promise) {
+            susp = new Sk.misceval.Suspension();
+
+            susp.resume = function() {
+                return new Sk.builtin.str(resolution);
+            };
+
+            susp.data = {
+                type: "Sk.promise",
+                promise: x.then(function(value) {
+                    resolution = value;
+                    return value;
+                }, function(err) {
+                    resolution = "";
+                    return err;
+                })
+            };
+
+            return susp;
+        } else {
+            return new Sk.builtin.str(x);
+        }
+    } else {
+        var line = "";
+        if (self.currentLine < self.lineList.length) {
+            line = self.lineList[self.currentLine];
+            self.currentLine++;
+        }
+        return new Sk.builtin.str(line);
     }
-    return new Sk.builtin.str(line);
 });
 
 Sk.builtin.file.prototype["readlines"] = new Sk.builtin.func(function (self, sizehint) {
+    if (self.fileno === 0) {
+        return new Sk.builtin.NotImplementedError("readlines ins't implemented because the web doesn't support Ctrl+D");
+    }
+
     var i;
     var arr = [];
     for (i = self.currentLine; i < self.lineList.length; i++) {
@@ -21515,7 +21537,11 @@ Sk.builtin.file.prototype["truncate"] = new Sk.builtin.func(function (self, size
 });
 
 Sk.builtin.file.prototype["write"] = new Sk.builtin.func(function (self, str) {
-    goog.asserts.fail();
+    if (self.fileno === 1) {
+        Sk.output(Sk.ffi.remapToJs(str));
+    } else {
+        goog.asserts.fail();
+    }
 });
 
 
@@ -30892,10 +30918,15 @@ Compiler.prototype.cmod = function (mod) {
 
     var entryBlock = this.newBlock("module entry");
     this.u.prefixCode = "var " + modf + "=(function($modname){";
-    this.u.varDeclsCode = "var $gbl = {}, $blk=" + entryBlock + ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname;var $ret=undefined,currLineNo=undefined,currColNo=undefined;";
+    this.u.varDeclsCode =
+        "var $gbl = {}, $blk=" + entryBlock +
+        ",$exc=[],$loc=$gbl,$err=undefined;$gbl.__name__=$modname;$loc.__file__=new Sk.builtins.str('" + this.filename +
+        "');var $ret=undefined,currLineNo=undefined,currColNo=undefined;";
+
     if (Sk.execLimit !== null) {
         this.u.varDeclsCode += "if (typeof Sk.execStart === 'undefined') {Sk.execStart = Date.now()}";
     }
+
     if (Sk.yieldLimit !== null && this.u.canSuspend) {
         this.u.varDeclsCode += "if (typeof Sk.lastYield === 'undefined') {Sk.lastYield = Date.now()}";
     }
@@ -31096,8 +31127,9 @@ Sk.loadExternalLibrary = function (name) {
  * @param {string} ext extension to use (.py or .js)
  * @param {boolean=} failok will throw if not true
  * @param {boolean=} canSuspend can we suspend?
+ * @param {string=} currentDir if any
  */
-Sk.importSearchPathForName = function (name, ext, failok, canSuspend) {
+Sk.importSearchPathForName = function (name, ext, failok, canSuspend, currentDir) {
     var fn;
     var j;
     var fns = [];
@@ -31109,6 +31141,9 @@ Sk.importSearchPathForName = function (name, ext, failok, canSuspend) {
         fns.push(i.v + "/" + nameAsPath + ext);                 // module
         fns.push(i.v + "/" + nameAsPath + "/__init__" + ext);   // package
     }
+
+    fns.push(currentDir + "/" + nameAsPath + ext);
+    fns.push(currentDir + "/" + nameAsPath + "/__init__" + ext);
 
     j = 0;
 
@@ -31235,7 +31270,6 @@ Sk.importSetUpPath = function () {
         Sk.realsyspath = new Sk.builtin.list(paths);
 
         Sk.doOneTimeInitialization();
-
     }
 };
 
@@ -31253,8 +31287,9 @@ if (COMPILED) {
  * @param {string=} suppliedPyBody use as the body of the text for the module
  * rather than Sk.read'ing it.
  * @param {boolean=} canSuspend whether we may return a Suspension object
+ * @param {string=} currentDir directory to import from
  */
-Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canSuspend) {
+Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canSuspend, currentDir) {
     //dumpJS = true;
     var parentModule;
     var modlocs;
@@ -31297,7 +31332,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
         // all parent packages. so, here we're importing 'a.b', which will in
         // turn import 'a', and then return 'a' eventually.
         parentModName = modNameSplit.slice(0, modNameSplit.length - 1).join(".");
-        toReturn = Sk.importModuleInternal_(parentModName, dumpJS, undefined, undefined, canSuspend);
+        toReturn = Sk.importModuleInternal_(parentModName, dumpJS, undefined, undefined, canSuspend, currentDir);
 
         // If this suspends, we suspend. When that suspension is done, we can just
         // repeat this whole function call
@@ -31312,7 +31347,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
                     // They're done!
                     // Re-call ourselves, and this time "toReturn = Sk.importModuleInternal_(...)"
                     // will hit the cache and complete immediately.
-                    return Sk.importModuleInternal_(name, dumpJS, modname, suppliedPyBody, canSuspend);
+                    return Sk.importModuleInternal_(name, dumpJS, modname, suppliedPyBody, canSuspend, currentDir);
                 }
             })(toReturn);
         }
@@ -31355,7 +31390,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
             // ToDo: check if this is a dotted name or import from ...
         } else {
             // Try loading as a builtin (i.e. already in JS) module, then try .py files
-            codeAndPath = Sk.importSearchPathForName(name, ".js", true, canSuspend);
+            codeAndPath = Sk.importSearchPathForName(name, ".js", true, canSuspend, currentDir);
 
             co = (function compileReadCode(codeAndPath) {
                 if (codeAndPath instanceof Sk.misceval.Suspension) {
@@ -31363,7 +31398,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
                 } else if (!codeAndPath) {
                     goog.asserts.assert(!isPy, "Sk.importReadFileFromPath did not throw when loading Python file failed");
                     isPy = true;
-                    return compileReadCode(Sk.importSearchPathForName(name, ".py", false, canSuspend));
+                    return compileReadCode(Sk.importSearchPathForName(name, ".py", false, canSuspend, currentDir));
                 } else {
                     filename = codeAndPath.filename;
                     return isPy ? Sk.compile(codeAndPath.code, codeAndPath.filename, "exec", canSuspend)
@@ -31442,7 +31477,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, canS
             modlocs["__path__"] = new Sk.builtin.str(filename);
 
             module["$d"] = modlocs;
-            
+
             // doc string is None, when not present
             if (!modlocs["__doc__"]) {
                 modlocs["__doc__"] = Sk.builtin.none.none$;
@@ -31522,7 +31557,13 @@ Sk.builtin.__import__ = function (name, globals, locals, fromlist) {
     // Save the Sk.globals variable importModuleInternal_ may replace it when it compiles
     // a Python language module.  for some reason, __name__ gets overwritten.
     var saveSk = Sk.globals;
-    var ret = Sk.importModuleInternal_(name, undefined, undefined, undefined, true);
+
+    var currentDir =
+        locals["__file__"] === undefined ?
+            undefined :
+            locals["__file__"].v.substring(0, locals["__file__"].v.lastIndexOf("/"));
+
+    var ret = Sk.importModuleInternal_(name, undefined, undefined, undefined, true, currentDir);
 
     return (function finalizeImport(ret) {
         if (ret instanceof Sk.misceval.Suspension) {
@@ -31547,7 +31588,7 @@ Sk.builtin.__import__ = function (name, globals, locals, fromlist) {
                 if (fromName != "*" && ret.$d[fromName] == null && (ret.$d[dottedName] != null || ret.$d.__name__.v == dottedName)) {
                     // add the module name to our requiredImport list
                     fromImportName = "" + name + "." + fromName;
-                    fromNameRet = Sk.importModuleInternal_(fromImportName, undefined, undefined, undefined, true);
+                    fromNameRet = Sk.importModuleInternal_(fromImportName, undefined, undefined, undefined, true, currentDir);
                     ret["$d"][fromName] = fromNameRet;
                 }
             }
