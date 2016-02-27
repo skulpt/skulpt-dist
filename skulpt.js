@@ -32438,6 +32438,18 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
     var iter;
     var compare_func;
     var list;
+    var rev;
+
+    if (reverse === undefined) {
+        rev = false;
+    } else if (reverse instanceof Sk.builtin.float_) {
+        throw new Sk.builtin.TypeError("an integer is required, got float");
+    } else if (reverse instanceof Sk.builtin.int_ || reverse.prototype instanceof Sk.builtin.int_) {
+        rev = Sk.misceval.isTrue(reverse);
+    } else {
+        throw new Sk.builtin.TypeError("an integer is required");
+    }
+
     if (key !== undefined && !(key instanceof Sk.builtin.none)) {
         if (cmp instanceof Sk.builtin.none || cmp === undefined) {
             compare_func = function (a, b) {
@@ -32469,7 +32481,7 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
         list.list_sort_(list);
     }
 
-    if (reverse) {
+    if (rev) {
         list.list_reverse_(list);
     }
 
@@ -32487,7 +32499,8 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
     return list;
 };
 
-/* NOTE: See constants used for kwargs in constants.js */// Note: the hacky names on int, long, float have to correspond with the
+/* NOTE: See constants used for kwargs in constants.js */
+// Note: the hacky names on int, long, float have to correspond with the
 // uniquization that the compiler does for words that are reserved in
 // Javascript. This is a bit hokey.
 Sk.builtins = {
@@ -32629,5 +32642,4 @@ Sk.builtin.lng.$defaults = [ new Sk.builtin.int_(10) ];
 // Sk.builtin.sorted
 Sk.builtin.sorted.co_varnames = ["cmp", "key", "reverse"];
 Sk.builtin.sorted.co_numargs = 4;
-Sk.builtin.sorted.$defaults = [Sk.builtin.none.none$, Sk.builtin.none.none$, false];
-
+Sk.builtin.sorted.$defaults = [Sk.builtin.none.none$, Sk.builtin.none.none$, Sk.builtin.bool.false$];
