@@ -6158,17 +6158,22 @@ Sk.abstr.fixSeqIndex_ = function (seq, i) {
     return i;
 };
 
-Sk.abstr.sequenceContains = function (seq, ob) {
-    var it, i;
+/**
+ * @param {*} seq
+ * @param {*} ob
+ * @param {boolean=} canSuspend
+ */
+Sk.abstr.sequenceContains = function (seq, ob, canSuspend) {
     var seqtypename;
     var special;
+    var r;
 
     if (seq.sq$contains) {
         return seq.sq$contains(ob);
     }
 
-    /** 
-     *  Look for special method and call it, we have to distinguish between built-ins and 
+    /**
+     *  Look for special method and call it, we have to distinguish between built-ins and
      *  python objects
      */
     special = Sk.abstr.lookupSpecial(seq, "__contains__");
@@ -6182,12 +6187,15 @@ Sk.abstr.sequenceContains = function (seq, ob) {
         throw new Sk.builtin.TypeError("argument of type '" + seqtypename + "' is not iterable");
     }
 
-    for (it = Sk.abstr.iter(seq), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+    r = Sk.misceval.iterFor(Sk.abstr.iter(seq), function(i) {
         if (Sk.misceval.richCompareBool(i, ob, "Eq")) {
-            return true;
+            return new Sk.misceval.Break(true);
+        } else {
+            return false;
         }
-    }
-    return false;
+    }, false);
+
+    return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
 };
 
 Sk.abstr.sequenceConcat = function (seq1, seq2) {
@@ -6340,7 +6348,7 @@ Sk.abstr.sequenceUnpack = function (seq, n) {
     }
 
     for (it = Sk.abstr.iter(seq), i = it.tp$iternext();
-         (i !== undefined) && (res.length < n); 
+         (i !== undefined) && (res.length < n);
          i = it.tp$iternext()) {
         res.push(i);
     }
@@ -6585,7 +6593,7 @@ Sk.abstr.iter = function(obj) {
 
     /**
      * Builds an iterator around classes that have a __getitem__ method.
-     * 
+     *
      * @constructor
      */
     var seqIter = function (obj) {
@@ -9631,8 +9639,13 @@ Sk.misceval.swappedOp_ = {
     "NotIn": "In_"
 };
 
-
-Sk.misceval.richCompareBool = function (v, w, op) {
+/**
+* @param{*} v
+* @param{*} w
+* @param{string} op
+* @param{boolean=} canSuspend
+ */
+Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
     // v and w must be Python objects. will return Javascript true or false for internal use only
     // if you want to return a value from richCompareBool to Python you must wrap as Sk.builtin.bool first
     var wname,
@@ -9783,10 +9796,11 @@ Sk.misceval.richCompareBool = function (v, w, op) {
     }
 
     if (op === "In") {
-        return Sk.misceval.isTrue(Sk.abstr.sequenceContains(w, v));
+        return Sk.misceval.chain(Sk.abstr.sequenceContains(w, v, canSuspend), Sk.misceval.isTrue);
     }
     if (op === "NotIn") {
-        return !Sk.misceval.isTrue(Sk.abstr.sequenceContains(w, v));
+        return Sk.misceval.chain(Sk.abstr.sequenceContains(w, v, canSuspend),
+                                 function(x) { return !Sk.misceval.isTrue(x); });
     }
 
     // Call Javascript shortcut method if exists for either object
@@ -10456,6 +10470,73 @@ Sk.misceval.tryCatch = function (tryFn, catchFn) {
     }
 };
 goog.exportSymbol("Sk.misceval.tryCatch", Sk.misceval.tryCatch);
+
+/**
+ * Perform a suspension-aware for-each on an iterator, without
+ * blowing up the stack.
+ * forFn() is called for each element in the iterator, with two
+ * arguments: the current element and the previous return value
+ * of forFn() (or initialValue on the first call). In this way,
+ * iterFor() can be used as a simple for loop, or alternatively
+ * as a 'reduce' operation. The return value of the final call to
+ * forFn() will be the return value of iterFor() (after all
+ * suspensions are resumed, that is; if the iterator is empty then
+ * initialValue will be returned.)
+ *
+ * The iteration can be terminated early, by returning
+ * an instance of Sk.misceval.Break. If an argument is given to
+ * the Sk.misceval.Break() constructor, that value will be
+ * returned from iterFor(). It is therefore possible to use
+ * iterFor() on infinite iterators.
+ *
+ * @param {*} iter
+ * @param {function(*,*=)} forFn
+ * @param {*=} initialValue
+ */
+Sk.misceval.iterFor = function (iter, forFn, initialValue) {
+    var prevValue = initialValue;
+
+    var breakOrIterNext = function(r) {
+        prevValue = r;
+        return (r instanceof Sk.misceval.Break) ? r : iter.tp$iternext(true);
+    };
+
+    return (function nextStep(i) {
+        while (i !== undefined) {
+            if (i instanceof Sk.misceval.Suspension) {
+                return new Sk.misceval.Suspension(nextStep, i);
+            }
+
+            if (i === Sk.misceval.Break || i instanceof Sk.misceval.Break) {
+                return i.brValue;
+            }
+
+            i = Sk.misceval.chain(
+                forFn(i, prevValue),
+                breakOrIterNext
+            );
+        }
+        return prevValue;
+    })(iter.tp$iternext(true));
+};
+goog.exportSymbol("Sk.misceval.iterFor", Sk.misceval.iterFor);
+
+/**
+ * A special value to return from an iterFor() function,
+ * to abort the iteration. Optionally supply a value for iterFor() to return
+ * (defaults to 'undefined')
+ *
+ * @constructor
+ * @param {*=}  brValue
+ */
+Sk.misceval.Break = function(brValue) {
+    if (!(this instanceof Sk.misceval.Break)) {
+        return new Sk.misceval.Break(brValue);
+    }
+
+    this.brValue = brValue;
+};
+goog.exportSymbol("Sk.misceval.Break", Sk.misceval.Break);
 
 /**
  * same as Sk.misceval.call except args is an actual array, rather than
@@ -29234,9 +29315,10 @@ Compiler.prototype.ccompare = function (e) {
 
     for (i = 0; i < n; ++i) {
         rhs = this.vexpr(e.comparators[i]);
-        res = this._gr("compare", "Sk.builtin.bool(Sk.misceval.richCompareBool(", cur, ",", rhs, ",'", e.ops[i].prototype._astname, "'))");
-        out(fres, "=", res, ";");
-        this._jumpfalse(res, done);
+        out("$ret = Sk.builtin.bool(Sk.misceval.richCompareBool(", cur, ",", rhs, ",'", e.ops[i].prototype._astname, "', true));");
+        this._checkSuspension(e);
+        out(fres, "=$ret;");
+        this._jumpfalse("$ret", done);
         cur = rhs;
     }
     this._jump(done);
