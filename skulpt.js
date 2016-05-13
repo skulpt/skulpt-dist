@@ -5362,20 +5362,20 @@ Sk.builtin.type = function (name, bases, dict) {
             }
             throw new Sk.builtin.TypeError("'" + tname + "' object is not iterable");
         };
-        klass.prototype.tp$iternext = function () {
+        klass.prototype.tp$iternext = function (canSuspend) {
+            var r;
             var iternextf = this.tp$getattr("next");
-            var ret;
             if (iternextf) {
-                try {
-                    ret = Sk.misceval.callsim(iternextf);
-                } catch (e) {
+                r = Sk.misceval.tryCatch(function() {
+                    return Sk.misceval.callsimOrSuspend(iternextf);
+                }, function(e) {
                     if (e instanceof Sk.builtin.StopIteration) {
-                        ret = undefined;
+                        return undefined;
                     } else {
                         throw e;
                     }
-                }
-                return ret;
+                });
+                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
             }
         };
 
@@ -6605,7 +6605,7 @@ Sk.abstr.iter = function(obj) {
             try {
                 ret = Sk.misceval.callsim(this.getitem, this.myobj, Sk.ffi.remapToPy(this.idx));
             } catch (e) {
-                if (e instanceof Sk.builtin.IndexError) {
+                if (e instanceof Sk.builtin.IndexError || e instanceof Sk.builtin.StopIteration) {
                     return undefined;
                 } else {
                     throw e;
@@ -6619,7 +6619,10 @@ Sk.abstr.iter = function(obj) {
     if (obj.tp$getattr) {
         iter =  Sk.abstr.lookupSpecial(obj,"__iter__");
         if (iter) {
-            return Sk.misceval.callsim(iter,obj);
+            ret = Sk.misceval.callsim(iter, obj);
+            if (ret.tp$iternext) {
+                return ret;
+            }
         }
     }
     if (obj.tp$iter) {
@@ -9297,6 +9300,23 @@ Sk.builtin.SystemError = function (args) {
 };
 Sk.abstr.setUpInheritance("SystemError", Sk.builtin.SystemError, Sk.builtin.StandardError);
 goog.exportSymbol("Sk.builtin.SystemError", Sk.builtin.SystemError);
+
+/**
+ * @constructor
+ * @extends Sk.builtin.Exception
+ * @param {...*} args
+ */
+Sk.builtin.StopIteration = function (args) {
+    var o;
+    if (!(this instanceof Sk.builtin.StopIteration)) {
+        o = Object.create(Sk.builtin.StopIteration.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    Sk.builtin.Exception.apply(this, arguments);
+};
+Sk.abstr.setUpInheritance("StopIteration", Sk.builtin.StopIteration, Sk.builtin.Exception);
+goog.exportSymbol("Sk.builtin.StopIteration", Sk.builtin.StopIteration);
 
 
 goog.exportSymbol("Sk", Sk);
@@ -30004,42 +30024,32 @@ Compiler.prototype.cfor = function (s) {
 };
 
 Compiler.prototype.craise = function (s) {
-    var inst, exc;
-    if (s && s.type && s.type.id && (s.type.id.v === "StopIteration")) {
-        // currently, we only handle StopIteration, and all it does it return
-        // undefined which is what our iterator protocol requires.
-        //
-        // totally hacky, but good enough for now.
-        out("return undefined;");
+    var inst = "", exc;
+    if (s.inst) {
+        // handles: raise Error, arguments
+        inst = this.vexpr(s.inst);
+        out("throw ", this.vexpr(s.type), "(", inst, ");");
     }
-    else {
-        inst = "";
-        if (s.inst) {
-            // handles: raise Error, arguments
-            inst = this.vexpr(s.inst);
-            out("throw ", this.vexpr(s.type), "(", inst, ");");
-        }
-        else if (s.type) {
-            if (s.type.func) {
-                // handles: raise Error(arguments)
-                out("throw ", this.vexpr(s.type), ";");
-            }
-            else {
-                // handles: raise Error OR raise someinstance
-                exc = this._gr("err", this.vexpr(s.type));
-                out("if(",exc," instanceof Sk.builtin.type) {",
-                    "throw Sk.misceval.callsim(", exc, ");",
-                    "} else if(typeof(",exc,") === 'function') {",
-                    "throw ",exc,"();",
-                    "} else {",
-                    "throw ", exc, ";",
-                    "}");
-            }
+    else if (s.type) {
+        if (s.type.func) {
+            // handles: raise Error(arguments)
+            out("throw ", this.vexpr(s.type), ";");
         }
         else {
-            // re-raise
-            out("throw $err;");
+            // handles: raise Error OR raise someinstance
+            exc = this._gr("err", this.vexpr(s.type));
+            out("if(",exc," instanceof Sk.builtin.type) {",
+                "throw Sk.misceval.callsim(", exc, ");",
+                "} else if(typeof(",exc,") === 'function') {",
+                "throw ",exc,"();",
+                "} else {",
+                "throw ", exc, ";",
+                "}");
         }
+    }
+    else {
+        // re-raise
+        out("throw $err;");
     }
 };
 
@@ -32651,6 +32661,7 @@ Sk.builtins = {
     "OverflowError"      : Sk.builtin.OverflowError,
     "OperationError"     : Sk.builtin.OperationError,
     "RuntimeError"       : Sk.builtin.RuntimeError,
+    "StopIteration"      : Sk.builtin.StopIteration,
 
     "dict"      : Sk.builtin.dict,
     "file"      : Sk.builtin.file,
