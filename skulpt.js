@@ -7390,6 +7390,10 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
                 }
             }
             if (varnames && j !== numvarnames) {
+                if (j in args) {
+                    name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
+                    throw new Sk.builtin.TypeError(name + "() got multiple values for keyword argument '" + kw[i] + "'");
+                }
                 args[j] = kw[i + 1];
             } else if (expectskw) {
                 // build kwargs dict
@@ -9381,64 +9385,17 @@ Sk.builtin.method = function (func, self) {
 goog.exportSymbol("Sk.builtin.method", Sk.builtin.method);
 
 Sk.builtin.method.prototype.tp$call = function (args, kw) {
-    var j;
-    var i;
-    var numvarnames;
-    var varnames;
-    var kwlen;
-    var kwargsarr;
-    var expectskw;
-    var name;
-
     goog.asserts.assert(this.im_self, "should just be a function, not a method since there's no self?");
     goog.asserts.assert(this.im_func instanceof Sk.builtin.func);
 
-    // TODO: This function has an awful lot in common with Sk.builtin.func.prototype.tp$call.
-    // Should we just unshift this.im_self onto the front of args and call that function
-    // instead?
-
-    //print("calling method");
-    // todo; modification OK?
+    // 'args' and 'kw' get mucked around with heavily in applyOrSuspend();
+    // changing it here is OK.
     args.unshift(this.im_self);
 
-    expectskw = this.im_func.func_code["co_kwargs"];
-    kwargsarr = [];
+    // A method call is just a call to this.im_func with 'self' on the beginning of the args.
+    // Do the necessary.
 
-    if (this.im_func.func_code["no_kw"]) {
-        name = (this.im_func.func_code["co_name"] && this.im_func.func_code["co_name"].v) || "<native JS>";
-        throw new Sk.builtin.TypeError(name + "() takes no keyword arguments");
-    }
-
-    if (kw) {
-        // bind the kw args
-        kwlen = kw.length;
-        varnames = this.im_func.func_code["co_varnames"];
-        numvarnames = varnames && varnames.length;
-        for (i = 0; i < kwlen; i += 2) {
-            // todo; make this a dict mapping name to offset
-            for (j = 0; j < numvarnames; ++j) {
-                if (kw[i] === varnames[j]) {
-                    break;
-                }
-            }
-            if (varnames && j !== numvarnames) {
-                args[j] = kw[i + 1];
-            } else if (expectskw) {
-                // build kwargs dict
-                kwargsarr.push(new Sk.builtin.str(kw[i]));
-                kwargsarr.push(kw[i + 1]);
-            } else {
-                name = (this.im_func.func_code && this.im_func.func_code["co_name"] && this.im_func.func_code["co_name"].v) || "<native JS>";
-                throw new Sk.builtin.TypeError(name + "() got an unexpected keyword argument '" + kw[i] + "'");
-            }
-        }
-    }
-    if (expectskw) {
-        args.unshift(kwargsarr);
-    }
-
-    // note: functions expect globals to be their "this". see compile.js and function.js also
-    return this.im_func.func_code.apply(this.im_func.func_globals, args);
+    return this.im_func.tp$call(args, kw);
 };
 
 Sk.builtin.method.prototype["$r"] = function () {
@@ -10595,8 +10552,15 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
         }
 
         if (kwdict) {
-            goog.asserts.fail("kwdict not implemented;");
+            for (it = Sk.abstr.iter(kwdict), i = it.tp$iternext(); i!== undefined; i = it.tp$iternext()) {
+                if (!Sk.builtin.checkString(i)) {
+                    throw new Sk.builtin.TypeError("Function keywords must be strings");
+                }
+                kws.push(i.v);
+                kws.push(Sk.abstr.objectGetItem(kwdict, i, false));
+            }
         }
+
         //goog.asserts.assert(((kws === undefined) || (kws.length === 0)));
         //print('kw args location: '+ kws + ' args ' + args.length)
         if (kws !== undefined && kws.length > 0) {
@@ -10635,8 +10599,15 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
                     args.push(i);
                 }
             }
+
             if (kwdict) {
-                goog.asserts.fail("kwdict not implemented;");
+                for (it = Sk.abstr.iter(kwdict), i = it.tp$iternext(); i!== undefined; i = it.tp$iternext()) {
+                    if (!Sk.builtin.checkString(i)) {
+                        throw new Sk.builtin.TypeError("Function keywords must be strings");
+                    }
+                    kws.push(i.v);
+                    kws.push(Sk.abstr.objectGetItem(kwdict, i, false));
+                }
             }
             return fcall.call(func, args, kws, kwdict);
         }
@@ -10648,7 +10619,7 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
             // func is actually the object here because we got __call__
             // from it. todo; should probably use descr_get here
             args.unshift(func);
-            return Sk.misceval.apply(fcall, kws, args, kwdict, varargseq);
+            return Sk.misceval.apply(fcall, kwdict, varargseq, kws, args);
         }
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
     }
