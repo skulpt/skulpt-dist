@@ -1,4 +1,16 @@
-// Copyright 2006 The Closure Library Authors. All Rights Reserved.
+(function(){function k(b,a){s[b]||(typeof console!=="undefined"&&typeof console.warn=="function"&&console.warn("[WARNING] "+b+" is deprecated and will be removed in version 1.0. Instead, use `"+a+"`."),s[b]=!0)}function t(b){b.localize=i.localize.bind(i);b.timezone=i.timezone.bind(i);b.utc=i.utc.bind(i)}function r(b,a,e){a&&a.days&&(e=a,a=void 0);e&&k("`"+g+"(format, [date], [locale])`","var s = "+g+".localize(locale); s(format, [date])");return(e?i.localize(e):i)(b,a)}function u(b,a,e){e?k("`"+g+
+".strftime(format, [date], [locale])`","var s = "+g+".localize(locale); s(format, [date])"):k("`"+g+".strftime(format, [date])`",g+"(format, [date])");return(e?i.localize(e):i)(b,a)}function p(b,a,e){function g(b,c,h,a){for(var d="",f=null,e=!1,i=b.length,j=!1,o=0;o<i;o++){var n=b.charCodeAt(o);if(e===!0)if(n===45)f="";else if(n===95)f=" ";else if(n===48)f="0";else if(n===58)j&&typeof console!=="undefined"&&typeof console.warn=="function"&&console.warn("[WARNING] detected use of unsupported %:: or %::: modifiers to strftime"),
+j=!0;else{switch(n){case 65:d+=h.days[c.getDay()];break;case 66:d+=h.months[c.getMonth()];break;case 67:d+=l(Math.floor(c.getFullYear()/100),f);break;case 68:d+=g(h.formats.D,c,h,a);break;case 70:d+=g(h.formats.F,c,h,a);break;case 72:d+=l(c.getHours(),f);break;case 73:d+=l(v(c.getHours()),f);break;case 76:d+=Math.floor(a%1E3)>99?Math.floor(a%1E3):Math.floor(a%1E3)>9?"0"+Math.floor(a%1E3):"00"+Math.floor(a%1E3);break;case 77:d+=l(c.getMinutes(),f);break;case 80:d+=c.getHours()<12?h.am:h.pm;break;case 82:d+=
+g(h.formats.R,c,h,a);break;case 83:d+=l(c.getSeconds(),f);break;case 84:d+=g(h.formats.T,c,h,a);break;case 85:d+=l(w(c,"sunday"),f);break;case 87:d+=l(w(c,"monday"),f);break;case 88:d+=g(h.formats.X,c,h,a);break;case 89:d+=c.getFullYear();break;case 90:k&&m===0?d+="GMT":(f=c.toString().match(/\(([\w\s]+)\)/),d+=f&&f[1]||"");break;case 97:d+=h.shortDays[c.getDay()];break;case 98:d+=h.shortMonths[c.getMonth()];break;case 99:d+=g(h.formats.c,c,h,a);break;case 100:d+=l(c.getDate(),f);break;case 101:d+=
+l(c.getDate(),f==null?" ":f);break;case 104:d+=h.shortMonths[c.getMonth()];break;case 106:f=new Date(c.getFullYear(),0,1);f=Math.ceil((c.getTime()-f.getTime())/864E5);d+=f>99?f:f>9?"0"+f:"00"+f;break;case 107:d+=l(c.getHours(),f==null?" ":f);break;case 108:d+=l(v(c.getHours()),f==null?" ":f);break;case 109:d+=l(c.getMonth()+1,f);break;case 110:d+="\n";break;case 111:d+=String(c.getDate())+A(c.getDate());break;case 112:d+=c.getHours()<12?h.AM:h.PM;break;case 114:d+=g(h.formats.r,c,h,a);break;case 115:d+=
+Math.floor(a/1E3);break;case 116:d+="\t";break;case 117:f=c.getDay();d+=f===0?7:f;break;case 118:d+=g(h.formats.v,c,h,a);break;case 119:d+=c.getDay();break;case 120:d+=g(h.formats.x,c,h,a);break;case 121:d+=(""+c.getFullYear()).slice(2);break;case 122:k&&m===0?d+=j?"+00:00":"+0000":(f=m!==0?m/6E4:-c.getTimezoneOffset(),e=j?":":"",n=Math.abs(f%60),d+=(f<0?"-":"+")+l(Math.floor(Math.abs(f/60)))+e+l(n));break;default:d+=b[o]}f=null;e=!1}else n===37?e=!0:d+=b[o]}return d}var i=b||x,m=a||0,k=e||!1,j=0,
+q,b=function(b,c){var a;c?(a=c.getTime(),k&&(c=new Date(c.getTime()+(c.getTimezoneOffset()||0)*6E4+m))):(a=Date.now(),a>j?(j=a,q=new Date(j),a=j,k&&(q=new Date(j+(q.getTimezoneOffset()||0)*6E4+m))):a=j,c=q);return g(b,c,i,a)};b.localize=function(a){return new p(a||i,m,k)};b.timezone=function(a){var c=m,b=k,e=typeof a;if(e==="number"||e==="string")b=!0,e==="string"?(c=a[0]==="-"?-1:1,e=parseInt(a.slice(1,3),10),a=parseInt(a.slice(3,5),10),c=c*(60*e+a)*6E4):e==="number"&&(c=a*6E4);return new p(i,c,
+b)};b.utc=function(){return new p(i,m,!0)};return b}function l(b,a){if(a===""||b>9)return b;a==null&&(a="0");return a+b}function v(b){if(b===0)return 12;else if(b>12)return b-12;return b}function w(b,a){var a=a||"sunday",e=b.getDay();a==="monday"&&(e===0?e=6:e--);var g=Date.UTC(b.getFullYear(),0,1),i=Date.UTC(b.getFullYear(),b.getMonth(),b.getDate());return Math.floor((Math.floor((i-g)/864E5)+7-e)/7)}function A(b){var a=b%10;b%=100;if(b>=11&&b<=13||a===0||a>=4)return"th";switch(a){case 1:return"st";
+case 2:return"nd";case 3:return"rd"}}var x={days:["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],shortDays:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],months:["January","February","March","April","May","June","July","August","September","October","November","December"],shortMonths:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],AM:"AM",PM:"PM",am:"am",pm:"pm",formats:{D:"%m/%d/%y",F:"%Y-%m-%d",R:"%H:%M",T:"%H:%M:%S",X:"%T",c:"%a %b %d %X %Y",r:"%I:%M:%S %p",
+v:"%e-%b-%Y",x:"%D"}},i=new p(x,0,!1),y=typeof module!=="undefined",j;y?(j=module.exports=r,j.strftime=u):(j=function(){return this||(0,eval)("this")}(),j.strftime=r);var g=y?"require('strftime')":"strftime",s={};j.strftimeTZ=function(b,a,e,j){if((typeof e=="number"||typeof e=="string")&&j==null)j=e,e=void 0;e?k("`"+g+".strftimeTZ(format, date, locale, tz)`","var s = "+g+".localize(locale).timezone(tz); s(format, [date])` or `var s = "+g+".localize(locale); s.timezone(tz)(format, [date])"):k("`"+
+g+".strftimeTZ(format, date, tz)`","var s = "+g+".timezone(tz); s(format, [date])` or `"+g+".timezone(tz)(format, [date])");return(e?i.localize(e):i).timezone(j)(b,a)};j.strftimeUTC=function(b,a,e){e?k("`"+g+".strftimeUTC(format, date, locale)`","var s = "+g+".localize(locale).utc(); s(format, [date])"):k("`"+g+".strftimeUTC(format, [date])`","var s = "+g+".utc(); s(format, [date])");return(e?z.localize(e):z)(b,a)};j.localizedStrftime=function(b){k("`"+g+".localizedStrftime(locale)`",g+".localize(locale)");
+return i.localize(b)};t(r);t(u);var z=i.utc();if(typeof Date.now!=="function")Date.now=function(){return+new Date}})();
+!function(){"use strict";var strptime=function(str,format,local){return strptime.parse(str,format,local)};strptime.version="0.0.1";var namespace;if(typeof module!=="undefined"){namespace=module.exports=strptime}else{namespace=function(){return this||(1,eval)("this")}()}namespace.strptime=strptime;!function(strptime){strptime.locale={a:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],A:["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],b:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],B:["January","February","March","April","May","June","July","August","September","October","November","December"],f:["Jan.","Feb.","Mar.","Apr.","May","Jun.","Jul.","Aug.","Sep.","Oct.","Nov.","Dec."],c:"%Y-%m-%d %H:%M:%S",P:["am","pm"],r:"%I:%M:%S %p",x:"%m/%d/%y",X:"%H:%M:%S",day:["Yesterday","Today","Tomorrow"],bg:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],Bg:["January","February","March","April","May","June","July","August","September","October","November","December"],fg:["Jan.","Feb.","Mar.","Apr.","May","Jun.","Jul.","Aug.","Sep.","Oct.","Nov.","Dec."],Date_dBY_year_in_HM:"%#B %-d, %Y at %-H:%M",Date_dBY_year:"%#B %-d, %Y",Date_dBY:"%#B %-d, %Y",Date_AdBY:"%A, %#B %-d, %Y",Date_dBA:"%#B %-d, %A",Date_df_in_HM:"%#f, %-d at %-H:%M",Date_dfY:"%-d %#f %Y",Date_dB_in_HM:"%#B %-d at %-H:%M",Date_df:"%-d %#f"}}(strptime);!function(strptime){var inArray=Array.prototype.indexOf||function(el){var l=this.length;var i=0;while(i<l){if(el==this[i]){return i}i++}return-1};var locale=strptime.locale;var strRegNum2="[\\d\\s]?\\d";var strRegStr="\\S+";var specifiers={"%":"\\%",a:strRegStr,A:strRegStr,b:{reg:strRegStr,make:function(date,data,mod,gen){data=inArray.call(gen?locale.bg:locale.b,toLetterCaseReverse(data,mod));if(data===-1){return false}date.setUTCMonth(data);return true}},h:{reg:strRegStr,make:function(date,data,mod,gen){data=inArray.call(gen?locale.bg:locale.b,toLetterCaseReverse(data,mod));if(data===-1){return false}date.setUTCMonth(data);return true}},B:{reg:strRegStr,make:function(date,data,mod,gen){data=inArray.call(gen?locale.Bg:locale.B,toLetterCaseReverse(data,mod));if(data===-1){return false}date.setUTCMonth(data);return true}},f:{reg:strRegStr,make:function(date,data,mod,gen){data=inArray.call(gen?locale.fg:locale.f,toLetterCaseReverse(data,mod));if(data===-1){return false}date.setUTCMonth(data);return true}},g:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<0||data>99){return false}data=data+100*parseInt((new Date).getUTCFullYear()/100,10);date.setUTCFullYear(data);return true}},G:{reg:"\\d{4}",make:function(date,data){data=parseInt(data,10);date.setUTCFullYear(data);return true}},d:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<1||data>31){return false}date.setUTCDate(data);return true}},e:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<1||data>31){return false}date.setUTCDate(data);return true}},H:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<0||data>23){return false}date.setUTCHours(data);return true}},I:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<1||data>12){return false}date.setUTCHours(date.getUTCHours()+data);return true}},m:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<1||data>12){return false}date.setUTCMonth(data-1);return true}},M:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<0||data>59){return false}date.setUTCMinutes(data);return true}},n:"\\n",p:{reg:strRegStr,make:function(date,data){data=inArray.call(locale.P,data.toLowerCase());if(data===-1){return false}if(data===1){date.setUTCHours(date.getUTCHours()+12)}return true}},P:{reg:strRegStr,make:function(date,data){data=inArray.call(locale.P,data.toLowerCase());if(data===-1){return false}if(data===1){date.setUTCHours(date.getUTCHours()+12)}return true}},S:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<0||data>60){return false}date.setUTCSeconds(data);return true}},t:"\\t",u:"\\d",U:strRegNum2,w:"\\d",W:strRegNum2,y:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<0||data>99){return false}data=data+100*parseInt((new Date).getUTCFullYear()/100,10);date.setUTCFullYear(data);return true}},Y:{reg:"\\d{4}",make:function(date,data){data=parseInt(data,10);date.setUTCFullYear(data);return true}},z:{reg:"[+\\-]\\d{4}",make:function(date,data){var m=data.match(/^([+\-])(\d{2})(\d{2})$/);if(!m){return false}var offset=(parseInt(m[2],10)*60+parseInt(m[3],10))*6e4;if(m[1]==="+"){offset=-offset}date.setTime(date.getTime()+offset);return true}},l:{reg:strRegNum2,make:function(date,data){data=parseInt(data,10);if(data<1||data>12){return false}date.setUTCHours(date.getUTCHours()+data);return true}},s:{reg:"\\d+",make:function(date,data){data=parseInt(data,10);date.setTime(data*1e3);return true}},c:locale.c,r:locale.r,R:"%H:%M",T:"%H:%M:%S",x:locale.x,X:locale.X,D:"%m/%d/%y",F:"%Y-%m-%d",Date_iso:"%Y-%m-%dT%H:%M:%S",Date_dBY_year_in_HM:locale.Date_dBY_year_in_HM,Date_dBY_year:locale.Date_dBY_year,Date_dBY:locale.Date_dBY,Date_dBA:locale.Date_dBA,Date_AdBY:locale.Date_AdBY,Date_df_in_HM:locale.Date_df_in_HM,Date_dfY:locale.Date_dfY,Date_dB_in_HM:locale.Date_dB_in_HM,Date_dmY__dot:"%d.%m.%Y",Date_df:locale.Date_df,Date_FT:"%F %T",Date_dmY__minus:"%d-%m-%Y"};strptime.parse=function(str,format,local){str=String(str);format=String(format);var loop=5;while(/%(Date_[a-zA-Z0-9_]+|[cDFrRTxX])/g.test(format)&&loop){format=format.replace(/%(Date_[a-zA-Z0-9_]+|[cDFrRTxX])/,formatTransform);loop--}formatTransform.make=[];var reg=format.replace(/%(([#\^!~]{0,2})[aAbBfh]|([0\-_]?)[degHImMSVWyl]|[GnpPtuUwYzZs%])/g,formatTransform);var match=str.match(new RegExp(reg));if(!match||!formatTransform.make.length){return null}var date=new Date(Date.UTC(0,0));for(var i=0,l=formatTransform.make.length;i<l;i++){var build=formatTransform.make[i];if(!build[0](date,match[i+1],build[1],build[2])){return null}}if(local){date.setTime(date.getTime()+date.getTimezoneOffset()*6e4)}return date};function formatTransform(_,spec,mod,numPad,pos,str){spec=String(spec);mod=String(mod);spec=spec.replace(/^[#_0\^\-!~]+/,"");var s=specifiers[spec];if(!s){return _}var genitive=false;if(mod.indexOf("!")===-1&&spec.length===1&&(mod.indexOf("~")>-1||"bBf".indexOf(spec)>-1&&/%[0\-_]?d[\s]+$/.test(str.substr(0,pos)))){genitive=true}if((spec==="I"||spec==="l")&&!/%[pP]/.test(str)){throw new Error("Undefined AM/PM")}switch(typeof s){case"function":return s();case"string":return s;case"object":formatTransform.make.push([s.make,mod,genitive]);return"("+s.reg+")";default:return _}}function toLetterCaseReverse(str,mode){str=String(str);mode=String(mode);if(mode.indexOf("#")!==-1){return str.substr(0,1).toUpperCase()+str.substr(1)}if(mode.indexOf("^")!==-1){return str.substr(0,1)+str.substr(1).toLowerCase()}return str}}(strptime)}();// Copyright 2006 The Closure Library Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21281,49 +21293,48 @@ Sk.builtin.module.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetA
 Sk.builtin.module.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
 Sk.builtin.structseq_types = {};
 
-Sk.builtin.make_structseq = function (module, name, fields) {
+Sk.builtin.make_structseq = function (module, name, fields, doc) {
     var nm = module + "." + name;
-    var flds = fields;
+    var flds = [];
+    var docs = [];
+    var i;
+    for (var key in fields) {
+        flds.push(key);
+        docs.push(fields[key]);
+    }
 
-    var cons = function structseq_constructor(args) {
+    var cons = function structseq_constructor(arg) {
         Sk.builtin.pyCheckArgs(nm, arguments, 1, 1);
         var o;
+        var it, i, v;
         if (!(this instanceof Sk.builtin.structseq_types[nm])) {
             o = Object.create(Sk.builtin.structseq_types[nm].prototype);
             o.constructor.apply(o, arguments);
             return o;
         }
-        var it, i;
-        if (Object.prototype.toString.apply(args) === "[object Array]") {
-            this.v = args;
+
+        if (Object.prototype.toString.apply(arg) === "[object Array]") {
+            v = arg;
         } else {
-            this.v = [];
-            if (args.tp$iter) {
-                var cnt = 0;
-                for (it = args.tp$iter(), i = it.tp$iternext(); i !== undefined && cnt < flds.length; i = it.tp$iternext()) {
-                    this.v.push(i);
-                    cnt++;
-                }
-                if (cnt < flds.length) {
-                    throw new Sk.builtin.TypeError(nm + "() takes a " + flds.length + "-sequence (" + cnt + "-sequence given)");
-                }
-            } else if (args.__getitem__) {
-                for(var idx=0; idx<=flds.length; idx++) {
-                    Sk.misceval.apply(args.__getitem__, undefined, undefined, undefined, [Sk.builtin.asnum$(idx)]);
-                }
-            }  else {
-                throw new Sk.builtin.TypeError("constructor requires a sequence");
-            } 
+            v = [];
+            for (it = Sk.abstr.iter(arg), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+                v.push(i);
+            }
+            if (v.length != flds.length) {
+                throw new Sk.builtin.TypeError(nm + "() takes a " + flds.length + "-sequence (" + v.length + "-sequence given)");
+            }
         }
 
-        Sk.builtin.tuple.apply(this, arguments);
+        Sk.builtin.tuple.call(this, v);
 
         this.__class__ = Sk.builtin.structseq_types[nm];
     };
-    cons["co_kwargs"] = true;
     Sk.builtin.structseq_types[nm] = cons;
 
     goog.inherits(cons, Sk.builtin.tuple);
+    if (doc) {
+        cons.prototype.__doc__ = doc;
+    }
     cons.prototype.tp$name = nm;
     cons.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj(nm, Sk.builtin.structseq_types[nm]);
     cons.prototype.ob$type["$d"] = new Sk.builtin.dict([]);
@@ -21334,15 +21345,9 @@ Sk.builtin.make_structseq = function (module, name, fields) {
     cons.prototype.__getitem__ = new Sk.builtin.func(function (self, index) {
         return Sk.builtin.tuple.prototype.mp$subscript.call(self, index);
     });
-
-    function makeGetter(i) {
-        return function() {
-            return this.v[i];
-        };
-    }
-    for(var i=0; i<flds.length; i++) {
-        cons.prototype[flds[i]] = makeGetter;
-    }
+    cons.prototype.__reduce__ = new Sk.builtin.func(function (self) {
+        throw new Sk.builtin.Exception("__reduce__ is not implemented");
+    });
 
     cons.prototype["$r"] = function () {
         var ret;
@@ -21362,9 +21367,15 @@ Sk.builtin.make_structseq = function (module, name, fields) {
         return new Sk.builtin.str(nm + "(" + ret + ")");
     };
     cons.prototype.tp$setattr = function (name, value) {
+        throw new Sk.builtin.AttributeError("readonly property");
+    };
+
+    cons.prototype.tp$getattr = function (name) {
         var i = flds.indexOf(name);
         if (i >= 0) {
-            this.v[i] = value;
+            return this.v[i];
+        } else {
+            return  Sk.builtin.object.prototype.GenericGetAttr(name);
         }
     };
 
