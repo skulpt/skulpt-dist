@@ -4962,6 +4962,16 @@ Sk.configure = function (options) {
     Sk.breakpoints = options["breakpoints"] || function() { return true; };
     goog.asserts.assert(typeof Sk.breakpoints === "function");
 
+    Sk.setTimeout = options["setTimeout"];
+    if (Sk.setTimeout === undefined) {
+        if (typeof setTimeout === "function") {
+            Sk.setTimeout = setTimeout;
+        } else {
+            Sk.setTimeout = function(func, delay) { func(); };
+        }
+    }
+    goog.asserts.assert(typeof Sk.setTimeout === "function");
+
     if ("execLimit" in options) {
         Sk.execLimit = options["execLimit"];
     }
@@ -10347,8 +10357,10 @@ Sk.misceval.asyncToPromise = function(suspendablefn, suspHandlers) {
                             r.data["promise"].then(resumeWithData, resumeWithError);
                             return;
 
-                        } else if (r.data["type"] == "Sk.yield" && typeof setTimeout === "function") {
-                            setTimeout(resume, 0);
+                        } else if (r.data["type"] == "Sk.yield") {
+                            // Assumes all yields are optional, as Sk.setTimeout might
+                            // not be able to yield.
+                            Sk.setTimeout(resume, 0);
                             return;
 
                         } else if (r.optional) {
