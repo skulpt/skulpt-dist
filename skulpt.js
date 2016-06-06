@@ -6778,6 +6778,20 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
 
     dict = this["$d"] || this.constructor["$d"];
 
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    // otherwise, look in the type for a descr
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        f = descr.ob$type.tp$descr_get;
+        if (!(f) && descr["__get__"]) {
+            f = descr["__get__"];
+            return Sk.misceval.callsimOrSuspend(f, descr, this);
+        }
+        // todo;
+        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        //return f.call(descr, this, this.ob$type);
+    }
+
     // todo; assert? force?
     if (dict) {
         if (dict.mp$lookup) {
@@ -6829,8 +6843,28 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
     var objname = Sk.abstr.typeName(this);
     var pyname;
     var dict;
+    var descr;
+    var tp;
+    var f;
     goog.asserts.assert(typeof name === "string");
-    // todo; lots o' stuff
+
+    tp = this.ob$type;
+    goog.asserts.assert(tp !== undefined, "object has no ob$type!");
+
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    // otherwise, look in the type for a descr
+    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
+        // f = descr.ob$type.tp$descr_set;
+        if (!(f) && descr["__set__"]) {
+            f = descr["__set__"];
+            Sk.misceval.callsim(f, descr, this, value);
+            return;
+        }
+        // todo;
+        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
+        //return f.call(descr, this, this.ob$type);
+    }
 
     dict = this["$d"] || this.constructor["$d"];
 
@@ -10616,6 +10650,14 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
         //append kw args to args, filling in the default value where none is provided.
         return func.apply(null, args);
     } else {
+        fcall = func.__get__;
+        if (fcall !== undefined) {
+            fcall = Sk.misceval.callsimOrSuspend(func.__get__, func, func);
+            //args.unshift(func);
+            if (fcall.tp$call) {
+                return fcall.tp$call.call(fcall, args);                
+            }
+        }
         fcall = func.tp$call;
         if (fcall !== undefined) {
             if (varargseq) {
@@ -30489,6 +30531,9 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         out(scopename, ".$defaults=[", defaults.join(","), "];");
     }
 
+    if (decos.length > 0) {
+        out(scopename, ".$decorators=[", decos.join(","), "];");
+    }
 
     //
     // attach co_varnames (only the argument names) for keyword argument
@@ -30544,7 +30589,14 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         }
     }
     else {
-        return this._gr("funcobj", "new Sk.builtins['function'](", scopename, ",$gbl", frees, ")");
+        var res;
+        if (decos.length > 0)
+        {
+            res = this._gr("funcobj", "Sk.misceval.callsimOrSuspend(", scopename, ".$decorators[0], new Sk.builtins['function'](", scopename, ",$gbl", frees, "))"); // scopename, ".$decorators[0](new Sk.builtins['function'](", scopename, ",$gbl", frees, "))";
+        } else {
+            res = this._gr("funcobj", "new Sk.builtins['function'](", scopename, ",$gbl", frees, ")");
+        }
+        return res;
     }
 };
 
