@@ -5398,6 +5398,8 @@ Sk.builtin.type = function (name, bases, dict) {
                     }
                 });
                 return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+            } else {
+                throw new Sk.builtin.TypeError("instance has no next() method");
             }
         };
 
@@ -7261,12 +7263,24 @@ Sk.builtin.checkIterable = function (arg) {
 };
 goog.exportSymbol("Sk.builtin.checkIterable", Sk.builtin.checkIterable);
 
-Sk.builtin.checkCallable = function (arg) {
-    if (typeof arg === "function") {
-        return (!(arg instanceof Sk.builtin.none) && (arg.ob$type !== undefined));
-    } else {
-        return ((arg.tp$call !== undefined) || (arg.__call__ !== undefined));
+Sk.builtin.checkCallable = function (obj) {
+    // takes care of builtin functions and methods, builtins
+    if (typeof obj === "function") {
+        return true;
     }
+    // takes care of python function, methods and lambdas
+    if (obj instanceof Sk.builtin.func) {
+        return true;
+    }
+    // takes care of instances of methods
+    if (obj instanceof Sk.builtin.method) {
+        return true;
+    }
+    // go up the prototype chain to see if the class has a __call__ method
+    if (Sk.abstr.lookupSpecial(obj, "__call__") !== undefined) {
+        return true;
+    } 
+    return false;
 };
 
 Sk.builtin.checkNumber = function (arg) {
@@ -7383,11 +7397,20 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
     var kwargsarr;
     var expectskw;
     var name;
+    var numargs;
 
     // note: functions expect 'this' to be globals to avoid having to
     // slice/unshift onto the main args
     if (this.func_closure) {
         // todo; OK to modify?
+        if (this.func_code["$defaults"] && this.func_code["co_varnames"]) {
+            // Make sure all default arguments are in args before adding closure
+            numargs = args.length;
+            numvarnames = this.func_code["co_varnames"].length;
+            for (i = numargs; i < numvarnames; i++) {
+                args.push(undefined);
+            }
+        }
         args.push(this.func_closure);
     }
 
@@ -8658,8 +8681,15 @@ Sk.builtin.reversed = function reversed (seq) {
 Sk.builtin.bytearray = function bytearray () {
     throw new Sk.builtin.NotImplementedError("bytearray is not yet implemented");
 };
-Sk.builtin.callable = function callable () {
-    throw new Sk.builtin.NotImplementedError("callable is not yet implemented");
+
+Sk.builtin.callable = function callable (obj) {
+    // check num of args
+    Sk.builtin.pyCheckArgs("callable", arguments, 1, 1);
+
+    if (Sk.builtin.checkCallable(obj)) {
+        return Sk.builtin.bool.true$;
+    }
+    return Sk.builtin.bool.false$;
 };
 
 Sk.builtin.delattr = function delattr () {
@@ -8676,18 +8706,49 @@ Sk.builtin.frozenset = function frozenset () {
 Sk.builtin.help = function help () {
     throw new Sk.builtin.NotImplementedError("help is not yet implemented");
 };
-Sk.builtin.iter = function iter () {
-    throw new Sk.builtin.NotImplementedError("iter is not yet implemented");
+
+Sk.builtin.iter = function iter (obj, sentinel) {
+    Sk.builtin.pyCheckArgs("iter", arguments, 1, 2);
+    if (arguments.length === 1) {
+        if (!Sk.builtin.checkIterable(obj)) {
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + 
+                "' object is not iterable");
+        } else {
+            return new Sk.builtin.iterator(obj);
+        }
+    } else {
+        if (Sk.builtin.checkCallable(obj)) {
+            return new Sk.builtin.iterator(obj, sentinel);
+        } else {
+            throw new TypeError("iter(v, w): v must be callable");
+        }
+    }
 };
+
 Sk.builtin.locals = function locals () {
     throw new Sk.builtin.NotImplementedError("locals is not yet implemented");
 };
 Sk.builtin.memoryview = function memoryview () {
     throw new Sk.builtin.NotImplementedError("memoryview is not yet implemented");
 };
-Sk.builtin.next_ = function next_ () {
-    throw new Sk.builtin.NotImplementedError("next is not yet implemented");
+
+Sk.builtin.next_ = function next_ (iter, default_) {
+    var nxt;
+    Sk.builtin.pyCheckArgs("next", arguments, 1, 2);
+    if (!iter.tp$iternext) {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
+            "' object is not an iterator");
+    }
+    nxt = iter.tp$iternext();
+    if (nxt === undefined) {
+        if (default_) {
+            return default_;
+        }
+        throw new Sk.builtin.StopIteration();
+    }
+    return nxt;
 };
+
 Sk.builtin.property = function property () {
     throw new Sk.builtin.NotImplementedError("property is not yet implemented");
 };
@@ -9419,6 +9480,8 @@ Sk.builtin.method.prototype.tp$call = function (args, kw) {
 
     return this.im_func.tp$call(args, kw);
 };
+
+Sk.builtin.method.prototype.tp$name = "instancemethod";
 
 Sk.builtin.method.prototype["$r"] = function () {
     var name = (this.im_func.func_code && this.im_func.func_code["co_name"] && this.im_func.func_code["co_name"].v) || "<native JS>";
@@ -10876,7 +10939,7 @@ Sk.builtin.list = function (L, canSuspend) {
             }
         })(it.tp$iternext(canSuspend));
     } else {
-        throw new Sk.builtin.TypeError("expecting Array or iterable");
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L)+ "' " +"object is not iterable");
     }
 
     this["v"] = this.v = v;
@@ -10885,26 +10948,6 @@ Sk.builtin.list = function (L, canSuspend) {
 
 Sk.abstr.setUpInheritance("list", Sk.builtin.list, Sk.builtin.seqtype);
 Sk.abstr.markUnhashable(Sk.builtin.list);
-
-Sk.builtin.list.prototype.list_iter_ = function () {
-    var ret =
-    {
-        tp$iter    : function () {
-            return ret;
-        },
-        $obj       : this,
-        $index     : 0,
-        tp$iternext: function () {
-            // todo; StopIteration
-            if (ret.$index >= ret.$obj.v.length) {
-                return undefined;
-            }
-            return ret.$obj.v[ret.$index++];
-        },
-        tp$name    : "list_iterator"
-    };
-    return ret;
-};
 
 Sk.builtin.list.prototype.list_concat_ = function (other) {
     // other not a list
@@ -11076,7 +11119,15 @@ Sk.builtin.list.prototype.tp$richcompare = function (w, op) {
     return Sk.misceval.richCompareBool(v[i], w[i], op);
 };
 
-Sk.builtin.list.prototype.tp$iter = Sk.builtin.list.prototype.list_iter_;
+Sk.builtin.list.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    return new Sk.builtin.list_iter_(self);
+});
+
+Sk.builtin.list.prototype.tp$iter = function () {
+    return new Sk.builtin.list_iter_(this);
+};
+
 Sk.builtin.list.prototype.sq$length = function () {
     return this.v.length;
 };
@@ -11353,11 +11404,6 @@ Sk.builtin.list.prototype.list_reverse_ = function (self) {
 };
 
 //Sk.builtin.list.prototype.__reversed__ = todo;
-Sk.builtin.list.prototype["__iter__"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 1, 1);
-
-    return self.list_iter_();
-});
 
 Sk.builtin.list.prototype["append"] = new Sk.builtin.func(function (self, item) {
     Sk.builtin.pyCheckArgs("append", arguments, 2, 2);
@@ -11483,6 +11529,46 @@ Sk.builtin.list.prototype["sort"] = new Sk.builtin.func(Sk.builtin.list.prototyp
 // why this was chosen - csev
 Sk.builtin.list.prototype["sort"].func_code["co_varnames"] = ["__self__", "cmp", "key", "reverse"];
 goog.exportSymbol("Sk.builtin.list", Sk.builtin.list);
+
+/**
+ * @constructor
+ * @param {Object} lst
+ */
+Sk.builtin.list_iter_ = function (lst) {
+    if (!(this instanceof Sk.builtin.list_iter_)) {
+        return new Sk.builtin.list_iter_(lst);
+    }
+    this.$index = 0;
+    this.lst = lst.v.slice();
+    this.sq$length = this.lst.length;
+    this.tp$iter = this;
+    this.tp$iternext = function () {
+        if (this.$index >= this.sq$length) {
+            return undefined;
+        }
+        return this.lst[this.$index++];
+    };
+    this.$r = function () {
+        return new Sk.builtin.str("listiterator");
+    };
+    return this;
+};
+
+Sk.abstr.setUpInheritance("listiterator", Sk.builtin.list_iter_, Sk.builtin.object);
+
+Sk.builtin.list_iter_.prototype.__class__ = Sk.builtin.list_iter_;
+
+Sk.builtin.list_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    return self;
+});
+
+Sk.builtin.list_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (ret === undefined) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
 Sk.builtin.interned = {};
 
 /**
@@ -11624,24 +11710,12 @@ Sk.builtin.str.prototype.sq$contains = function (ob) {
     return this.v.indexOf(ob.v) != -1;
 };
 
+Sk.builtin.str.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    return new Sk.builtin.str_iter_(self);
+});
+
 Sk.builtin.str.prototype.tp$iter = function () {
-    var ret =
-    {
-        tp$iter    : function () {
-            return ret;
-        },
-        $obj       : this,
-        $index     : 0,
-        tp$iternext: function () {
-            // todo; StopIteration
-            if (ret.$index >= ret.$obj.v.length) {
-                return undefined;
-            }
-            return new Sk.builtin.str(ret.$obj.v.substr(ret.$index++, 1));
-        },
-        tp$name    : "str_iterator"
-    };
-    return ret;
+    return new Sk.builtin.str_iter_(this);
 };
 
 Sk.builtin.str.prototype.tp$richcompare = function (other, op) {
@@ -12622,6 +12696,47 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
     ret = this.v.replace(regex, replFunc);
     return new Sk.builtin.str(ret);
 };
+
+/**
+ * @constructor
+ * @param {Object} obj
+ */
+Sk.builtin.str_iter_ = function (obj) {
+    if (!(this instanceof Sk.builtin.str_iter_)) {
+        return new Sk.builtin.str_iter_(obj);
+    }
+    this.$index = 0;
+    this.$obj = obj.v.slice();
+    this.sq$length = this.$obj.length;
+    this.tp$iter = this;
+    this.tp$iternext = function () {
+        if (this.$index >= this.sq$length) {
+            return undefined;
+        }
+        return new Sk.builtin.str(this.$obj.substr(this.$index++, 1));
+    };
+    this.$r = function () {
+        return new Sk.builtin.str("iterator");
+    };
+    return this;
+};
+
+Sk.abstr.setUpInheritance("iterator", Sk.builtin.str_iter_, Sk.builtin.object);
+
+Sk.builtin.str_iter_.prototype.__class__ = Sk.builtin.str_iter_;
+
+Sk.builtin.str_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    return self;
+});
+
+Sk.builtin.str_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (ret === undefined) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
 var format = function (kwa) {
     // following PEP 3101
 
@@ -13085,31 +13200,14 @@ Sk.builtin.tuple.prototype.sq$repeat = function (n) {
 Sk.builtin.tuple.prototype.nb$multiply = Sk.builtin.tuple.prototype.sq$repeat;
 Sk.builtin.tuple.prototype.nb$inplace_multiply = Sk.builtin.tuple.prototype.sq$repeat;
 
-Sk.builtin.tuple.prototype.tp$iter = function () {
-    var ret =
-    {
-        tp$iter    : function () {
-            return ret;
-        },
-        $obj       : this,
-        $index     : 0,
-        tp$iternext: function () {
-            // todo; StopIteration
-            if (ret.$index >= ret.$obj.v.length) {
-                return undefined;
-            }
-            return ret.$obj.v[ret.$index++];
-        },
-        tp$name    : "tuple_iterator"
-    };
-    return ret;
-};
-
-Sk.builtin.tuple.prototype["__iter__"] = new Sk.builtin.func(function (self) {
+Sk.builtin.tuple.prototype.__iter__ = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgs("__iter__", arguments, 1, 1);
-
-    return self.tp$iter();
+    return new Sk.builtin.tuple_iter_(self);
 });
+
+Sk.builtin.tuple.prototype.tp$iter = function () {
+    return new Sk.builtin.tuple_iter_(this);
+};
 
 Sk.builtin.tuple.prototype.tp$richcompare = function (w, op) {
     //print("  tup rc", JSON.stringify(this.v), JSON.stringify(w), op);
@@ -13238,6 +13336,46 @@ Sk.builtin.tuple.prototype["count"] = new Sk.builtin.func(function (self, item) 
 });
 
 goog.exportSymbol("Sk.builtin.tuple", Sk.builtin.tuple);
+
+/**
+ * @constructor
+ * @param {Object} obj
+ */
+Sk.builtin.tuple_iter_ = function (obj) {
+    if (!(this instanceof Sk.builtin.tuple_iter_)) {
+        return new Sk.builtin.tuple_iter_(obj);
+    }
+    this.$index = 0;
+    this.$obj = obj.v.slice();
+    this.sq$length = this.$obj.length;
+    this.tp$iter = this;
+    this.tp$iternext = function () {
+        if (this.$index >= this.sq$length) {
+            return undefined;
+        }
+        return this.$obj[this.$index++];
+    };
+    this.$r = function () {
+        return new Sk.builtin.str("tupleiterator");
+    };
+    return this;
+};
+
+Sk.abstr.setUpInheritance("tupleiterator", Sk.builtin.tuple_iter_, Sk.builtin.object);
+
+Sk.builtin.tuple_iter_.prototype.__class__ = Sk.builtin.tuple_iter_;
+
+Sk.builtin.tuple_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    return self;
+});
+
+Sk.builtin.tuple_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (ret === undefined) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
 /**
  * @constructor
  * @param {Array.<Object>} L
@@ -13416,46 +13554,6 @@ Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
     // Not found in dictionary
     s = new Sk.builtin.str(key);
     throw new Sk.builtin.KeyError(s.v);
-};
-
-Sk.builtin.dict.prototype.tp$iter = function () {
-    var ret;
-    var i;
-    var bucket;
-    var k;
-    var allkeys = [];
-    for (k in this) {
-        if (this.hasOwnProperty(k)) {
-            bucket = this[k];
-            if (bucket && bucket.$hash !== undefined && bucket.items !== undefined) {
-                // skip internal stuff. todo; merge pyobj and this
-                for (i = 0; i < bucket.items.length; i++) {
-                    allkeys.push(bucket.items[i].lhs);
-                }
-            }
-        }
-    }
-    //print(allkeys);
-
-    ret =
-    {
-        tp$iter    : function () {
-            return ret;
-        },
-        $obj       : this,
-        $index     : 0,
-        $keys      : allkeys,
-        tp$iternext: function () {
-            // todo; StopIteration
-            if (ret.$index >= ret.$keys.length) {
-                return undefined;
-            }
-            return ret.$keys[ret.$index++];
-            // return ret.$obj[ret.$keys[ret.$index++]].lhs;
-        },
-        tp$name    : "dict_keyiterator"
-    };
-    return ret;
 };
 
 Sk.builtin.dict.prototype["$r"] = function () {
@@ -13728,8 +13826,12 @@ Sk.builtin.dict.prototype.__getattr__ = new Sk.builtin.func(function (self, attr
 Sk.builtin.dict.prototype.__iter__ = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
 
-    return Sk.builtin.dict.prototype.tp$iter.call(self);
+    return new Sk.builtin.dict_iter_(self);
 });
+
+Sk.builtin.dict.prototype.tp$iter = function () {
+    return new Sk.builtin.dict_iter_(this);
+};
 
 Sk.builtin.dict.prototype.__repr__ = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, false, true);
@@ -13818,6 +13920,61 @@ Sk.builtin.dict.prototype["viewvalues"] = new Sk.builtin.func(function (self) {
 });
 
 goog.exportSymbol("Sk.builtin.dict", Sk.builtin.dict);
+
+/**
+ * @constructor
+ * @param {Object} obj
+ */
+Sk.builtin.dict_iter_ = function (obj) {
+    var k, i, bucket, allkeys;
+    if (!(this instanceof Sk.builtin.dict_iter_)) {
+        return new Sk.builtin.dict_iter_(obj);
+    }
+    this.$index = 0;
+    this.$obj = obj;
+    allkeys = [];
+    for (k in obj) {
+        if (obj.hasOwnProperty(k)) {
+            bucket = obj[k];
+            if (bucket && bucket.$hash !== undefined && bucket.items !== undefined) {
+                // skip internal stuff. todo; merge pyobj and this
+                for (i = 0; i < bucket.items.length; i++) {
+                    allkeys.push(bucket.items[i].lhs);
+                }
+            }
+        }
+    }
+    this.$keys = allkeys;
+    this.tp$iter = this;
+    this.tp$iternext = function () {
+        // todo; StopIteration
+        if (this.$index >= this.$keys.length) {
+            return undefined;
+        }
+        return this.$keys[this.$index++];
+        // return this.$obj[this.$keys[this.$index++]].lhs;
+    };
+    this.$r = function () {
+        return new Sk.builtin.str("dictionary-keyiterator");
+    };
+    return this;
+};
+
+Sk.abstr.setUpInheritance("dictionary-keyiterator", Sk.builtin.dict_iter_, Sk.builtin.object);
+
+Sk.builtin.dict_iter_.prototype.__class__ = Sk.builtin.dict_iter_;
+
+Sk.builtin.dict_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    return self;
+});
+
+Sk.builtin.dict_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (ret === undefined) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
 /**
  * @constructor
  * Sk.builtin.numtype
@@ -20919,13 +21076,6 @@ Sk.builtin.set = function (S) {
 Sk.abstr.setUpInheritance("set", Sk.builtin.set, Sk.builtin.object);
 Sk.abstr.markUnhashable(Sk.builtin.set);
 
-Sk.builtin.set.prototype.set_iter_ = function () {
-    var iter = this["v"].tp$iter();
-    iter.tp$name = "set_iterator";
-
-    return iter;
-};
-
 Sk.builtin.set.prototype.set_reset_ = function () {
     this.v = new Sk.builtin.dict([]);
 };
@@ -21039,15 +21189,15 @@ Sk.builtin.set.prototype.ob$ge = function (other) {
     return this["issuperset"].func_code(this, other);
 };
 
-Sk.builtin.set.prototype["__iter__"] = new Sk.builtin.func(function(self) {
-
+Sk.builtin.set.prototype["__iter__"] = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
-
-    return Sk.builtin.set.prototype.tp$iter.call(self);
-
+    return new Sk.builtin.set_iter_(self);
 });
 
-Sk.builtin.set.prototype.tp$iter = Sk.builtin.set.prototype.set_iter_;
+Sk.builtin.set.prototype.tp$iter = function () {
+    return new Sk.builtin.set_iter_(this);
+};
+
 Sk.builtin.set.prototype.sq$length = function () {
     return this["v"].mp$length();
 };
@@ -21205,8 +21355,61 @@ Sk.builtin.set.prototype["remove"] = new Sk.builtin.func(function (self, item) {
     return Sk.builtin.none.none$;
 });
 
-
 goog.exportSymbol("Sk.builtin.set", Sk.builtin.set);
+
+/**
+ * @constructor
+ * @param {Object} obj
+ */
+Sk.builtin.set_iter_ = function (obj) {
+    var allkeys, k, i, bucket;
+    if (!(this instanceof Sk.builtin.set_iter_)) {
+        return new Sk.builtin.set_iter_(obj);
+    }
+    this.$obj = obj;
+    this.tp$iter = this;
+    allkeys = [];
+    for (k in obj.v) {
+        if (obj.v.hasOwnProperty(k)) {
+            bucket = obj.v[k];
+            if (bucket && bucket.$hash !== undefined && bucket.items !== undefined) {
+                // skip internal stuff. todo; merge pyobj and this
+                for (i = 0; i < bucket.items.length; i++) {
+                    allkeys.push(bucket.items[i].lhs);
+                }
+            }
+        }
+    }
+    this.$index = 0;
+    this.$keys = allkeys;
+    this.tp$iternext = function () {
+        if (this.$index >= this.$keys.length) {
+            return undefined;
+        }
+        return this.$keys[this.$index++];
+    };
+    this.$r = function () {
+        return new Sk.builtin.str("setiterator");
+    };
+    return this;
+};
+
+Sk.abstr.setUpInheritance("setiterator", Sk.builtin.set_iter_, Sk.builtin.object);
+
+Sk.builtin.set_iter_.prototype.__class__ = Sk.builtin.set_iter_;
+
+Sk.builtin.set_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    return self;
+});
+
+Sk.builtin.set_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (ret === undefined) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
 /*
 	Implementation of the Python3 print version. Due to Python2 grammar we have
 	to mimic the named keywords after *args as kwargs. Though this does not change
@@ -21880,6 +22083,108 @@ Sk.ffi.unwrapn = function (obj) {
     return obj["v"];
 };
 goog.exportSymbol("Sk.ffi.unwrapn", Sk.ffi.unwrapn);
+/**
+  * Builds an iterator that outputs the items from the inputted object
+  * @constructor
+  * @param {*} obj must support iter protocol (has __iter__ and next methods), if sentinel defined:
+  * obj must be callable
+  * @param {*=} sentinel optional if defined returns an object that makes a call to obj until
+  * sentinel is reached
+  * @extends Sk.builtin.object
+  *
+  * @description
+  * Constructor for Python iterator.
+  *
+  */
+Sk.builtin.iterator = function (obj, sentinel) {
+    var objit;
+    if (obj instanceof Sk.builtin.generator) {
+        return obj;
+    }
+    objit = Sk.abstr.lookupSpecial(obj, "__iter__");
+    if (objit) {
+        return Sk.misceval.callsim(objit, obj);
+    }
+    this.sentinel = sentinel;
+    this.flag = false;
+    this.idx = 0;
+    this.obj = obj;
+    if (sentinel === undefined) {
+        this.getitem = Sk.abstr.lookupSpecial(obj, "__getitem__");
+        this.$r = function () {
+            return new Sk.builtin.str("<iterator object>");
+        };
+    } else {
+        this.call = Sk.abstr.lookupSpecial(obj, "__call__");
+        this.$r = function () {
+            return new Sk.builtin.str("<callable-iterator object>");
+        };
+    }
+    return this;
+};
+
+Sk.abstr.setUpInheritance("iterator", Sk.builtin.iterator, Sk.builtin.object);
+
+Sk.builtin.iterator.prototype.__class__ = Sk.builtin.iterator;
+
+Sk.builtin.iterator.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    return self.tp$iter();
+});
+
+Sk.builtin.iterator.prototype.tp$iter =  function () {
+    return this;
+};
+
+Sk.builtin.iterator.prototype.tp$iternext = function (canSuspend) {
+    var r;
+    var self = this;
+
+    if (this.flag === true) {
+        // Iterator has already completed
+        return undefined;
+    }
+
+    if (this.getitem) {
+        r = Sk.misceval.tryCatch(function() {
+            return Sk.misceval.callsimOrSuspend(self.getitem, self.obj, Sk.ffi.remapToPy(self.idx++));
+        }, function(e) {
+            if (e instanceof Sk.builtin.StopIteration || e instanceof Sk.builtin.IndexError) {
+                return undefined;
+            } else {
+                throw e;
+            }
+        });
+        return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+    }
+
+    var checkSentinel = function (ret) {
+        // Iteration is complete if ret value is the sentinel
+        if (Sk.misceval.richCompareBool(ret, self.sentinel, "Eq")) {
+            self.flag = true;
+            return undefined;
+        }
+        return ret;
+    };
+
+    if (this.call) {
+        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspend(this.call, this.obj), checkSentinel);
+    } else {
+        var obj = /** @type {Object} */ (this.obj);
+        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspend(obj), checkSentinel);
+    }
+
+    return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+};
+
+Sk.builtin.iterator.prototype["next"] = new Sk.builtin.func(function (self) {
+    var ret = self.tp$iternext();
+    if (!ret) {
+        throw new Sk.builtin.StopIteration();
+    }
+    return ret;
+});
+
+goog.exportSymbol("Sk.builtin.iterator", Sk.builtin.iterator);
 /**
  * @constructor
  * @param {Object} iterable
