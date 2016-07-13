@@ -5106,6 +5106,13 @@ if(Sk.builtin === undefined) {
  * checks for the numeric shortcuts and not the sequence shortcuts when computing
  * a binary operation.
  *
+ * Because many of these functions are used in contexts in which Skulpt does not
+ * [yet] handle suspensions, the assumption is that they must not suspend. However,
+ * some of these built-in functions are acquiring 'canSuspend' arguments to signal
+ * where this is not the case. These need to be spliced out of the argument list before
+ * it is passed to python. Array values in this map contain [dunderName, argumentIdx],
+ * where argumentIdx specifies the index of the 'canSuspend' boolean argument.
+ *
  * @type {Object}
  */
 Sk.dunderToSkulpt = {
@@ -5139,7 +5146,7 @@ Sk.dunderToSkulpt = {
     "__pow__": "nb$power",
     "__rpow__": "nb$reflected_power",
     "__contains__": "sq$contains",
-    "__len__": "sq$length"
+    "__len__": ["sq$length", 0]
 };
 
 /**
@@ -5324,6 +5331,7 @@ Sk.builtin.type = function (name, bases, dict) {
         klass.prototype["$r"] = function () {
             var cname;
             var mod;
+            // TODO use Sk.abstr.gattr() here so __repr__ can be dynamically provided (eg by __getattr__())
             var reprf = this.tp$getattr("__repr__");
             if (reprf !== undefined && reprf.im_func !== Sk.builtin.object.prototype["__repr__"]) {
                 return Sk.misceval.apply(reprf, undefined, undefined, undefined, []);
@@ -5345,6 +5353,7 @@ Sk.builtin.type = function (name, bases, dict) {
             }
         };
         klass.prototype.tp$str = function () {
+            // TODO use Sk.abstr.gattr() here so __str__ can be dynamically provided (eg by __getattr__())
             var strf = this.tp$getattr("__str__");
             if (strf !== undefined && strf.im_func !== Sk.builtin.object.prototype["__str__"]) {
                 return Sk.misceval.apply(strf, undefined, undefined, undefined, []);
@@ -5357,38 +5366,35 @@ Sk.builtin.type = function (name, bases, dict) {
             }
             return this["$r"]();
         };
-        klass.prototype.tp$length = function () {
-            var tname;
-            var lenf = this.tp$getattr("__len__");
-            if (lenf !== undefined) {
-                return Sk.misceval.apply(lenf, undefined, undefined, undefined, []);
-            }
-            tname = Sk.abstr.typeName(this);
-            throw new Sk.builtin.AttributeError(tname + " instance has no attribute '__len__'");
+        klass.prototype.tp$length = function (canSuspend) {
+            var r = Sk.misceval.chain(Sk.abstr.gattr(this, "__len__", canSuspend), function(lenf) {
+                return Sk.misceval.applyOrSuspend(lenf, undefined, undefined, undefined, []);
+            });
+            return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
         };
         klass.prototype.tp$call = function (args, kw) {
-            var callf = this.tp$getattr("__call__");
-            /* todo; vararg kwdict */
-            if (callf) {
-                return Sk.misceval.apply(callf, undefined, undefined, kw, args);
-            }
-            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object is not callable");
+            return Sk.misceval.chain(Sk.abstr.gattr(this, "__call__", true), function(callf) {
+                return Sk.misceval.applyOrSuspend(callf, undefined, undefined, kw, args);
+            });
         };
         klass.prototype.tp$iter = function () {
-            var ret;
-            var iterf = this.tp$getattr("__iter__");
-            var tname = Sk.abstr.typeName(this);
-            if (iterf) {
-                ret = Sk.misceval.callsim(iterf);
-                return ret;
-            }
-            throw new Sk.builtin.TypeError("'" + tname + "' object is not iterable");
+            var iterf = Sk.abstr.gattr(this, "__iter__", false);
+            return Sk.misceval.callsim(iterf);
         };
         klass.prototype.tp$iternext = function (canSuspend) {
-            var r;
-            var iternextf = this.tp$getattr("next");
-            if (iternextf) {
-                r = Sk.misceval.tryCatch(function() {
+            var self = this;
+            var r = Sk.misceval.chain(
+                Sk.misceval.tryCatch(function() {
+                    return Sk.abstr.gattr(self, "next", canSuspend);
+                }, function(e) {
+                    if (e instanceof Sk.builtin.AttributeError) {
+                        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(self) + "' object is not iterable");
+                    } else {
+                        throw e;
+                    }
+                }),
+            function(/** {Object} */ iternextf) {
+                return Sk.misceval.tryCatch(function() {
                     return Sk.misceval.callsimOrSuspend(iternextf);
                 }, function(e) {
                     if (e instanceof Sk.builtin.StopIteration) {
@@ -5397,14 +5403,13 @@ Sk.builtin.type = function (name, bases, dict) {
                         throw e;
                     }
                 });
-                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
-            } else {
-                throw new Sk.builtin.TypeError("instance has no next() method");
-            }
+            });
+
+            return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
         };
 
         klass.prototype.tp$getitem = function (key, canSuspend) {
-            var getf = this.tp$getattr("__getitem__"), r;
+            var getf = Sk.abstr.gattr(this, "__getitem__", canSuspend), r;
             if (getf !== undefined) {
                 r = Sk.misceval.applyOrSuspend(getf, undefined, undefined, undefined, [key]);
                 return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
@@ -5412,7 +5417,7 @@ Sk.builtin.type = function (name, bases, dict) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object does not support indexing");
         };
         klass.prototype.tp$setitem = function (key, value, canSuspend) {
-            var setf = this.tp$getattr("__setitem__"), r;
+            var setf = Sk.abstr.gattr(this, "__setitem__", canSuspend), r;
             if (setf !== undefined) {
                 r = Sk.misceval.applyOrSuspend(setf, undefined, undefined, undefined, [key, value]);
                 return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
@@ -5435,22 +5440,39 @@ Sk.builtin.type = function (name, bases, dict) {
         // fix for class attributes
         klass.tp$setattr = Sk.builtin.type.prototype.tp$setattr;
 
-        var shortcutDunder = function (skulpt_name, magic_name, magic_func) {
+        var shortcutDunder = function (skulpt_name, magic_name, magic_func, canSuspendIdx) {
             klass.prototype[skulpt_name] = function () {
-                var args = Array.prototype.slice.call(arguments);
+                var args = Array.prototype.slice.call(arguments), canSuspend;
                 args.unshift(magic_func, this);
+
+                if (canSuspendIdx) {
+                    canSuspend = args[canSuspendIdx+1];
+                    args.splice(canSuspendIdx+1, 1);
+                    if (canSuspend) {
+                        return Sk.misceval.callsimOrSuspend.apply(undefined, args);
+                    }
+                }
                 return Sk.misceval.callsim.apply(undefined, args);
             };
         };
 
-        // Register skulpt shortcuts to magic methods defined by this class
-        var dunder, skulpt_name;
+        // Register skulpt shortcuts to magic methods defined by this class.
+        // TODO: This is somewhat problematic, as it means that dynamically defined
+        // methods (eg those returned by __getattr__()) cannot be used by these magic
+        // functions.
+        var dunder, skulpt_name, canSuspendIdx;
         for (dunder in Sk.dunderToSkulpt) {
             skulpt_name = Sk.dunderToSkulpt[dunder];
+            if (typeof(skulpt_name) === "string") {
+                canSuspendIdx = null;
+            } else {
+                canSuspendIdx = skulpt_name[1];
+                skulpt_name = skulpt_name[0];
+            }
 
             if (klass[dunder]) {
                 // scope workaround
-                shortcutDunder(skulpt_name, dunder, klass[dunder]);
+                shortcutDunder(skulpt_name, dunder, klass[dunder], canSuspendIdx);
             }
         }
 
@@ -7718,16 +7740,18 @@ Sk.builtin.round = function round (number, ndigits) {
 Sk.builtin.len = function len (item) {
     Sk.builtin.pyCheckArgs("len", arguments, 1, 1);
 
+    var int_ = function(i) { return new Sk.builtin.int_(i); };
+
     if (item.sq$length) {
-        return new Sk.builtin.int_(item.sq$length());
+        return Sk.misceval.chain(item.sq$length(), int_);
     }
 
     if (item.mp$length) {
-        return new Sk.builtin.int_(item.mp$length());
+        return Sk.misceval.chain(item.mp$length(), int_);
     }
 
     if (item.tp$length) {
-        return new Sk.builtin.int_(item.tp$length());
+        return Sk.misceval.chain(item.tp$length(true), int_);
     }
 
     throw new Sk.builtin.TypeError("object of type '" + Sk.abstr.typeName(item) + "' has no len()");
@@ -10479,28 +10503,43 @@ goog.exportSymbol("Sk.misceval.applyAsync", Sk.misceval.applyAsync);
  */
 
 Sk.misceval.chain = function (initialValue, chainedFns) {
-    // as per the discussion here: https://github.com/skulpt/skulpt/pull/552
-    // this is here for performance reasons. array.slice doesn't get optimized
-    var fs = new Array(arguments.length), i = 1;
+    // We try to minimse overhead when nothing suspends (the common case)
+    var i = 1, value = initialValue, j, fs;
 
-    for (i = 1; i < arguments.length; i++) {
-        fs[i] = arguments[i];
+    while (true) {
+        if (i == arguments.length) {
+            return value;
+        }
+        if (value && value.$isSuspension) { break; } // oops, slow case
+        value = arguments[i](value);
+        i++;
     }
 
-    i = 1;
+    // Okay, we've suspended at least once, so we're taking the slow(er) path.
+
+    // Copy our remaining arguments into an array (inline, because passing
+    // "arguments" out of a function kills the V8 optimiser).
+    // (discussion: https://github.com/skulpt/skulpt/pull/552)
+    fs = new Array(arguments.length - i);
+
+    for (j = 0; j < arguments.length - i; j++) {
+        fs[j] = arguments[i+j];
+    }
+
+    j = 0;
 
     return (function nextStep(r) {
-        while (i < fs.length) {
+        while (j < fs.length) {
             if (r instanceof Sk.misceval.Suspension) {
                 return new Sk.misceval.Suspension(nextStep, r);
             }
 
-            r = fs[i](r);
-            i++;
+            r = fs[j](r);
+            j++;
         }
 
         return r;
-    })(initialValue);
+    })(value);
 };
 goog.exportSymbol("Sk.misceval.chain", Sk.misceval.chain);
 
