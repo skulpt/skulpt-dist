@@ -9696,15 +9696,6 @@ Sk.misceval.swappedOp_ = {
     "NotIn": "In_"
 };
 
-Sk.misceval._tryCatch = function (func, catchHandler) {
-    try {
-        return func();
-    } catch (err) {
-        return catchHandler(err);
-    }
-};
-goog.exportSymbol("Sk.misceval._tryCatch", Sk.misceval._tryCatch);
-
 /**
 * @param{*} v
 * @param{*} w
@@ -9941,7 +9932,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     vcmp = Sk.abstr.lookupSpecial(v, "__cmp__");
     if (vcmp) {
-        return Sk.misceval._tryCatch(function() {
+        try {
             ret = Sk.misceval.callsim(vcmp, v, w);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
@@ -9963,15 +9954,15 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
             if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        }, function (e) {
+        } catch (e) {
             throw new Sk.builtin.TypeError("comparison did not return an int");
-        });
+        }
     }
 
     wcmp = Sk.abstr.lookupSpecial(w, "__cmp__");
     if (wcmp) {
         // note, flipped on return value and call
-        return Sk.misceval._tryCatch(function() {
+        try {
             ret = Sk.misceval.callsim(wcmp, w, v);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
@@ -9993,9 +9984,9 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
             if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        }, function (e) {
+        } catch (e) {
             throw new Sk.builtin.TypeError("comparison did not return an int");
-        });
+        }
     }
 
     // handle special cases for comparing None with None or Bool with Bool
