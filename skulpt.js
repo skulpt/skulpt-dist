@@ -6784,6 +6784,13 @@ Sk.builtin.object = function () {
 
 
 
+var _tryGetSubscript = function(dict, pyName) {
+    try {
+        return dict.mp$subscript(pyName);
+    } catch (x) {
+        return undefined;
+    }
+};
 
 /**
  * @return {undefined}
@@ -6807,11 +6814,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
         if (dict.mp$lookup) {
             res = dict.mp$lookup(pyName);
         } else if (dict.mp$subscript) {
-            try {
-                res = dict.mp$subscript(pyName);
-            } catch (x) {
-                res = undefined;
-            }
+            res = _tryGetSubscript(dict, pyName);
         } else if (typeof dict === "object") {
             // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
             res = dict[name];
@@ -9725,6 +9728,15 @@ Sk.misceval.swappedOp_ = {
     "NotIn": "In_"
 };
 
+Sk.misceval._tryCatch = function (func, catchHandler) {
+    try {
+        return func();
+    } catch (err) {
+        return catchHandler(err);
+    }
+};
+goog.exportSymbol("Sk.misceval._tryCatch", Sk.misceval._tryCatch);
+
 /**
 * @param{*} v
 * @param{*} w
@@ -9961,7 +9973,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     vcmp = Sk.abstr.lookupSpecial(v, "__cmp__");
     if (vcmp) {
-        try {
+        return Sk.misceval._tryCatch(function() {
             ret = Sk.misceval.callsim(vcmp, v, w);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
@@ -9983,15 +9995,15 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
             if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        } catch (e) {
+        }, function (e) {
             throw new Sk.builtin.TypeError("comparison did not return an int");
-        }
+        });
     }
 
     wcmp = Sk.abstr.lookupSpecial(w, "__cmp__");
     if (wcmp) {
         // note, flipped on return value and call
-        try {
+        return Sk.misceval._tryCatch(function() {
             ret = Sk.misceval.callsim(wcmp, w, v);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
@@ -10013,9 +10025,9 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
             if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        } catch (e) {
+        }, function (e) {
             throw new Sk.builtin.TypeError("comparison did not return an int");
-        }
+        });
     }
 
     // handle special cases for comparing None with None or Bool with Bool
@@ -13433,6 +13445,7 @@ Sk.builtin.dict = function dict (L) {
     }
 
     this.size = 0;
+    this.buckets = {};
 
     if (Object.prototype.toString.apply(L) === "[object Array]") {
         // Handle dictionary literals
@@ -13510,7 +13523,7 @@ Sk.builtin.dict.prototype.key$pop = function (bucket, key) {
 // Perform dictionary lookup, either return value or undefined if key not in dictionary
 Sk.builtin.dict.prototype.mp$lookup = function (key) {
     var k = kf(key);
-    var bucket = this[k.v];
+    var bucket = this.buckets[k.v];
     var item;
 
     // todo; does this need to go through mp$ma_lookup
@@ -13550,7 +13563,7 @@ Sk.builtin.dict.prototype.sq$contains = function (ob) {
 
 Sk.builtin.dict.prototype.mp$ass_subscript = function (key, w) {
     var k = kf(key);
-    var bucket = this[k.v];
+    var bucket = this.buckets[k.v];
     var item;
 
     if (bucket === undefined) {
@@ -13558,7 +13571,7 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function (key, w) {
         bucket = {$hash: k, items: [
             {lhs: key, rhs: w}
         ]};
-        this[k.v] = bucket;
+        this.buckets[k.v] = bucket;
         this.size += 1;
         return;
     }
@@ -13577,7 +13590,7 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function (key, w) {
 Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
     Sk.builtin.pyCheckArgs("del", arguments, 1, 1, false, false);
     var k = kf(key);
-    var bucket = this[k.v];
+    var bucket = this.buckets[k.v];
     var item;
     var s;
 
@@ -13642,7 +13655,7 @@ Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
 Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
     Sk.builtin.pyCheckArgs("pop()", arguments, 1, 2, false, true);
     var k = kf(key);
-    var bucket = self[k.v];
+    var bucket = self.buckets[k.v];
     var item;
     var s;
 
@@ -13965,16 +13978,17 @@ goog.exportSymbol("Sk.builtin.dict", Sk.builtin.dict);
  * @param {Object} obj
  */
 Sk.builtin.dict_iter_ = function (obj) {
-    var k, i, bucket, allkeys;
+    var k, i, bucket, allkeys, buckets;
     if (!(this instanceof Sk.builtin.dict_iter_)) {
         return new Sk.builtin.dict_iter_(obj);
     }
     this.$index = 0;
     this.$obj = obj;
     allkeys = [];
-    for (k in obj) {
-        if (obj.hasOwnProperty(k)) {
-            bucket = obj[k];
+    buckets = obj.buckets;
+    for (k in buckets) {
+        if (buckets.hasOwnProperty(k)) {
+            bucket = buckets[k];
             if (bucket && bucket.$hash !== undefined && bucket.items !== undefined) {
                 // skip internal stuff. todo; merge pyobj and this
                 for (i = 0; i < bucket.items.length; i++) {
@@ -21401,16 +21415,17 @@ goog.exportSymbol("Sk.builtin.set", Sk.builtin.set);
  * @param {Object} obj
  */
 Sk.builtin.set_iter_ = function (obj) {
-    var allkeys, k, i, bucket;
+    var allkeys, k, i, bucket, buckets;
     if (!(this instanceof Sk.builtin.set_iter_)) {
         return new Sk.builtin.set_iter_(obj);
     }
     this.$obj = obj;
     this.tp$iter = this;
     allkeys = [];
-    for (k in obj.v) {
-        if (obj.v.hasOwnProperty(k)) {
-            bucket = obj.v[k];
+    buckets = obj.v.buckets;
+    for (k in buckets) {
+        if (buckets.hasOwnProperty(k)) {
+            bucket = buckets[k];
             if (bucket && bucket.$hash !== undefined && bucket.items !== undefined) {
                 // skip internal stuff. todo; merge pyobj and this
                 for (i = 0; i < bucket.items.length; i++) {
