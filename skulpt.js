@@ -9141,16 +9141,16 @@ Sk.abstr.setUpInheritance("OverflowError", Sk.builtin.OverflowError, Sk.builtin.
  * @extends Sk.builtin.StandardError
  * @param {...*} args
  */
-Sk.builtin.ParseError = function (args) {
+Sk.builtin.SyntaxError = function (args) {
     var o;
-    if (!(this instanceof Sk.builtin.ParseError)) {
-        o = Object.create(Sk.builtin.ParseError.prototype);
+    if (!(this instanceof Sk.builtin.SyntaxError)) {
+        o = Object.create(Sk.builtin.SyntaxError.prototype);
         o.constructor.apply(o, arguments);
         return o;
     }
     Sk.builtin.StandardError.apply(this, arguments);
 };
-Sk.abstr.setUpInheritance("ParseError", Sk.builtin.ParseError, Sk.builtin.StandardError);
+Sk.abstr.setUpInheritance("SyntaxError", Sk.builtin.SyntaxError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -9205,38 +9205,6 @@ Sk.builtin.SystemExit = function (args) {
 Sk.abstr.setUpInheritance("SystemExit", Sk.builtin.SystemExit, Sk.builtin.BaseException);
 goog.exportSymbol("Sk.builtin.SystemExit", Sk.builtin.SystemExit);
 
-
-/**
- * @constructor
- * @extends Sk.builtin.StandardError
- * @param {...*} args
- */
-Sk.builtin.SyntaxError = function (args) {
-    var o;
-    if (!(this instanceof Sk.builtin.SyntaxError)) {
-        o = Object.create(Sk.builtin.SyntaxError.prototype);
-        o.constructor.apply(o, arguments);
-        return o;
-    }
-    Sk.builtin.StandardError.apply(this, arguments);
-};
-Sk.abstr.setUpInheritance("SyntaxError", Sk.builtin.SyntaxError, Sk.builtin.StandardError);
-
-/**
- * @constructor
- * @extends Sk.builtin.StandardError
- * @param {...*} args
- */
-Sk.builtin.TokenError = function (args) {
-    var o;
-    if (!(this instanceof Sk.builtin.TokenError)) {
-        o = Object.create(Sk.builtin.TokenError.prototype);
-        o.constructor.apply(o, arguments);
-        return o;
-    }
-    Sk.builtin.StandardError.apply(this, arguments);
-};
-Sk.abstr.setUpInheritance("TokenError", Sk.builtin.TokenError, Sk.builtin.StandardError);
 
 /**
  * @constructor
@@ -22594,7 +22562,7 @@ Sk.Tokenizer.prototype.generateTokens = function (line) {
 
     if (this.contstr.length > 0) {
         if (!line) {
-            throw new Sk.builtin.TokenError("EOF in multi-line string", this.filename, this.strstart[0], this.strstart[1], this.contline);
+            throw new Sk.builtin.SyntaxError("EOF in multi-line string", this.filename, this.strstart[0], this.strstart[1], this.contline);
         }
         this.endprog.lastIndex = 0;
         endmatch = this.endprog.test(line);
@@ -22697,7 +22665,7 @@ Sk.Tokenizer.prototype.generateTokens = function (line) {
     else // continued statement
     {
         if (!line) {
-            throw new Sk.builtin.TokenError("EOF in multi-line statement", this.filename, this.lnum, 0, line);
+            throw new Sk.builtin.SyntaxError("EOF in multi-line statement", this.filename, this.lnum, 0, line);
         }
         this.continued = false;
     }
@@ -24339,7 +24307,7 @@ start: 256
  *         break
  * root = p.rootnode
  *
- * can throw ParseError
+ * can throw SyntaxError
  */
 function Parser (filename, grammar) {
     this.filename = filename;
@@ -24474,12 +24442,12 @@ Parser.prototype.addtoken = function (type, value, context) {
             //print("WAA");
             this.pop();
             if (this.stack.length === 0) {
-                throw new Sk.builtin.ParseError("too much input", this.filename);
+                throw new Sk.builtin.SyntaxError("too much input", this.filename);
             }
         } else {
             // no transition
             errline = context[0][0];
-            throw new Sk.builtin.ParseError("bad input", this.filename, errline, context);
+            throw new Sk.builtin.SyntaxError("bad input", this.filename, errline, context);
         }
     }
 };
@@ -24503,10 +24471,10 @@ Parser.prototype.classify = function (type, value, context) {
     }
     ilabel = this.grammar.tokens.hasOwnProperty(type) && this.grammar.tokens[type];
     if (!ilabel) {
-        // throw new Sk.builtin.ParseError("bad token", type, value, context);
+        // throw new Sk.builtin.SyntaxError("bad token", type, value, context);
         // Questionable modification to put line number in position 2
         // like everywhere else and filename in position 1.
-        throw new Sk.builtin.ParseError("bad token", this.filename, context[0][0], context);
+        throw new Sk.builtin.SyntaxError("bad token", this.filename, context[0][0], context);
     }
     return ilabel;
 };
@@ -24648,7 +24616,7 @@ function makeParser (filename, style) {
         //print("tok:"+ret);
         if (ret) {
             if (ret !== "done") {
-                throw new Sk.builtin.ParseError("incomplete input", this.filename);
+                throw new Sk.builtin.SyntaxError("incomplete input", this.filename);
             }
             return p.rootnode;
         }
