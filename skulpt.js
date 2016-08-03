@@ -5213,6 +5213,7 @@ Sk.builtin.type = function (name, bases, dict) {
 
             args = args || [];
             self["$d"] = new Sk.builtin.dict([]);
+            self["$d"].mp$ass_subscript(new Sk.builtin.str("__dict__"), self["$d"]);
 
             if (klass.prototype.tp$base !== undefined) {
                 if (klass.prototype.tp$base.sk$klass) {
@@ -5721,14 +5722,15 @@ Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
     if (other.ob$type != Sk.builtin.type) {
         return undefined;
     }
-
     if (!this["$r"] || !other["$r"]) {
         return undefined;
     }
-
-    r1 = this["$r"]();
-    r2 = other["$r"]();
-
+    r1 = new Sk.builtin.str(this["$r"]().v.slice(1,6));
+    r2 = new Sk.builtin.str(other["$r"]().v.slice(1,6));
+    if (this["$r"]().v.slice(1,6) !== "class") {
+        r1 = this["$r"]();
+        r2 = other["$r"]();
+    }
     return r1.tp$richcompare(r2, op);
 };
 /**
@@ -7054,6 +7056,7 @@ Sk.builtin.object.prototype["$r"] = function () {
 };
 
 Sk.builtin.hashCount = 1;
+Sk.builtin.idCount = 1;
 
 /**
  * Return the hash value of this instance.
@@ -7433,7 +7436,7 @@ Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
     if (obj == null) {
         return this;
     }
-    return new Sk.builtin.method(this, obj);
+    return new Sk.builtin.method(this, obj, objtype);
 };
 Sk.builtin.func.prototype.tp$call = function (args, kw) {
     var j;
@@ -8082,7 +8085,8 @@ Sk.builtin.dir = function dir (x) {
         var internal = [
             "__bases__", "__mro__", "__class__", "__name__", "GenericGetAttr",
             "GenericSetAttr", "GenericPythonGetAttr", "GenericPythonSetAttr",
-            "pythonFunctions", "HashNotImplemented", "constructor"];
+            "pythonFunctions", "HashNotImplemented", "constructor", "__dict__"
+        ];
         if (internal.indexOf(k) !== -1) {
             return null;
         }
@@ -8277,11 +8281,11 @@ Sk.builtin.hash = function hash (value) {
             value.$savedHash_ = value.tp$hash();
             return value.$savedHash_;
         } else {
-            if (value.__id === undefined) {
+            if (value.__hash === undefined) {
                 Sk.builtin.hashCount += 1;
-                value.__id = Sk.builtin.hashCount;
+                value.__hash = Sk.builtin.hashCount;
             }
-            return new Sk.builtin.int_(value.__id);
+            return new Sk.builtin.int_(value.__hash);
         }
     } else if (typeof value === "number" || value === null ||
         value === true || value === false) {
@@ -8728,6 +8732,17 @@ Sk.builtin.reversed = function reversed (seq) {
 
         return new reverseIter(seq);
     }
+};
+
+Sk.builtin.id = function (obj) {
+    Sk.builtin.pyCheckArgs("id", arguments, 1, 1);
+
+    if (obj.__id === undefined) {
+        Sk.builtin.idCount += 1;
+        obj.__id = Sk.builtin.idCount;
+    }
+
+    return new Sk.builtin.int_(obj.__id);
 };
 
 Sk.builtin.bytearray = function bytearray () {
@@ -9477,12 +9492,28 @@ goog.exportSymbol("Sk.nativejs.func_nokw", Sk.nativejs.func_nokw);
  *
  * co_varnames and co_name come from generated code, must access as dict.
  */
-Sk.builtin.method = function (func, self) {
+Sk.builtin.method = function (func, self, klass) {
+    if (!(this instanceof Sk.builtin.method)) {
+        Sk.builtin.pyCheckArgs("method", arguments, 3, 3);
+        if (!Sk.builtin.checkCallable(func)) {
+            throw new Sk.builtin.TypeError("First argument must be callable");
+        }
+        if (self.ob$type === undefined) {
+            throw new Sk.builtin.TypeError("Second argument must be object of known type");
+        }
+        return new Sk.builtin.method(func, self, klass);
+    }
     this.im_func = func;
     this.im_self = self;
-    //print("constructing method", this.im_func.tp$name, this.im_self.tp$name);
+    this.im_class = klass;
+    this["$d"] = {
+        im_func: func,
+        im_self: self,
+        im_class: klass
+    };
 };
 goog.exportSymbol("Sk.builtin.method", Sk.builtin.method);
+Sk.abstr.setUpInheritance("instancemethod", Sk.builtin.method, Sk.builtin.object);
 
 Sk.builtin.method.prototype.tp$call = function (args, kw) {
     goog.asserts.assert(this.im_self, "should just be a function, not a method since there's no self?");
@@ -9497,8 +9528,6 @@ Sk.builtin.method.prototype.tp$call = function (args, kw) {
 
     return this.im_func.tp$call(args, kw);
 };
-
-Sk.builtin.method.prototype.tp$name = "instancemethod";
 
 Sk.builtin.method.prototype["$r"] = function () {
     var name = (this.im_func.func_code && this.im_func.func_code["co_name"] && this.im_func.func_code["co_name"].v) || "<native JS>";
@@ -33022,6 +33051,7 @@ Sk.builtins = {
     "float_$rw$": Sk.builtin.float_,
     "int_$rw$"  : Sk.builtin.int_,
     "hasattr"   : Sk.builtin.hasattr,
+    "id"        : Sk.builtin.id,
 
     "map"   : Sk.builtin.map,
     "filter": Sk.builtin.filter,
