@@ -4953,6 +4953,9 @@ Sk.configure = function (options) {
     Sk.inputfun = options["inputfun"] || Sk.inputfun;
     goog.asserts.assert(typeof Sk.inputfun === "function");
     
+    Sk.inputfunTakesPrompt = options["inputfunTakesPrompt"] || false;
+    goog.asserts.assert(typeof Sk.inputfunTakesPrompt === "boolean");
+
     Sk.retainGlobals = options["retainglobals"] || false;
     goog.asserts.assert(typeof Sk.retainGlobals === "boolean");
 
@@ -8336,6 +8339,10 @@ Sk.builtin.setattr = function setattr (obj, name, value) {
 Sk.builtin.raw_input = function (prompt) {
     var sys = Sk.importModule("sys");
     var lprompt = prompt ? prompt : "";
+
+    if (Sk.inputfunTakesPrompt) {
+        return Sk.misceval.callsimOrSuspend(Sk.builtin.file.$readline, sys["$d"]["stdin"], null, lprompt);
+    }
 
     return Sk.misceval.chain(undefined, function () {
         return Sk.misceval.callsimOrSuspend(sys["$d"]["stdout"]["write"], sys["$d"]["stdout"], new Sk.builtin.str(prompt));
@@ -21986,12 +21993,15 @@ Sk.builtin.file.prototype["read"] = new Sk.builtin.func(function (self, size) {
     return ret;
 });
 
-Sk.builtin.file.prototype["readline"] = new Sk.builtin.func(function (self, size) {
+Sk.builtin.file.$readline = function (self, size, prompt) {
     if (self.fileno === 0) {
         var x, resolution, susp;
 
-        var prompt = prompt ? prompt.v : "";
-        x = Sk.inputfun(prompt);
+        var lprompt = Sk.ffi.remapToJs(prompt);
+
+        lprompt = lprompt ? lprompt : "";
+
+        x = Sk.inputfun(lprompt);
 
         if (x instanceof Promise) {
             susp = new Sk.misceval.Suspension();
@@ -22023,6 +22033,10 @@ Sk.builtin.file.prototype["readline"] = new Sk.builtin.func(function (self, size
         }
         return new Sk.builtin.str(line);
     }
+};
+
+Sk.builtin.file.prototype["readline"] = new Sk.builtin.func(function (self, size) { 
+    return Sk.builtin.file.$readline(self, size, undefined); 
 });
 
 Sk.builtin.file.prototype["readlines"] = new Sk.builtin.func(function (self, sizehint) {
