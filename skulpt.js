@@ -5149,7 +5149,9 @@ Sk.dunderToSkulpt = {
     "__pow__": "nb$power",
     "__rpow__": "nb$reflected_power",
     "__contains__": "sq$contains",
-    "__len__": ["sq$length", 1]
+    "__len__": ["sq$length", 1],
+    "__get__": ["tp$descr_get", 3],
+    "__set__": ["tp$descr_set", 3]
 };
 
 /**
@@ -5202,27 +5204,19 @@ Sk.builtin.type = function (name, bases, dict) {
         // dict is the result of running the classes code object
         // (basically the dict of functions). those become the prototype
         // object of the class).
+
         /**
+        * The constructor is a stub, that gets called from object.__new__
         * @constructor
         */
-        klass = function (kwdict, varargseq, kws, args, canSuspend) {
-            var init;
-            var self = this;
-            var s;
+        klass = function (args, kws) {
             var args_copy;
-            if (!(this instanceof klass)) {
-                return new klass(kwdict, varargseq, kws, args, canSuspend);
-            }
 
-            args = args || [];
-            self["$d"] = new Sk.builtin.dict([]);
-            self["$d"].mp$ass_subscript(new Sk.builtin.str("__dict__"), self["$d"]);
-
-            // TODO deal with __new__ properly. (Also, does this handle multiple inheritance?)
-
+            // Call up through the chain in case there's a built-in object
+            // whose constructor we need to initialise
             if (klass.prototype.tp$base !== undefined) {
                 if (klass.prototype.tp$base.sk$klass) {
-                    klass.prototype.tp$base.call(this, kwdict, varargseq, kws, args.slice(), canSuspend);
+                    klass.prototype.tp$base.call(this, args, kws);
                 } else {
                     // Call super constructor if subclass of a builtin
                     args_copy = args.slice();
@@ -5231,25 +5225,55 @@ Sk.builtin.type = function (name, bases, dict) {
                 }
             }
 
-            init = Sk.builtin.type.typeLookup(self.ob$type, "__init__");
-            if (init !== undefined) {
-                // TODO? return should be None or throw a TypeError otherwise
-                args.unshift(self);
-                // Regardless, we make sure we unconditionally return self, whatever __init__() returns
-                s = Sk.misceval.chain(
-                    Sk.misceval.applyOrSuspend(init, kwdict, varargseq, kws, args),
-                    function() { return self; }
-                );
-
-                return canSuspend ? s : Sk.misceval.retryOptionalSuspensionOrThrow(s);
-            }
-
-            return self;
+            this["$d"] = new Sk.builtin.dict([]);
+            this["$d"].mp$ass_subscript(new Sk.builtin.str("__dict__"), this["$d"]);
         };
+
 
         var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
 
         var inheritsBuiltin = false;
+
+        // Invoking the class object calls __new__() to generate a new instance,
+        // then __init__() to initialise it
+        klass.tp$call = function(args, kws) {
+            var newf = Sk.builtin.type.typeLookup(klass, "__new__"), newargs;
+            var self;
+
+            args = args || [];
+            kws = kws || [];
+
+            if (newf === undefined || newf === Sk.builtin.object.prototype["__new__"]) {
+                // No override -> just call the constructor
+                self = new klass(args, kws);
+                newf = undefined;
+            } else {
+                newargs = args.slice();
+                newargs.unshift(klass);
+                self = Sk.misceval.applyOrSuspend(newf, undefined, undefined, kws, newargs);
+            }
+
+            return Sk.misceval.chain(self, function(s) {
+                var init = Sk.builtin.type.typeLookup(s.ob$type, "__init__");
+
+                self = s; // in case __new__ suspended
+
+                if (init !== undefined) {
+                    args.unshift(self);
+                    return Sk.misceval.applyOrSuspend(init, undefined, undefined, kws, args);
+                } else if (newf === undefined && (args.length !== 0 || kws.length !== 0) && !inheritsBuiltin) {
+                    // We complain about spurious constructor arguments if neither __new__
+                    // nor __init__ were overridden
+                    throw new Sk.builtin.TypeError("__init__() got unexpected argument(s)");
+                }
+            }, function(r) {
+                if (r !== Sk.builtin.none.none$ && r !== undefined) {
+                    throw new Sk.builtin.TypeError("__init__() should return None, not " + Sk.abstr.typeName(r));
+                } else {
+                    return self;
+                }
+            });
+        };
 
         if (bases.v.length === 0 && Sk.python3) {
             // new style class, inherits from object by default
@@ -5262,15 +5286,14 @@ Sk.builtin.type = function (name, bases, dict) {
             if (firstAncestor === undefined) {
                 firstAncestor = parent;
             }
-            if (parent.prototype instanceof Sk.builtin.object || parent === Sk.builtin.object) {
 
-                while (parent.sk$klass && parent.prototype.tp$base) {
-                    parent = parent.prototype.tp$base;
-                }
+            while (parent.sk$klass && parent.prototype.tp$base) {
+                parent = parent.prototype.tp$base;
+            }
 
-                if (!parent.sk$klass && builtin_bases.indexOf(parent) < 0) {
-                    builtin_bases.push(parent);
-                }
+            if (!parent.sk$klass && builtin_bases.indexOf(parent) < 0) {
+                builtin_bases.push(parent);
+                inheritsBuiltin = true;
             }
         }
 
@@ -5312,9 +5335,6 @@ Sk.builtin.type = function (name, bases, dict) {
         klass["__class__"] = klass;
         klass["__name__"] = name;
         klass.sk$klass = true;
-        klass.prototype.tp$descr_get = function () {
-            goog.asserts.fail("in type tp$descr_get");
-        };
         klass.prototype["$r"] = function () {
             var cname;
             var mod;
@@ -5562,7 +5582,7 @@ Sk.builtin.type["$r"] = function () {
 //Sk.builtin.type.prototype.tp$name = "type";
 
 // basically the same as GenericGetAttr except looks in the proto instead
-Sk.builtin.type.prototype.tp$getattr = function (name) {
+Sk.builtin.type.prototype.tp$getattr = function (name, canSuspend) {
     var res;
     var tp = this;
     var descr;
@@ -5579,14 +5599,14 @@ Sk.builtin.type.prototype.tp$getattr = function (name) {
 
     //print("type.tpgetattr descr", descr, descr.tp$name, descr.func_code, name);
     if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
+        f = descr.tp$descr_get;
         // todo;if (f && descr.tp$descr_set) // is a data descriptor if it has a set
         // return f.call(descr, this, this.ob$type);
     }
 
     if (f) {
         // non-data descriptor
-        return f.call(descr, null, tp);
+        return f.call(descr, Sk.builtin.none.none$, tp, canSuspend);
     }
 
     if (descr !== undefined) {
@@ -6787,9 +6807,12 @@ var _tryGetSubscript = function(dict, pyName) {
 };
 
 /**
+ * Get an attribute
+ * @param {string} name JS name of the attribute
+ * @param {boolean=} canSuspend Can we return a suspension?
  * @return {undefined}
  */
-Sk.builtin.object.prototype.GenericGetAttr = function (name) {
+Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
     var res;
     var f;
     var descr;
@@ -6821,19 +6844,13 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name) {
     descr = Sk.builtin.type.typeLookup(tp, name);
 
     // otherwise, look in the type for a descr
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        f = descr.ob$type.tp$descr_get;
-        if (!(f) && descr["__get__"]) {
-            f = descr["__get__"];
-            return Sk.misceval.callsimOrSuspend(f, descr, this, Sk.builtin.none.none$);
-        }
-        // todo;
-        // if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        // return f.call(descr, this, this.ob$type);
+    if (descr !== undefined && descr !== null) {
+        f = descr.tp$descr_get;
+        // todo - data descriptors (ie those with tp$descr_set too) get a different lookup priority
 
         if (f) {
             // non-data descriptor
-            return f.call(descr, this, this.ob$type);
+            return f.call(descr, this, this.ob$type, canSuspend);
         }
     }
 
@@ -6850,7 +6867,13 @@ Sk.builtin.object.prototype.GenericPythonGetAttr = function(self, name) {
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin.object.prototype.GenericPythonGetAttr);
 
-Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
+/**
+ * @param {string} name
+ * @param {undefined} value
+ * @param {boolean=} canSuspend
+ * @return {undefined}
+ */
+Sk.builtin.object.prototype.GenericSetAttr = function (name, value, canSuspend) {
     var objname = Sk.abstr.typeName(this);
     var pyname;
     var dict;
@@ -6866,16 +6889,12 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value) {
     descr = Sk.builtin.type.typeLookup(tp, name);
 
     // otherwise, look in the type for a descr
-    if (descr !== undefined && descr !== null && descr.ob$type !== undefined) {
-        //f = descr.ob$type.tp$descr_set;
-        if (descr["__set__"]) {
-            f = descr["__set__"];
-            Sk.misceval.callsimOrSuspend(f, descr, this, value);
-            return;
+    if (descr !== undefined && descr !== null) {
+        f = descr.tp$descr_set;
+        // todo; is this the right lookup priority for data descriptors?
+        if (f) {
+            return f.call(descr, this, value, canSuspend);
         }
-        // todo;
-        //if (f && descr.tp$descr_set) // is a data descriptor if it has a set
-        //return f.call(descr, this, this.ob$type);
     }
 
     if (dict.mp$ass_subscript) {
@@ -6922,8 +6941,20 @@ Sk.builtin.object.prototype.tp$name = "object";
  */
 Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
 Sk.builtin.object.prototype.ob$type.sk$klass = undefined;   // Nonsense for closure compiler
+Sk.builtin.object.prototype.tp$descr_set = undefined;   // Nonsense for closure compiler
 
 /** Default implementations of dunder methods found in all Python objects */
+/**
+ * Default implementation of __new__ just calls the class constructor
+ * @name  __new__
+ * @memberOf Sk.builtin.object.prototype
+ * @instance
+ */
+Sk.builtin.object.prototype["__new__"] = function (cls) {
+    Sk.builtin.pyCheckArgs("__new__", arguments, 1, 1, false, false);
+
+    return new cls([], []);
+};
 
 /**
  * Python wrapper for `__repr__` method.
@@ -7426,7 +7457,7 @@ goog.exportSymbol("Sk.builtin.func", Sk.builtin.func);
 Sk.builtin.func.prototype.tp$name = "function";
 Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
     goog.asserts.assert(obj !== undefined && objtype !== undefined);
-    if (obj == null) {
+    if (obj === Sk.builtin.none.none$) {
         return this;
     }
     return new Sk.builtin.method(this, obj, objtype);
@@ -10726,22 +10757,11 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
 
     if (func === null || func instanceof Sk.builtin.none) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
-    } else if (typeof func === "function") {
-        // todo; i believe the only time this happens is the wrapper
-        // function around generators (that creates the iterator).
-        // should just make that a real function object and get rid
-        // of this case.
-        // alternatively, put it to more use, and perhaps use
-        // descriptors to create builtin.func's in other places.
-
-        // This actually happens for all builtin functions (in
-        // builtin.js, for example) as they are javascript functions,
+    } else if (typeof func === "function" && func.tp$call === undefined) {
+        // This happens in the wrapper functions around generators
+        // (that creates the iterator), and all the builtin functions
+        // (in builtin.js, for example) as they are javascript functions,
         // not Sk.builtin.func objects.
-
-        if (func.sk$klass) {
-            // klass wrapper around __init__ requires special handling
-            return func.apply(null, [kwdict, varargseq, kws, args, true]);
-        }
 
         if (varargseq) {
             for (it = varargseq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
@@ -10790,14 +10810,6 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
         //append kw args to args, filling in the default value where none is provided.
         return func.apply(null, args);
     } else {
-        fcall = func.__get__;
-        if (fcall !== undefined) {
-            fcall = Sk.misceval.callsimOrSuspend(func.__get__, func, func);
-            //args.unshift(func);
-            if (fcall.tp$call) {
-                return fcall.tp$call.call(fcall, args);
-            }
-        }
         fcall = func.tp$call;
         if (fcall !== undefined) {
             if (varargseq) {
