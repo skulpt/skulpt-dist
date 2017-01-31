@@ -17862,24 +17862,16 @@ Sk.builtin.float_ = function (x) {
 
 
     if (x instanceof Sk.builtin.str) {
-
-        if (x.v.match(/^-inf$/i)) {
-            tmp = -Infinity;
-        } else if (x.v.match(/^[+]?inf$/i)) {
-            tmp = Infinity;
-        } else if (x.v.match(/^[-+]?nan$/i)) {
-            tmp = NaN;
-        } else if (!isNaN(x.v)) {
-            tmp = parseFloat(x.v);
-        } else {
-            throw new Sk.builtin.ValueError("float: Argument: " + x.v + " is not number");
-        }
-        return new Sk.builtin.float_(tmp);
+        return Sk.builtin._str_to_float(x.v);
     }
 
     // Floats are just numbers
     if (typeof x === "number" || x instanceof Sk.builtin.int_ || x instanceof Sk.builtin.lng || x instanceof Sk.builtin.float_) {
-        this.v = Sk.builtin.asnum$(x);
+        tmp = Sk.builtin.asnum$(x);
+        if (typeof tmp === "string") {
+            return Sk.builtin._str_to_float(tmp);
+        }
+        this.v = tmp;
         return this;
     }
 
@@ -17911,6 +17903,23 @@ Sk.builtin.float_ = function (x) {
 };
 
 Sk.abstr.setUpInheritance("float", Sk.builtin.float_, Sk.builtin.numtype);
+
+Sk.builtin._str_to_float = function (str) {
+    var tmp;
+
+    if (str.match(/^-inf$/i)) {
+        tmp = -Infinity;
+    } else if (str.match(/^[+]?inf$/i)) {
+        tmp = Infinity;
+    } else if (str.match(/^[-+]?nan$/i)) {
+        tmp = NaN;
+    } else if (!isNaN(str)) {
+        tmp = parseFloat(str);
+    } else {
+        throw new Sk.builtin.ValueError("float: Argument: " + str + " is not number");
+    }
+    return new Sk.builtin.float_(tmp);
+};
 
 Sk.builtin.float_.prototype.nb$int_ = function () {
     var v = this.v;
@@ -18720,7 +18729,8 @@ Sk.builtin.float_.prototype.str$ = function (base, sign) {
     }
 
     return tmp;
-};var deprecatedError = new Sk.builtin.ExternalError("Sk.builtin.nmber is deprecated.");
+};
+var deprecatedError = new Sk.builtin.ExternalError("Sk.builtin.nmber is deprecated.");
 
 /**
  * @deprecated Please use Sk.builtin.int_ or Sk.builtin.float_ constructors instead.
