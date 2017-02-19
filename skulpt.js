@@ -6903,7 +6903,7 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value, canSuspend) 
         if (this instanceof Sk.builtin.object && !(this.ob$type.sk$klass) &&
             dict.mp$lookup(pyname) === undefined) {
             // Cannot add new attributes to a builtin object
-            throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + name + "'");
+            throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + Sk.unfixReserved(name) + "'");
         }
         dict.mp$ass_subscript(new Sk.builtin.str(name), value);
     } else if (typeof dict === "object") {
@@ -8323,13 +8323,14 @@ Sk.builtin.hash = function hash (value) {
 };
 
 Sk.builtin.getattr = function getattr (obj, name, default_) {
-    var ret;
+    var ret, mangledName;
     Sk.builtin.pyCheckArgs("getattr", arguments, 2, 3);
     if (!Sk.builtin.checkString(name)) {
         throw new Sk.builtin.TypeError("attribute name must be string");
     }
 
-    ret = obj.tp$getattr(name.v);
+    mangledName = Sk.fixReservedWords(Sk.ffi.remapToJs(name));
+    ret = obj.tp$getattr(mangledName);
     if (ret === undefined) {
         if (default_ !== undefined) {
             return default_;
@@ -8348,7 +8349,7 @@ Sk.builtin.setattr = function setattr (obj, name, value) {
             throw new Sk.builtin.TypeError("attribute name must be string");
         }
         if (obj.tp$setattr) {
-            obj.tp$setattr(Sk.ffi.remapToJs(name), value);
+            obj.tp$setattr(Sk.fixReservedWords(Sk.ffi.remapToJs(name)), value);
         } else {
             throw new Sk.builtin.AttributeError("object has no attribute " + Sk.ffi.remapToJs(name));
         }
@@ -8859,7 +8860,7 @@ Sk.builtin.iter = function iter (obj, sentinel) {
     Sk.builtin.pyCheckArgs("iter", arguments, 1, 2);
     if (arguments.length === 1) {
         if (!Sk.builtin.checkIterable(obj)) {
-            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + 
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) +
                 "' object is not iterable");
         } else {
             return new Sk.builtin.iterator(obj);
@@ -10310,9 +10311,7 @@ Sk.misceval.loadname = function (name, other) {
         return bi;
     }
 
-    name = name.replace("_$rw$", "");
-    name = name.replace("_$rn$", "");
-    throw new Sk.builtin.NameError("name '" + name + "' is not defined");
+    throw new Sk.builtin.NameError("name '" + Sk.unfixReserved(name) + "' is not defined");
 };
 goog.exportSymbol("Sk.misceval.loadname", Sk.misceval.loadname);
 
@@ -29625,6 +29624,10 @@ function fixReservedNames (name) {
     return name;
 }
 
+function unfixReserved(name) {
+    return name.replace(/_\$r[wn]\$$/, "");
+}
+
 function mangleName (priv, ident) {
     var name = ident.v;
     var strpriv = null;
@@ -31749,7 +31752,15 @@ Sk.resetCompiler = function () {
 };
 
 goog.exportSymbol("Sk.resetCompiler", Sk.resetCompiler);
-/**
+
+Sk.fixReservedWords = fixReservedWords;
+goog.exportSymbol("Sk.fixReservedWords", Sk.fixReservedWords);
+
+Sk.fixReservedNames = fixReservedNames;
+goog.exportSymbol("Sk.fixReservedNames", Sk.fixReservedNames);
+
+Sk.unfixReserved = unfixReserved;
+goog.exportSymbol("Sk.unfixReserved", Sk.unfixReserved);/**
  * @namespace Sk
  *
  */
