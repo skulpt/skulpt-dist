@@ -4993,6 +4993,8 @@ Sk.configure = function (options) {
     }
 
     Sk.misceval.softspace_ = false;
+
+    Sk.switch_version(Sk.python3);
 };
 goog.exportSymbol("Sk.configure", Sk.configure);
 
@@ -5090,6 +5092,70 @@ if (!Sk.inBrowser) {
 Sk.python3 = false;
 Sk.inputfun = function (args) {
     return window.prompt(args);
+};
+
+// Information about method names and their internal functions for
+// methods that differ (in visibility or name) between Python 2 and 3.
+//
+// Format:
+//   internal function: {
+//     "classes" : <array of affected classes>,
+//     2 : <visible Python 2 method name> or null if none
+//     3 : <visible Python 3 method name> or null if none
+//   },
+//   ...
+
+Sk.setup_method_mappings = function () {
+    Sk.methodMappings = {
+        "round$": {
+            "classes": [Sk.builtin.float_,
+                        Sk.builtin.int_,
+                        Sk.builtin.nmber],
+            2: null,
+            3: "__round__"
+        },
+        "next$": {
+            "classes": [Sk.builtin.dict_iter_,
+                        Sk.builtin.list_iter_,
+                        Sk.builtin.set_iter_,
+                        Sk.builtin.str_iter_,
+                        Sk.builtin.tuple_iter_,
+                        Sk.builtin.generator,
+                        Sk.builtin.enumerate,
+                        Sk.builtin.iterator],
+            2: "next",
+            3: "__next__"
+        }
+    };
+};
+
+Sk.switch_version = function (python3) {
+    var internal, klass, classes, idx, len, newmeth, oldmeth;
+
+    if (!Sk.hasOwnProperty("methodMappings")) {
+        Sk.setup_method_mappings();
+    }
+
+    for (internal in Sk.methodMappings) {
+        if (python3) {
+            newmeth = Sk.methodMappings[internal][3];
+            oldmeth = Sk.methodMappings[internal][2];
+        } else {
+            newmeth = Sk.methodMappings[internal][2];
+            oldmeth = Sk.methodMappings[internal][3];
+        }
+        classes = Sk.methodMappings[internal]["classes"];
+        len = classes.length;
+        for (idx = 0; idx < len; idx++) {
+            klass = classes[idx];
+            if (oldmeth && klass.prototype.hasOwnProperty(oldmeth)) {
+                delete klass.prototype[oldmeth];
+            }
+            if (newmeth) {
+                klass.prototype[newmeth] = new Sk.builtin.func(klass.prototype[internal]);
+            }
+        }
+    }
 };
 
 goog.exportSymbol("Sk.python3", Sk.python3);
@@ -5438,7 +5504,14 @@ Sk.builtin.type = function (name, bases, dict) {
         };
         klass.prototype.tp$iternext = function (canSuspend) {
             var self = this;
-            var r = Sk.misceval.chain(self.tp$getattr("next", canSuspend), function(/** {Object} */ iternextf) {
+            var next;
+
+            if (Sk.python3) {
+                next = "__next__";
+            } else {
+                next = "next";
+            }
+            var r = Sk.misceval.chain(self.tp$getattr(next, canSuspend), function(/** {Object} */ iternextf) {
                 if (iternextf === undefined) {
                     throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(self) + "' object is not iterable");
                 }
@@ -5783,6 +5856,13 @@ Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
     }
     return r1.tp$richcompare(r2, op);
 };
+
+Sk.builtin.type.prototype["__format__"] = function(self, format_spec) {
+    Sk.builtin.pyCheckArgs("__format__", arguments, 1, 2);
+    return new Sk.builtin.str(self);
+};
+
+Sk.builtin.type.pythonFunctions = ["__format__"];
 /**
  * @namespace Sk.abstr
  *
@@ -6460,15 +6540,10 @@ Sk.abstr.objectFormat = function (obj, format_spec) {
     var meth; // PyObject
     var result; // PyObject
 
-    // If no format_spec is provided, use an empty string
-    if(format_spec == null) {
-        format_spec = "";
-    }
-
     // Find the (unbound!) __format__ method (a borrowed reference)
     meth = Sk.abstr.lookupSpecial(obj, "__format__");
     if (meth == null) {
-        throw new Sk.builtin.TypeError("Type " + Sk.abstr.typeName(obj) + "doesn't define __format__");
+        throw new Sk.builtin.TypeError("Type " + Sk.abstr.typeName(obj) + " doesn't define __format__");
     }
 
     // And call it
@@ -6968,6 +7043,28 @@ Sk.builtin.object.prototype["__repr__"] = function (self) {
     return self["$r"]();
 };
 
+
+Sk.builtin.object.prototype["__format__"] = function (self, format_spec) {
+    var formatstr;
+    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+
+    if (!Sk.builtin.checkString(format_spec)) {
+        if (Sk.python3) {
+            throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
+        } else {
+            throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
+        }
+    } else {
+        formatstr = Sk.ffi.remapToJs(format_spec);
+        if (formatstr !== "") {
+            throw new Sk.builtin.NotImplementedError("format spec is not yet implemented");
+        }
+    }
+
+    return new Sk.builtin.str(self);
+};
+
+
 /**
  * Python wrapper for `__str__` method.
  * @name  __str__
@@ -7195,7 +7292,9 @@ Sk.builtin.object.prototype.ob$ge = function (other) {
  * @type {Array}
  */
 Sk.builtin.object.pythonFunctions = ["__repr__", "__str__", "__hash__",
-"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__", "__getattr__", "__setattr__"];
+                                     "__eq__", "__ne__", "__lt__", "__le__",
+                                     "__gt__", "__ge__", "__getattr__",
+                                     "__setattr__", "__format__"];
 
 /**
  * @constructor
@@ -7763,41 +7862,61 @@ Sk.builtin.asnum$nofloat = function (a) {
 goog.exportSymbol("Sk.builtin.asnum$nofloat", Sk.builtin.asnum$nofloat);
 
 Sk.builtin.round = function round (number, ndigits) {
-    var result, multiplier, special;
+    var special;
     Sk.builtin.pyCheckArgs("round", arguments, 1, 2);
 
     if (!Sk.builtin.checkNumber(number)) {
-        throw new Sk.builtin.TypeError("a float is required");
+        if (!Sk.builtin.checkFunction(number)) {
+            throw new Sk.builtin.TypeError("a float is required");
+        } else {
+            if (!Sk.python3) {
+                throw new Sk.builtin.AttributeError(Sk.abstr.typeName(number) + " instance has no attribute '__float__'");
+            }
+        }
     }
 
     if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
     }
 
-    if (ndigits === undefined) {
-        ndigits = 0;
-    }
-
-    // for built-in types round is delegated to number.__round__
-    if(number.__round__) {
-        return number.__round__(number, ndigits);
+    if (!Sk.python3 && number.round$) {
+        return number.round$(number, ndigits);
     }
 
     // try calling internal magic method
     special = Sk.abstr.lookupSpecial(number, "__round__");
     if (special != null) {
         // method on builtin, provide this arg
-        return Sk.misceval.callsim(special, number, ndigits);
+        if (!Sk.builtin.checkFunction(number)) {
+            return Sk.misceval.callsim(special, number, ndigits);
+        } else {
+            return Sk.misceval.callsim(special, number);
+        }
+    } else {
+        throw new Sk.builtin.TypeError("a float is required");
     }
 };
 
 Sk.builtin.len = function len (item) {
+    var intcheck;
+    var special;
     Sk.builtin.pyCheckArgs("len", arguments, 1, 1);
 
     var int_ = function(i) { return new Sk.builtin.int_(i); };
+    intcheck = function(j) {
+        if (Sk.builtin.checkInt(j)) {
+            return int_(j);
+        } else {
+            if (Sk.python3) {
+                throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(j) + "' object cannot be interpreted as an integer");
+            } else {
+                throw new Sk.builtin.TypeError("__len__() should return an int");
+            }
+        }
+    };
 
     if (item.sq$length) {
-        return Sk.misceval.chain(item.sq$length(true), int_);
+        return Sk.misceval.chain(item.sq$length(true), intcheck);
     }
 
     if (item.mp$length) {
@@ -7805,7 +7924,20 @@ Sk.builtin.len = function len (item) {
     }
 
     if (item.tp$length) {
-        return Sk.misceval.chain(item.tp$length(true), int_);
+        if (Sk.builtin.checkFunction(item)) {
+            special = Sk.abstr.lookupSpecial(item, "__len__");
+            if (special != null) {
+                return Sk.misceval.callsim(special, item);
+            } else {
+                if (Sk.python3) {
+                    throw new Sk.builtin.TypeError("object of type '" + Sk.abstr.typeName(item) + "' has no len()");
+                } else {
+                    throw new Sk.builtin.AttributeError(Sk.abstr.typeName(item) + " instance has no attribute '__len__'");
+                }
+            }
+        } else {
+            return Sk.misceval.chain(item.tp$length(true), intcheck);
+        }
     }
 
     throw new Sk.builtin.TypeError("object of type '" + Sk.abstr.typeName(item) + "' has no len()");
@@ -8082,7 +8214,11 @@ Sk.builtin.oct = function oct (x) {
     if (!Sk.misceval.isIndex(x)) {
         throw new Sk.builtin.TypeError("oct() argument can't be converted to hex");
     }
-    return Sk.builtin.int2str_(x, 8, "0");
+    if (Sk.python3) {
+        return Sk.builtin.int2str_(x, 8, "0o");
+    } else {
+        return Sk.builtin.int2str_(x, 8, "0");
+    }
 };
 
 Sk.builtin.bin = function bin (x) {
@@ -8643,9 +8779,15 @@ Sk.builtin.pow = function pow (a, b, c) {
             throw new Sk.builtin.TypeError("pow() 3rd argument not allowed unless all arguments are integers");
         }
         if (b_num < 0) {
-            throw new Sk.builtin.TypeError("pow() 2nd argument cannot be negative when 3rd argument specified");
+            if (Sk.python3) {
+                throw new Sk.builtin.ValueError("pow() 2nd argument cannot be negative when 3rd argument specified");
+            } else {
+                throw new Sk.builtin.TypeError("pow() 2nd argument cannot be negative when 3rd argument specified");
+            }
         }
-
+        if (c_num === 0) {
+            throw new Sk.builtin.ValueError("pow() 3rd argument cannot be 0");
+        }
         if ((a instanceof Sk.builtin.lng || b instanceof Sk.builtin.lng || c instanceof Sk.builtin.lng) ||
             (Math.pow(a_num, b_num) === Infinity)) {
             // convert a to a long so that we can use biginteger's modPowInt method
@@ -8736,6 +8878,10 @@ Sk.builtin.divmod = function divmod (a, b) {
  */
 Sk.builtin.format = function format (value, format_spec) {
     Sk.builtin.pyCheckArgs("format", arguments, 1, 2);
+
+    if (format_spec === undefined) {
+        format_spec = Sk.builtin.str.$emptystr;
+    }
 
     return Sk.abstr.objectFormat(value, format_spec);
 };
@@ -11343,7 +11489,8 @@ Sk.builtin.list.prototype.sq$contains = function (item) {
 };
 
 Sk.builtin.list.prototype.__contains__ = new Sk.builtin.func(function(self, item) {
-    return Sk.builtin.list.prototype.sq$contains.call(self, item);
+    Sk.builtin.pyCheckArgs("__contains__", arguments, 2, 2);
+    return new Sk.builtin.bool(self.sq$contains(item));
 });
 
 /*
@@ -11725,13 +11872,13 @@ Sk.builtin.list_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
     return self;
 });
 
-Sk.builtin.list_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.list_iter_.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (ret === undefined) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 Sk.builtin.interned = {};
 
 /**
@@ -12113,6 +12260,26 @@ Sk.builtin.str.prototype["rstrip"] = new Sk.builtin.func(function (self, chars) 
         pattern = new RegExp("[" + regex + "]+$", "g");
     }
     return new Sk.builtin.str(self.v.replace(pattern, ""));
+});
+
+Sk.builtin.str.prototype["__format__"] = new Sk.builtin.func(function (self, format_spec) {
+    var formatstr;
+    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+
+    if (!Sk.builtin.checkString(format_spec)) {
+        if (Sk.python3) {
+            throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
+        } else {
+            throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
+        }
+    } else {
+        formatstr = Sk.ffi.remapToJs(format_spec);
+        if (formatstr !== "" && formatstr !== "s") {
+            throw new Sk.builtin.NotImplementedError("format spec is not yet implemented");
+        }
+    }
+
+    return new Sk.builtin.str(self);
 });
 
 Sk.builtin.str.prototype["partition"] = new Sk.builtin.func(function (self, sep) {
@@ -12893,13 +13060,13 @@ Sk.builtin.str_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
     return self;
 });
 
-Sk.builtin.str_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.str_iter_.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (ret === undefined) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 var format = function (kwa) {
     // following PEP 3101
 
@@ -13532,13 +13699,13 @@ Sk.builtin.tuple_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) 
     return self;
 });
 
-Sk.builtin.tuple_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.tuple_iter_.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (ret === undefined) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 /**
  * @constructor
  * @param {Array.<Object>} L
@@ -13680,7 +13847,6 @@ Sk.builtin.dict.prototype.mp$subscript = function (key) {
 };
 
 Sk.builtin.dict.prototype.sq$contains = function (ob) {
-    Sk.builtin.pyCheckArgs("__contains__()", arguments, 1, 1, false, false);
     var res = this.mp$lookup(ob);
 
     return (res !== undefined);
@@ -13960,8 +14126,8 @@ update_f.co_kwargs = true;
 Sk.builtin.dict.prototype.update = new Sk.builtin.func(update_f);
 
 Sk.builtin.dict.prototype.__contains__ = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("__contains__", arguments, 1, 1, false, true);
-    return Sk.builtin.dict.prototype.sq$contains.call(self, item);
+    Sk.builtin.pyCheckArgs("__contains__", arguments, 2, 2);
+    return new Sk.builtin.bool(self.sq$contains(item));
 });
 
 Sk.builtin.dict.prototype.__cmp__ = new Sk.builtin.func(function (self, other, op) {
@@ -14146,13 +14312,13 @@ Sk.builtin.dict_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
     return self;
 });
 
-Sk.builtin.dict_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.dict_iter_.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (ret === undefined) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 /**
  * @constructor
  * Sk.builtin.numtype
@@ -17649,26 +17815,54 @@ Sk.builtin.int_.prototype.ob$ge = function (other) {
  * @param  {Object|number=} ndigits The number of digits after the decimal point to which to round.
  * @return {Sk.builtin.int_} The rounded integer.
  */
-Sk.builtin.int_.prototype.__round__ = function (self, ndigits) {
+Sk.builtin.int_.prototype.round$ = function (self, ndigits) {
     Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
 
-    var result, multiplier, number;
+    var result, multiplier, number, num10, rounded, bankRound, ndigs;
 
     if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
     }
 
+    number = Sk.builtin.asnum$(self);
     if (ndigits === undefined) {
-        ndigits = 0;
+        ndigs = 0;
+    } else {
+        ndigs = Sk.misceval.asIndex(ndigits);
     }
 
-    number = Sk.builtin.asnum$(self);
-    ndigits = Sk.misceval.asIndex(ndigits);
+    if (Sk.python3) {
+        num10 = number * Math.pow(10, ndigs);
+        rounded = Math.round(num10);
+        bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
+        result = bankRound / Math.pow(10, ndigs);
+        return new Sk.builtin.int_(result);
+    } else {
+        multiplier = Math.pow(10, ndigs);
+        result = Math.round(number * multiplier) / multiplier;
 
-    multiplier = Math.pow(10, ndigits);
-    result = Math.round(number * multiplier) / multiplier;
+        return new Sk.builtin.int_(result);
+    }
+};
 
-    return new Sk.builtin.int_(result);
+Sk.builtin.int_.prototype.__format__= function (obj, format_spec) {
+    var formatstr;
+    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+
+    if (!Sk.builtin.checkString(format_spec)) {
+        if (Sk.python3) {
+            throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
+        } else {
+            throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
+        }
+    } else {
+        formatstr = Sk.ffi.remapToJs(format_spec);
+        if (formatstr !== "") {
+            throw new Sk.builtin.NotImplementedError("format spec is not yet implemented");
+        }
+    }
+
+    return new Sk.builtin.str(obj);
 };
 
 Sk.builtin.int_.prototype.conjugate = new Sk.builtin.func(function (self) {
@@ -17831,7 +18025,8 @@ Sk.str2number = function (s, base, parser, negater, fname) {
     return val;
 };
 
-goog.exportSymbol("Sk.builtin.int_", Sk.builtin.int_);/**
+goog.exportSymbol("Sk.builtin.int_", Sk.builtin.int_);
+/**
  * @constructor
  * Sk.builtin.bool
  *
@@ -18649,29 +18844,62 @@ Sk.builtin.float_.prototype.ob$ge = function (other) {
  *
  * @param  {Sk.builtin.int_} self This instance.
  * @param  {Object|number=} ndigits The number of digits after the decimal point to which to round.
- * @return {Sk.builtin.float_} The rounded float.
+ * @return {Sk.builtin.float_|Sk.builtin.int_} The rounded float.
  */
-Sk.builtin.float_.prototype.__round__ = function (self, ndigits) {
+Sk.builtin.float_.prototype.round$ = function (self, ndigits) {
     Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
 
-    var result, multiplier, number;
+    var result, multiplier, number, num10, rounded, bankRound, ndigs;
 
     if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
     }
 
+    number = Sk.builtin.asnum$(self);
     if (ndigits === undefined) {
-        ndigits = 0;
+        ndigs = 0;
+    } else {
+        ndigs = Sk.misceval.asIndex(ndigits);
     }
 
-    number = Sk.builtin.asnum$(self);
-    ndigits = Sk.misceval.asIndex(ndigits);
+    if (Sk.python3) {
+        num10 = number * Math.pow(10, ndigs);
+        rounded = Math.round(num10);
+        bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
+        result = bankRound / Math.pow(10, ndigs);
+        if (ndigits === undefined) {
+            return new Sk.builtin.int_(result);
+        } else {
+            return new Sk.builtin.float_(result);
+        }
+    } else {
+        multiplier = Math.pow(10, ndigs);
+        result = Math.round(number * multiplier) / multiplier;
 
-    multiplier = Math.pow(10, ndigits);
-    result = Math.round(number * multiplier) / multiplier;
-
-    return new Sk.builtin.float_(result);
+        return new Sk.builtin.float_(result);
+    }
 };
+
+Sk.builtin.float_.prototype.__format__= function (obj, format_spec) {
+    var formatstr;
+    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+
+    if (!Sk.builtin.checkString(format_spec)) {
+        if (Sk.python3) {
+            throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
+        } else {
+            throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
+        }
+    } else {
+        formatstr = Sk.ffi.remapToJs(format_spec);
+        if (formatstr !== "") {
+            throw new Sk.builtin.NotImplementedError("format spec is not yet implemented");
+        }
+    }
+
+    return new Sk.builtin.str(obj);
+};
+
 
 Sk.builtin.float_.prototype.conjugate = new Sk.builtin.func(function (self) {
     return new Sk.builtin.float_(self.v);
@@ -19059,7 +19287,7 @@ Sk.builtin.nmber.prototype.__ge__ = function (me, other) {
 /**
  * @deprecated Please use Sk.builtin.int_ or Sk.builtin.float_ instead.
  */
-Sk.builtin.nmber.prototype.__round__ = function (self, ndigits) {
+Sk.builtin.nmber.prototype.round$ = function (self, ndigits) {
     throw deprecatedError;
 };
 
@@ -19162,6 +19390,56 @@ Sk.builtin.lng.prototype.nb$int_ = function() {
     }
 
     return new Sk.builtin.int_(this.toInt$());
+};
+
+Sk.builtin.lng.prototype.__format__= function (obj, format_spec) {
+    var formatstr;
+    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+
+    if (!Sk.builtin.checkString(format_spec)) {
+        if (Sk.python3) {
+            throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
+        } else {
+            throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
+        }
+    } else {
+        formatstr = Sk.ffi.remapToJs(format_spec);
+        if (formatstr !== "") {
+            throw new Sk.builtin.NotImplementedError("format spec is not yet implemented");
+        }
+    }
+
+    return new Sk.builtin.str(obj);
+};
+
+Sk.builtin.lng.prototype.round$ = function (self, ndigits) {
+    Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
+
+    var result, multiplier, number, num10, rounded, bankRound, ndigs;
+
+    if ((ndigits !== undefined) && !Sk.misceval.isIndex(ndigits)) {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
+    }
+
+    number = Sk.builtin.asnum$(self);
+    if (ndigits === undefined) {
+        ndigs = 0;
+    } else {
+        ndigs = Sk.misceval.asIndex(ndigits);
+    }
+
+    if (Sk.python3) {
+        num10 = number * Math.pow(10, ndigs);
+        rounded = Math.round(num10);
+        bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
+        result = bankRound / Math.pow(10, ndigs);
+        return new Sk.builtin.lng(result);
+    } else {
+        multiplier = Math.pow(10, ndigs);
+        result = Math.round(number * multiplier) / multiplier;
+
+        return new Sk.builtin.lng(result);
+    }
 };
 
 Sk.builtin.lng.prototype.__index__ = new Sk.builtin.func(function(self) {
@@ -19872,7 +20150,8 @@ Sk.builtin.lng.prototype.str$ = function (base, sign) {
 
     //    Another base... convert...
     return work.toString(base);
-};/**
+};
+/**
  * hypot is a ESCMA6 function and maybe not available across all browsers
  */
 Math.hypot = Math.hypot || function() {
@@ -21695,13 +21974,13 @@ Sk.builtin.set_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
     return self;
 });
 
-Sk.builtin.set_iter_.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.set_iter_.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (ret === undefined) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 /*
 	Implementation of the Python3 print version. Due to Python2 grammar we have
 	to mimic the named keywords after *args as kwargs. Though this does not change
@@ -21988,9 +22267,9 @@ Sk.builtin.generator.prototype.tp$iternext = function (canSuspend, yielded) {
     })(ret);
 };
 
-Sk.builtin.generator.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.generator.prototype.next$ = function (self) {
     return self.tp$iternext(true);
-});
+};
 
 Sk.builtin.generator.prototype["$r"] = function () {
     return new Sk.builtin.str("<generator object " + this.func_code["co_name"].v + ">");
@@ -22473,13 +22752,13 @@ Sk.builtin.iterator.prototype.tp$iternext = function (canSuspend) {
     return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
 };
 
-Sk.builtin.iterator.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.iterator.prototype.next$ = function (self) {
     var ret = self.tp$iternext();
     if (!ret) {
         throw new Sk.builtin.StopIteration();
     }
     return ret;
-});
+};
 
 goog.exportSymbol("Sk.builtin.iterator", Sk.builtin.iterator);
 /**
@@ -22537,9 +22816,9 @@ Sk.builtin.enumerate.prototype["__iter__"] = new Sk.builtin.func(function (self)
     return self.tp$iter();
 });
 
-Sk.builtin.enumerate.prototype["next"] = new Sk.builtin.func(function (self) {
+Sk.builtin.enumerate.prototype.next$ = function (self) {
     return self.tp$iternext();
-});
+};
 
 Sk.builtin.enumerate.prototype["$r"] = function () {
     return new Sk.builtin.str("<enumerate object>");
@@ -32236,6 +32515,19 @@ Sk.doOneTimeInitialization = function () {
 
     for (i = 0; i < Sk.builtin.object.pythonFunctions.length; i++) {
         name = Sk.builtin.object.pythonFunctions[i];
+
+        if (proto[name] instanceof Sk.builtin.func) {
+            // If functions have already been initialized, do not wrap again.
+            break;
+        }
+
+        proto[name] = new Sk.builtin.func(proto[name]);
+    }
+
+    proto = Sk.builtin.type.prototype;
+
+    for (i = 0; i < Sk.builtin.type.pythonFunctions.length; i++) {
+        name = Sk.builtin.type.pythonFunctions[i];
 
         if (proto[name] instanceof Sk.builtin.func) {
             // If functions have already been initialized, do not wrap again.
