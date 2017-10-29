@@ -5432,38 +5432,34 @@ Sk.builtin.type = function (name, bases, dict) {
                 return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
             }
 
-            return Sk.builtin.object.prototype.GenericSetAttr.call(this, name, data);
+            return Sk.builtin.object.prototype.GenericSetAttr.call(this, name, data, canSuspend);
         };
 
         klass.prototype.tp$getattr = function(name, canSuspend) {
-            var r, /** @type {(Object|undefined)} */ getf;
+            var r, descr, /** @type {(Object|undefined)} */ getf;
+
+            // Find __getattribute__ on this type if we can
+            descr = Sk.builtin.type.typeLookup(klass, "__getattribute__");
+
+            if (descr !== undefined && descr !== null && descr.tp$descr_get !== undefined) {
+                getf = descr.tp$descr_get.call(descr, this, klass);
+            }
+
+            if (getf === undefined) {
+                getf = Sk.builtin.object.prototype.GenericPythonGetAttr.bind(null, this);
+            }
+
             // Convert AttributeErrors back into 'undefined' returns to match the tp$getattr
             // convention
-            var callCatchUndefined = function() {
-                return Sk.misceval.tryCatch(function() {
-                    return Sk.misceval.callsimOrSuspend(/** @type {Object} */ (getf), new Sk.builtin.str(name));
-                }, function (e) {
-                    if (e instanceof Sk.builtin.AttributeError) {
-                        return undefined;
-                    } else {
-                        throw e;
-                    }
-                });
-            };
-
-            getf = Sk.builtin.object.prototype.GenericGetAttr.call(this, "__getattribute__");
-
-            if (getf !== undefined) {
-                r = callCatchUndefined();
-            } else {
-                r = Sk.builtin.object.prototype.GenericGetAttr.call(this, name);
-                if (r === undefined) {
-                    getf = Sk.builtin.object.prototype.GenericGetAttr.call(this, "__getattr__");
-                    if (getf !== undefined) {
-                        r = callCatchUndefined();
-                    }
+            r = Sk.misceval.tryCatch(function() {
+                return Sk.misceval.callsimOrSuspend(/** @type {Object} */ (getf), new Sk.builtin.str(name));
+            }, function (e) {
+                if (e instanceof Sk.builtin.AttributeError) {
+                    return undefined;
+                } else {
+                    throw e;
                 }
-            }
+            });
             
             return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
         };
@@ -6893,6 +6889,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
     var descr;
     var tp;
     var dict;
+    var getf;
     var pyName = new Sk.builtin.str(name);
     goog.asserts.assert(typeof name === "string");
 
@@ -6908,7 +6905,6 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
         } else if (dict.mp$subscript) {
             res = _tryGetSubscript(dict, pyName);
         } else if (typeof dict === "object") {
-            // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
             res = dict[name];
         }
         if (res !== undefined) {
@@ -6933,12 +6929,40 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
         return descr;
     }
 
+    // OK, try __getattr__
+
+    descr = Sk.builtin.type.typeLookup(tp, "__getattr__");
+    if (descr !== undefined && descr !== null) {
+        f = descr.tp$descr_get;
+        if (f) {
+            getf = f.call(descr, this, this.ob$type);
+        } else {
+            getf = descr;
+        }
+
+        res = Sk.misceval.tryCatch(function() {
+            return Sk.misceval.callsimOrSuspend(getf, pyName);
+        }, function(e) {
+            if (e instanceof Sk.builtin.AttributeError) {
+                return undefined;
+            } else {
+                throw e;
+            }
+        });
+        return canSuspend ? res : Sk.misceval.retryOptionalSuspensionOrThrow(res);
+    }
+
+
     return undefined;
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericGetAttr", Sk.builtin.object.prototype.GenericGetAttr);
 
 Sk.builtin.object.prototype.GenericPythonGetAttr = function(self, name) {
-    return Sk.builtin.object.prototype.GenericGetAttr.call(self, name.v);
+    var r = Sk.builtin.object.prototype.GenericGetAttr.call(self, name.v, true);
+    if (r === undefined) {
+        throw new Sk.builtin.AttributeError(name);
+    }
+    return r;
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin.object.prototype.GenericPythonGetAttr);
 
@@ -6988,7 +7012,7 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value, canSuspend) 
 goog.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
 
 Sk.builtin.object.prototype.GenericPythonSetAttr = function(self, name, value) {
-    return Sk.builtin.object.prototype.GenericSetAttr.call(self, name.v, value);
+    return Sk.builtin.object.prototype.GenericSetAttr.call(self, name.v, value, true);
 };
 goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonSetAttr", Sk.builtin.object.prototype.GenericPythonSetAttr);
 
@@ -7000,8 +7024,8 @@ Sk.builtin.object.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetA
 Sk.builtin.object.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
 
 // Although actual attribute-getting happens in pure Javascript via tp$getattr, classes
-// overriding __getattr__ etc need to be able to call object.__getattr__ etc from Python
-Sk.builtin.object.prototype["__getattr__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
+// overriding __getattribute__ etc need to be able to call object.__getattribute__ etc from Python
+Sk.builtin.object.prototype["__getattribute__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
 Sk.builtin.object.prototype["__setattr__"] = Sk.builtin.object.prototype.GenericPythonSetAttr;
 
 /**
@@ -7293,7 +7317,7 @@ Sk.builtin.object.prototype.ob$ge = function (other) {
  */
 Sk.builtin.object.pythonFunctions = ["__repr__", "__str__", "__hash__",
                                      "__eq__", "__ne__", "__lt__", "__le__",
-                                     "__gt__", "__ge__", "__getattr__",
+                                     "__gt__", "__ge__", "__getattribute__",
                                      "__setattr__", "__format__"];
 
 /**
@@ -8700,26 +8724,7 @@ Sk.builtin.hasattr = function hasattr (obj, attr) {
         if (obj.tp$getattr(attr.v)) {
             return Sk.builtin.bool.true$;
         } else {
-            special = Sk.abstr.lookupSpecial(obj, "__getattr__");
-            if (special) {
-                ret = Sk.misceval.tryCatch(function () {
-                    var val = Sk.misceval.callsim(special, obj, attr);
-                    if (val) {
-                        return Sk.builtin.bool.true$;
-                    } else {
-                        return Sk.builtin.bool.false$;
-                    }
-                }, function(e) {
-                    if (e instanceof Sk.builtin.AttributeError) {
-                        return Sk.builtin.bool.false$;
-                    } else {
-                        throw e;
-                    }
-                });
-                return ret;
-            } else {
-                return Sk.builtin.bool.false$;
-            }
+            return Sk.builtin.bool.false$;
         }
     } else {
         throw new Sk.builtin.AttributeError("Object has no tp$getattr method");
@@ -14160,9 +14165,9 @@ Sk.builtin.dict.prototype.__len__ = new Sk.builtin.func(function (self) {
     return Sk.builtin.dict.prototype.mp$length.call(self);
 });
 
-Sk.builtin.dict.prototype.__getattr__ = new Sk.builtin.func(function (self, attr) {
-    Sk.builtin.pyCheckArgs("__getattr__", arguments, 1, 1, false, true);
-    if (!Sk.builtin.checkString(attr)) { throw new Sk.builtin.TypeError("__getattr__ requires a string"); }
+Sk.builtin.dict.prototype.__getattribute__ = new Sk.builtin.func(function (self, attr) {
+    Sk.builtin.pyCheckArgs("__getattribute__", arguments, 1, 1, false, true);
+    if (!Sk.builtin.checkString(attr)) { throw new Sk.builtin.TypeError("__getattribute__ requires a string"); }
     return Sk.builtin.dict.prototype.tp$getattr.call(self, Sk.ffi.remapToJs(attr));
 });
 
@@ -32550,7 +32555,8 @@ Sk.doOneTimeInitialization = function () {
     // compile internal python files and add them to the __builtin__ module
     for (var file in Sk.internalPy.files) {
         var fileWithoutExtension = file.split(".")[0].split("/")[1];
-        var mod = Sk.importBuiltinWithBody(fileWithoutExtension, false, Sk.internalPy.files[file], false);
+        var mod = Sk.importBuiltinWithBody(fileWithoutExtension, false, Sk.internalPy.files[file], true);
+        mod = Sk.misceval.retryOptionalSuspensionOrThrow(mod);
         goog.asserts.assert(mod["$d"][fileWithoutExtension] !== undefined, "Should have imported name " + fileWithoutExtension);
         Sk.builtins[fileWithoutExtension] = mod["$d"][fileWithoutExtension];
     }
