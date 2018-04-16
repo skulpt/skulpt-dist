@@ -6968,7 +6968,7 @@ goog.exportSymbol("Sk.builtin.object.prototype.GenericPythonGetAttr", Sk.builtin
 
 /**
  * @param {string} name
- * @param {undefined} value
+ * @param {Object} value
  * @param {boolean=} canSuspend
  * @return {undefined}
  */
@@ -6984,6 +6984,17 @@ Sk.builtin.object.prototype.GenericSetAttr = function (name, value, canSuspend) 
     goog.asserts.assert(tp !== undefined, "object has no ob$type!");
 
     dict = this["$d"] || this.constructor["$d"];
+
+    if (name == "__class__") {
+        if (value.tp$mro === undefined || value.tp$name === undefined ||
+            value.tp$name === undefined) {
+            throw new Sk.builtin.TypeError(
+                      "attempted to assign non-class to __class__");
+        }
+        this.ob$type = value;
+        this.tp$name = value.tp$name;
+        return;
+    }
 
     descr = Sk.builtin.type.typeLookup(tp, name);
 
@@ -7036,7 +7047,7 @@ Sk.builtin.object.prototype.tp$name = "object";
 
 /**
  * The type object of this class.
- * @type {Sk.builtin.type}
+ * @type {Sk.builtin.type|Object}
  */
 Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
 Sk.builtin.object.prototype.ob$type.sk$klass = undefined;   // Nonsense for closure compiler
