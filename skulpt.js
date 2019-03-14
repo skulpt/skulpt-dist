@@ -5638,6 +5638,7 @@ Sk.builtin.type.makeIntoTypeObj = function (name, t) {
 
 Sk.builtin.type.ob$type = Sk.builtin.type;
 Sk.builtin.type.tp$name = "type";
+Sk.builtin.type.sk$type = true;
 Sk.builtin.type["$r"] = function () {
     if(Sk.python3) {
         return new Sk.builtin.str("<class 'type'>");
@@ -7487,7 +7488,7 @@ Sk.builtin.checkCallable = function (obj) {
     // go up the prototype chain to see if the class has a __call__ method
     if (Sk.abstr.lookupSpecial(obj, "__call__") !== undefined) {
         return true;
-    } 
+    }
     return false;
 };
 
@@ -7582,20 +7583,39 @@ Sk.builtin.func = function (code, globals, closure, closure2) {
             closure[k] = closure2[k];
         }
     }
+
+    this.__class__ = Sk.builtin.func;
     this.func_closure = closure;
+    this.tp$name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || this.func_code.name || "<native JS>";
     return this;
 };
+
+Sk.abstr.setUpInheritance("function", Sk.builtin.func, Sk.builtin.object);
+
 goog.exportSymbol("Sk.builtin.func", Sk.builtin.func);
 
-
 Sk.builtin.func.prototype.tp$name = "function";
+
 Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
-    goog.asserts.assert(obj !== undefined && objtype !== undefined);
-    if (obj === Sk.builtin.none.none$) {
-        return this;
+    goog.asserts.assert(!(obj === undefined && objtype === undefined));
+    if (objtype && objtype.tp$name in Sk.builtin && Sk.builtin[objtype.tp$name] === objtype) {
+        // it's a builtin
+        return new Sk.builtin.method(this, obj, objtype, true);
     }
     return new Sk.builtin.method(this, obj, objtype);
 };
+
+Sk.builtin.func.pythonFunctions = ["__get__"];
+
+Sk.builtin.func.prototype.__get__ = function __get__(self, instance, owner) {
+    Sk.builtin.pyCheckArgs("__get__", arguments, 1, 2, false, true);
+    if (instance === Sk.builtin.none.none$ && owner === Sk.builtin.none.none$) {
+        throw new Sk.builtin.TypeError("__get__(None, None) is invalid");
+    }
+
+    return self.tp$descr_get(instance, owner);
+};
+
 Sk.builtin.func.prototype.tp$call = function (args, kw) {
     var j;
     var i;
@@ -7611,8 +7631,7 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
     kwargsarr = [];
 
     if (this.func_code["no_kw"] && kw) {
-        name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-        throw new Sk.builtin.TypeError(name + "() takes no keyword arguments");
+        throw new Sk.builtin.TypeError(this.tp$name + "() takes no keyword arguments");
     }
 
     if (kw) {
@@ -7629,8 +7648,7 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
             }
             if (varnames && j !== numvarnames) {
                 if (j in args) {
-                    name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-                    throw new Sk.builtin.TypeError(name + "() got multiple values for keyword argument '" + kw[i] + "'");
+                    throw new Sk.builtin.TypeError(this.tp$name + "() got multiple values for keyword argument '" + kw[i] + "'");
                 }
                 args[j] = kw[i + 1];
             } else if (expectskw) {
@@ -7638,8 +7656,7 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
                 kwargsarr.push(new Sk.builtin.str(kw[i]));
                 kwargsarr.push(kw[i + 1]);
             } else {
-                name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-                throw new Sk.builtin.TypeError(name + "() got an unexpected keyword argument '" + kw[i] + "'");
+                throw new Sk.builtin.TypeError(this.tp$name + "() got an unexpected keyword argument '" + kw[i] + "'");
             }
         }
     }
@@ -7669,22 +7686,9 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
     return this.func_code.apply(this.func_globals, args);
 };
 
-Sk.builtin.func.prototype.tp$getattr = function (key) {
-    return this[key];
-};
-Sk.builtin.func.prototype.tp$setattr = function (key, value) {
-    this[key] = value;
-};
-
-//todo; investigate why the other doesn't work
-//Sk.builtin.type.makeIntoTypeObj('function', Sk.builtin.func);
-Sk.builtin.func.prototype.ob$type = Sk.builtin.type.makeTypeObj("function", new Sk.builtin.func(null, null));
-
 Sk.builtin.func.prototype["$r"] = function () {
-    var name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || "<native JS>";
-    return new Sk.builtin.str("<function " + name + ">");
-};
-/**
+    return new Sk.builtin.str("<function " + this.tp$name + ">");
+};/**
  * builtins are supposed to come from the __builtin__ module, but we don't do
  * that yet.
  * todo; these should all be func objects too, otherwise str() of them won't
@@ -8831,8 +8835,12 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
     var i;
     var issubclass_internal;
     Sk.builtin.pyCheckArgs("issubclass", arguments, 2, 2);
+    if (!Sk.builtin.checkClass(c1)) {
+        throw new Sk.builtin.TypeError("issubclass() arg 1 must be a class");
+    }
+
     if (!Sk.builtin.checkClass(c2) && !(c2 instanceof Sk.builtin.tuple)) {
-        throw new Sk.builtin.TypeError("issubclass() arg 2 must be a classinfo, type, or tuple of classes and types");
+        throw new Sk.builtin.TypeError("issubclass() arg 2 must be a class or tuple of classes");
     }
 
     issubclass_internal = function (klass, base) {
@@ -8845,7 +8853,12 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
             return false;
         }
         if (klass["$d"].mp$subscript) {
-            bases = klass["$d"].mp$subscript(Sk.builtin.type.basesStr_);
+            // old style classes don't have bases
+            if (klass["$d"].sq$contains(Sk.builtin.type.basesStr_)) {
+                bases = klass["$d"].mp$subscript(Sk.builtin.type.basesStr_);
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -9711,9 +9724,14 @@ goog.exportSymbol("Sk", Sk);
 /**
  * @constructor
  *
+ * @param {Sk.builtin.func|Sk.builtin.method} func
+ * @param {Object} self
+ * @param {Sk.builtin.type|Sk.builtin.none} klass
+ * @param {boolean=} builtin
+ * 
  * co_varnames and co_name come from generated code, must access as dict.
  */
-Sk.builtin.method = function (func, self, klass) {
+Sk.builtin.method = function (func, self, klass, builtin) {
     if (!(this instanceof Sk.builtin.method)) {
         Sk.builtin.pyCheckArgs("method", arguments, 3, 3);
         if (!Sk.builtin.checkCallable(func)) {
@@ -9724,36 +9742,93 @@ Sk.builtin.method = function (func, self, klass) {
         }
         return new Sk.builtin.method(func, self, klass);
     }
+    this.tp$name = func.tp$name;
     this.im_func = func;
-    this.im_self = self;
-    this.im_class = klass;
+    this.im_self = self || Sk.builtin.none.none$;
+    this.im_class = klass || Sk.builtin.none.none$;
+    this.im_builtin = builtin;
     this["$d"] = {
         im_func: func,
         im_self: self,
         im_class: klass
     };
 };
+
 goog.exportSymbol("Sk.builtin.method", Sk.builtin.method);
 Sk.abstr.setUpInheritance("instancemethod", Sk.builtin.method, Sk.builtin.object);
 
+Sk.builtin.method.prototype.tp$name = "method";
+
 Sk.builtin.method.prototype.tp$call = function (args, kw) {
-    goog.asserts.assert(this.im_self, "should just be a function, not a method since there's no self?");
-    goog.asserts.assert(this.im_func instanceof Sk.builtin.func);
+    // goog.asserts.assert(this.im_func instanceof Sk.builtin.func);
 
     // 'args' and 'kw' get mucked around with heavily in applyOrSuspend();
     // changing it here is OK.
-    args.unshift(this.im_self);
+    if (this.im_self !== Sk.builtin.none.none$) {
+        args.unshift(this.im_self);
+    }
+
+    // if there is no first argument or
+    // if the first argument is not a subclass of the class this method belongs to we throw an error
+    // unless it's a builtin method, because they shouldn't have been __get__ and left in this unbound
+    // state.
+    if (this.im_self === Sk.builtin.none.none$) {
+        var getMessage = (function (reason) {
+            return "unbound method " + this.tp$name + "() must be called with " + Sk.abstr.typeName(this.im_class) + " instance as first argument (got " + reason + " instead)";
+        }).bind(this);
+
+        if (args.length > 0) {
+            if (this.im_class != Sk.builtin.none.none$ && !Sk.builtin.issubclass(args[0].ob$type, this.im_class) && !this.im_builtin) {
+                throw new Sk.builtin.TypeError(getMessage(Sk.abstr.typeName(args[0].ob$type) + " instance"));
+            }
+        } else {
+            throw new Sk.builtin.TypeError(getMessage("nothing"));
+        }
+    }
 
     // A method call is just a call to this.im_func with 'self' on the beginning of the args.
     // Do the necessary.
-
     return this.im_func.tp$call(args, kw);
 };
 
+Sk.builtin.method.prototype.tp$descr_get = function (obj, objtype) {
+    goog.asserts.assert(obj !== undefined && objtype !== undefined);
+    return new Sk.builtin.method(this, obj, objtype, this.im_builtin);
+};
+
+Sk.builtin.method.pythonFunctions = ["__get__"];
+
+Sk.builtin.method.prototype.__get__ = function __get__(self, instance, owner) {
+    Sk.builtin.pyCheckArgs("__get__", arguments, 1, 2, false, true);
+    if (instance === Sk.builtin.none.none$ && owner === Sk.builtin.none.none$) {
+        throw new Sk.builtin.TypeError("__get__(None, None) is invalid");
+    }
+
+    // if the owner is specified it needs to be a a subclass of im_self
+    if (owner && owner !== Sk.builtin.none.none$) {
+        if (Sk.builtin.issubclass(owner, self.im_class)) {
+            return self.tp$descr_get(instance, owner);
+        }
+
+        // if it's not we're not bound
+        return self;
+    }
+
+    // use the original type to get a bound object
+    return self.tp$descr_get(instance, Sk.builtin.none.none$);
+};
+
 Sk.builtin.method.prototype["$r"] = function () {
-    var name = (this.im_func.func_code && this.im_func.func_code["co_name"] && this.im_func.func_code["co_name"].v) || this.im_func.func_code.name || "<native JS>";
-    return new Sk.builtin.str("<bound method " + this.im_self.ob$type.tp$name + "." + name +
-        " of " + this.im_self["$r"]().v + ">");
+    if (this.im_builtin) {
+        return new Sk.builtin.str("<built-in method " + this.tp$name + " of type object>");
+    }
+
+    if (this.im_self === Sk.builtin.none.none$) {
+        return new Sk.builtin.str("<unbound method " + Sk.abstr.typeName(this.im_class) + "." + this.tp$name + ">");
+    }
+
+    var owner = this.im_class !== Sk.builtin.none.none$ ? Sk.abstr.typeName(this.im_class) : "?";
+    return new Sk.builtin.str("<bound method " + owner  + "." + this.tp$name + " of " + Sk.ffi.remapToJs(Sk.misceval.objectRepr(this.im_self)) + ">");
 };
 /**
  * @namespace Sk.misceval
@@ -14228,9 +14303,38 @@ Sk.builtin.dict.prototype["copy"] = new Sk.builtin.func(function (self) {
     throw new Sk.builtin.NotImplementedError("dict.copy is not yet implemented in Skulpt");
 });
 
-Sk.builtin.dict.prototype["fromkeys"] = new Sk.builtin.func(function (seq, value) {
-    throw new Sk.builtin.NotImplementedError("dict.fromkeys is not yet implemented in Skulpt");
-});
+Sk.builtin.dict.$fromkeys = function fromkeys(self, seq, value) {
+    var k, iter, val, res, iterable;
+
+    if (self instanceof Sk.builtin.dict) {
+        // instance call
+        Sk.builtin.pyCheckArgs("fromkeys", arguments, 1, 2, false, true);
+
+        res = self;
+        iterable = seq;
+        val = value === undefined ? Sk.builtin.none.none$ : value;
+    } else {
+        // static call
+        Sk.builtin.pyCheckArgs("fromkeys", arguments, 1, 2, false, false);
+
+        res = new Sk.builtin.dict([]);
+        iterable = self;
+        val = seq === undefined ? Sk.builtin.none.none$ : seq;
+    }
+
+    if (!Sk.builtin.checkIterable(iterable)) {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iterable) + "' object is not iterable");
+    }
+
+    for (iter = Sk.abstr.iter(iterable), k = iter.tp$iternext();
+            k !== undefined;
+            k = iter.tp$iternext()) {
+        res.mp$ass_subscript(k, val);
+    }
+
+    return res;
+};
+
 
 Sk.builtin.dict.prototype["iteritems"] = new Sk.builtin.func(function (self) {
     throw new Sk.builtin.NotImplementedError("dict.iteritems is not yet implemented in Skulpt");
@@ -21030,7 +21134,7 @@ Sk.builtin.complex.prototype.tp$str = function () {
  * We currently use the signature (self, format_spec) instead of (self, args). So we do
  * not need to unwrap the args.
  */
-Sk.builtin.complex.prototype.__format__ = new Sk.builtin.func(function (self, format_spec){
+Sk.builtin.complex.prototype.int$format = function __format__(self, format_spec){
     var result; // PyObject
 
     if (format_spec == null) {
@@ -21045,7 +21149,9 @@ Sk.builtin.complex.prototype.__format__ = new Sk.builtin.func(function (self, fo
 
 
     throw new Sk.builtin.TypeError("__format__ requires str or unicode");
-});
+};
+Sk.builtin.complex.prototype.int$format.co_name = new Sk.builtin.str("__format__");
+Sk.builtin.complex.prototype.__format__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$format); 
 
 Sk.builtin.complex._PyComplex_FormatAdvanced = function(self, format_spec) {
     throw new Sk.builtin.NotImplementedError("__format__ is not implemented for complex type.");
@@ -21066,7 +21172,7 @@ Sk.builtin.complex._is_infinity = function (val) {
 /**
  * @suppress {missingProperties}
  */
-Sk.builtin.complex.prototype.__abs__  = new Sk.builtin.func(function (self) {
+Sk.builtin.complex.prototype.int$abs = function __abs__(self) {
     var result;
     var _real = self.real.v;
     var _imag = self.imag.v;
@@ -21100,90 +21206,122 @@ Sk.builtin.complex.prototype.__abs__  = new Sk.builtin.func(function (self) {
     }
 
     return new Sk.builtin.float_(result);
-});
+};
+Sk.builtin.complex.prototype.int$abs.co_name = new Sk.builtin.str("__abs__");
+Sk.builtin.complex.prototype.__abs__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$abs); 
 
-Sk.builtin.complex.prototype.__bool__   = new Sk.builtin.func(function (self) {
+Sk.builtin.complex.prototype.int$bool = function __bool__(self) {
     return new Sk.builtin.bool( self.tp$getattr("real").v || self.tp$getattr("real").v);
-});
+};
+Sk.builtin.complex.prototype.int$bool.co_name = new Sk.builtin.str("__bool__");
+Sk.builtin.complex.prototype.__bool__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$bool); 
 
-Sk.builtin.complex.prototype.__truediv__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$truediv = function __truediv__(self, other){
     Sk.builtin.pyCheckArgs("__truediv__", arguments, 1, 1, true);
     return self.nb$divide.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$truediv.co_name = new Sk.builtin.str("__truediv__");
+Sk.builtin.complex.prototype.__truediv__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$truediv); 
 
-Sk.builtin.complex.prototype.__hash__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$hash = function __hash__(self){
     Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, true);
 
     return self.tp$hash.call(self);
-});
+};
+Sk.builtin.complex.prototype.int$hash.co_name = new Sk.builtin.str("__hash__");
+Sk.builtin.complex.prototype.__hash__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$hash); 
 
-Sk.builtin.complex.prototype.__add__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$add = function __add__(self, other){
     Sk.builtin.pyCheckArgs("__add__", arguments, 1, 1, true);
     return self.nb$add.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$add.co_name = new Sk.builtin.str("__add__");
+Sk.builtin.complex.prototype.__add__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$add); 
 
-Sk.builtin.complex.prototype.__repr__ = new Sk.builtin.func(function (self){
+
+Sk.builtin.complex.prototype.int$repr = function __repr__(self){
     Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, true);
 
     return self["r$"].call(self);
-});
+};
+Sk.builtin.complex.prototype.int$repr.co_name = new Sk.builtin.str("__repr__");
+Sk.builtin.complex.prototype.__repr__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$repr); 
 
-Sk.builtin.complex.prototype.__str__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$str = function __str__(self){
     Sk.builtin.pyCheckArgs("__str__", arguments, 0, 0, true);
 
     return self.tp$str.call(self);
-});
+};
+Sk.builtin.complex.prototype.int$str.co_name = new Sk.builtin.str("__str__");
+Sk.builtin.complex.prototype.__str__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$str); 
 
-Sk.builtin.complex.prototype.__sub__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$sub = function __sub__(self, other){
     Sk.builtin.pyCheckArgs("__sub__", arguments, 1, 1, true);
     return self.nb$subtract.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$sub.co_name = new Sk.builtin.str("__sub__");
+Sk.builtin.complex.prototype.__sub__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$sub); 
 
-Sk.builtin.complex.prototype.__mul__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$mul = function __mul__(self, other){
     Sk.builtin.pyCheckArgs("__mul__", arguments, 1, 1, true);
     return self.nb$multiply.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$mul.co_name = new Sk.builtin.str("__mul__");
+Sk.builtin.complex.prototype.__mul__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$mul); 
 
-Sk.builtin.complex.prototype.__div__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$div = function __div__(self, other){
     Sk.builtin.pyCheckArgs("__div__", arguments, 1, 1, true);
     return self.nb$divide.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$div.co_name = new Sk.builtin.str("__div__");
+Sk.builtin.complex.prototype.__div__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$div); 
 
-Sk.builtin.complex.prototype.__floordiv__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$floordiv = function __floordiv__(self, other){
     Sk.builtin.pyCheckArgs("__floordiv__", arguments, 1, 1, true);
     return self.nb$floor_divide.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$floordiv.co_name = new Sk.builtin.str("__floordiv__");
+Sk.builtin.complex.prototype.__floordiv__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$floordiv); 
 
-Sk.builtin.complex.prototype.__mod__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$mod = function __mod__(self, other){
     Sk.builtin.pyCheckArgs("__mod__", arguments, 1, 1, true);
     return self.nb$remainder.call(self, other);
-});
+};
+Sk.builtin.complex.prototype.int$mod.co_name = new Sk.builtin.str("__mod__");
+Sk.builtin.complex.prototype.__mod__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$mod); 
 
-Sk.builtin.complex.prototype.__pow__ = new Sk.builtin.func(function (self, other, z){
+Sk.builtin.complex.prototype.int$pow = function __pow__(self, other, z){
     Sk.builtin.pyCheckArgs("__pow__", arguments, 1, 2, true);
     return self.nb$power.call(self, other, z);
-});
+};
+Sk.builtin.complex.prototype.int$pow.co_name = new Sk.builtin.str("__pow__");
+Sk.builtin.complex.prototype.__pow__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$pow); 
 
-Sk.builtin.complex.prototype.__neg__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$neg = function __neg__(self){
     Sk.builtin.pyCheckArgs("__neg__", arguments, 0, 0, true);
     return self.nb$negative.call(self);
-});
+};
+Sk.builtin.complex.prototype.__neg__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$neg); 
 
-Sk.builtin.complex.prototype.__pos__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$pos = function __pos__(self){
     Sk.builtin.pyCheckArgs("__pos__", arguments, 0, 0, true);
     return self.nb$positive.call(self);
-});
+};
+Sk.builtin.complex.prototype.int$pos.co_name = new Sk.builtin.str("__pos__");
+Sk.builtin.complex.prototype.__pos__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$pos); 
 
-Sk.builtin.complex.prototype.conjugate = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$conjugate = function conjugate(self){
     Sk.builtin.pyCheckArgs("conjugate", arguments, 0, 0, true);
     var _imag = self.imag.v;
     _imag = -_imag;
 
     return new Sk.builtin.complex(self.real, new Sk.builtin.float_(_imag));
-});
+};
+Sk.builtin.complex.prototype.int$conjugate.co_name = new Sk.builtin.str("conjugate");
+Sk.builtin.complex.prototype.conjugate = new Sk.builtin.func(Sk.builtin.complex.prototype.int$conjugate); 
 
 // deprecated
-Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(function (self, other){
+Sk.builtin.complex.prototype.int$divmod = function __divmod__(self, other){
     Sk.builtin.pyCheckArgs("__divmod__", arguments, 1, 1, true);
 
     var div, mod; // Py_complex
@@ -21202,15 +21340,19 @@ Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(function (self, ot
     z = new Sk.builtin.tuple([div, mod]);
 
     return z;
-});
+};
+Sk.builtin.complex.prototype.int$divmod.co_name = new Sk.builtin.str("__divmod__");
+Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$divmod); 
 
-Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$getnewargs = function __getnewargs__(self){
     Sk.builtin.pyCheckArgs("__getnewargs__", arguments, 0, 0, true);
 
     return new Sk.builtin.tuple([self.real, self.imag]);
-});
+};
+Sk.builtin.complex.prototype.int$getnewargs.co_name = new Sk.builtin.str("__getnewargs__");
+Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$getnewargs); 
 
-Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(function (self){
+Sk.builtin.complex.prototype.int$nonzero = function __nonzero__(self){
     Sk.builtin.pyCheckArgs("__nonzero__", arguments, 0, 0, true);
 
     if(self.real.v !== 0.0 || self.imag.v !== 0.0) {
@@ -21218,7 +21360,9 @@ Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(function (self){
     } else {
         return Sk.builtin.bool.false$;
     }
-});
+};
+Sk.builtin.complex.prototype.int$nonzero.co_name = new Sk.builtin.str("__nonzero__");
+Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$nonzero); 
 
 
 // ToDo: think about inplace methods too
@@ -32477,8 +32621,7 @@ Sk.importSearchPathForName = function (name, ext, searchPath) {
  * @return {undefined}
  */
 Sk.doOneTimeInitialization = function () {
-    var proto, name, i, x, func;
-    var builtins = [];
+    var proto, name, i, j, x, func, typesWithFunctionsToWrap, builtin_type;
 
     // can't fill these out when making the type because tuple/dict aren't
     // defined yet.
@@ -32515,31 +32658,23 @@ Sk.doOneTimeInitialization = function () {
 
     // Wrap the inner Javascript code of Sk.builtin.object's Python methods inside
     // Sk.builtin.func, as that class was undefined when these functions were declared
-    proto = Sk.builtin.object.prototype;
+    typesWithFunctionsToWrap = [Sk.builtin.object, Sk.builtin.type, Sk.builtin.func, Sk.builtin.method];
 
-    for (i = 0; i < Sk.builtin.object.pythonFunctions.length; i++) {
-        name = Sk.builtin.object.pythonFunctions[i];
+    for (i = 0; i < typesWithFunctionsToWrap.length; i++) {
+        builtin_type = typesWithFunctionsToWrap[i];
+        proto = builtin_type.prototype;
+        for (j = 0; j < builtin_type.pythonFunctions.length; j++) {
+            name = builtin_type.pythonFunctions[j];
 
-        if (proto[name] instanceof Sk.builtin.func) {
-            // If functions have already been initialized, do not wrap again.
-            break;
+            if (proto[name] instanceof Sk.builtin.func) {
+                // If functions have already been initialized, do not wrap again.
+                break;
+            }
+
+            proto[name] = new Sk.builtin.func(proto[name]);
         }
-
-        proto[name] = new Sk.builtin.func(proto[name]);
     }
 
-    proto = Sk.builtin.type.prototype;
-
-    for (i = 0; i < Sk.builtin.type.pythonFunctions.length; i++) {
-        name = Sk.builtin.type.pythonFunctions[i];
-
-        if (proto[name] instanceof Sk.builtin.func) {
-            // If functions have already been initialized, do not wrap again.
-            break;
-        }
-
-        proto[name] = new Sk.builtin.func(proto[name]);
-    }
 
     // compile internal python files and add them to the __builtin__ module
     for (var file in Sk.internalPy.files) {
@@ -34099,4 +34234,8 @@ Sk.builtin.lng.$defaults = [ new Sk.builtin.int_(10) ];
 Sk.builtin.sorted.co_varnames = ["cmp", "key", "reverse"];
 Sk.builtin.sorted.co_numargs = 4;
 Sk.builtin.sorted.$defaults = [Sk.builtin.none.none$, Sk.builtin.none.none$, Sk.builtin.bool.false$];
+
+// Sk.builtin.dict.fromkeys
+Sk.builtin.dict.$fromkeys.co_name = new Sk.builtin.str("fromkeys");
+Sk.builtin.dict.prototype["fromkeys"] = new Sk.builtin.func(Sk.builtin.dict.$fromkeys);
 Sk.internalPy={"files": {"src/staticmethod.py": "class staticmethod(object):\n    \"Emulate PyStaticMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, objtype=None):\n        return self.f\n", "src/property.py": "class property(object):\n    \"Emulate PyProperty_Type() in Objects/descrobject.c\"\n\n    def __init__(self, fget=None, fset=None, fdel=None, doc=None):\n        self.fget = fget\n        self.fset = fset\n        self.fdel = fdel\n        if doc is None and fget is not None:\n            if hasattr(fget, '__doc__'):\n                doc = fget.__doc__\n            else:\n                doc = None\n        self.__doc__ = doc\n\n    def __get__(self, obj, objtype=None):\n        if obj is None:\n            return self\n        if self.fget is None:\n            raise AttributeError(\"unreadable attribute\")\n        return self.fget(obj)\n\n    def __set__(self, obj, value):\n        if self.fset is None:\n            raise AttributeError(\"can't set attribute\")\n        self.fset(obj, value)\n\n    def __delete__(self, obj):\n        if self.fdel is None:\n            raise AttributeError(\"can't delete attribute\")\n        self.fdel(obj)\n\n    def getter(self, fget):\n        return type(self)(fget, self.fset, self.fdel, self.__doc__)\n\n    def setter(self, fset):\n        return type(self)(self.fget, fset, self.fdel, self.__doc__)\n\n    def deleter(self, fdel):\n        return type(self)(self.fget, self.fset, fdel, self.__doc__)\n", "src/classmethod.py": "class classmethod(object):\n    \"Emulate PyClassMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, klass=None):\n        if klass is None:\n            klass = type(obj)\n        def newfunc(*args):\n            return self.f(klass, *args)\n        return newfunc\n"}};
