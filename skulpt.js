@@ -5460,7 +5460,7 @@ Sk.builtin.type = function (name, bases, dict) {
                     throw e;
                 }
             });
-            
+
             return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
         };
 
@@ -6867,15 +6867,15 @@ Sk.builtin.object = function () {
     return this;
 };
 
-
-
-var _tryGetSubscript = function(dict, pyName) {
+Sk.builtin._tryGetSubscript = function(dict, pyName) {
     try {
         return dict.mp$subscript(pyName);
     } catch (x) {
         return undefined;
     }
 };
+goog.exportSymbol("Sk.builtin._tryGetSubscript", Sk.builtin._tryGetSubscript);
+
 
 /**
  * Get an attribute
@@ -6903,7 +6903,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
         if (dict.mp$lookup) {
             res = dict.mp$lookup(pyName);
         } else if (dict.mp$subscript) {
-            res = _tryGetSubscript(dict, pyName);
+            res = Sk.builtin._tryGetSubscript(dict, pyName);
         } else if (typeof dict === "object") {
             res = dict[name];
         }
@@ -8563,10 +8563,6 @@ Sk.builtin.jseval = function jseval (evalcode) {
 Sk.builtin.jsmillis = function jsmillis () {
     var now = new Date();
     return now.valueOf();
-};
-
-Sk.builtin.superbi = function superbi () {
-    throw new Sk.builtin.NotImplementedError("super is not yet implemented, please report your use case as a github issue.");
 };
 
 Sk.builtin.eval_ = function eval_ () {
@@ -11024,15 +11020,16 @@ goog.exportSymbol("Sk.misceval.promiseToSuspension", Sk.misceval.promiseToSuspen
  * should return a newly constructed class object.
  *
  */
-Sk.misceval.buildClass = function (globals, func, name, bases) {
+Sk.misceval.buildClass = function (globals, func, name, bases, cell) {
     // todo; metaclass
     var klass;
     var meta = Sk.builtin.type;
 
+    var l_cell = cell === undefined ? {} : cell;
     var locals = {};
 
     // init the dict for the class
-    func(globals, locals, []);
+    func(globals, locals, l_cell);
     // ToDo: check if func contains the __meta__ attribute
     // or if the bases contain __meta__
     // new Syntax would be different
@@ -11056,6 +11053,7 @@ Sk.misceval.buildClass = function (globals, func, name, bases) {
     _locals = new Sk.builtin.dict(_locals);
 
     klass = Sk.misceval.callsim(meta, _name, _bases, _locals);
+
     return klass;
 };
 goog.exportSymbol("Sk.misceval.buildClass", Sk.misceval.buildClass);
@@ -30294,6 +30292,15 @@ Compiler.prototype.ccall = function (e) {
     }
     else {
         out ("$ret;"); // This forces a failure if $ret isn't defined
+        if (Sk.python3 && e.func.id && e.func.id.v === "super" && args.length == 0) {
+            // make sure there is a self variable
+            // note that it's part of the js API spec: https://developer.mozilla.org/en/docs/Web/API/Window/self
+            // so we should probably add self to the mangling
+            // TODO: feel free to ignore the above
+            out("if (typeof self === \"undefined\" || self.toString().indexOf(\"Window\") > 0) { throw new Sk.builtin.RuntimeError(\"super(): no arguments\") };")
+            args.push("$gbl.__class__");
+            args.push("self");
+        }
         out ("$ret = Sk.misceval.callsimOrSuspend(", func, args.length > 0 ? "," : "", args, ");");
     }
 
@@ -31043,7 +31050,7 @@ Compiler.prototype.ctryexcept = function (s) {
 
 Compiler.prototype.outputFinallyCascade = function (thisFinally) {
     var nextFinally;
-    
+
     // What do we do when we're done executing a 'finally' block?
     // Normally you just fall off the end. If we're 'return'ing,
     // 'continue'ing or 'break'ing, $postfinally tells us what to do.
@@ -31074,7 +31081,7 @@ Compiler.prototype.outputFinallyCascade = function (thisFinally) {
         // ('continue' is the same thing as 'break' for us)
 
         nextFinally = this.peekFinallyBlock();
-        
+
         out("if($postfinally!==undefined) {",
                 "if ($postfinally.returning",
                     (nextFinally.breakDepth == thisFinally.breakDepth) ? "|| $postfinally.isBreak" : "", ") {",
@@ -31309,11 +31316,12 @@ Compiler.prototype.cfromimport = function (s) {
  * @param {Array} decorator_list ast of decorators if any
  * @param {arguments_} args arguments to function, if any
  * @param {Function} callback called after setup to do actual work of function
+ * @param {Sk.builtin.str=} class_for_super
  *
  * @returns the name of the newly created function or generator object.
  *
  */
-Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, callback) {
+Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, callback, class_for_super) {
     var containingHasFree;
     var frees;
     var argnamesarr;
@@ -31422,13 +31430,10 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         entryBlock = "$gen.gi$resumeat";
         locals = "$gen.gi$locals";
     }
-    cells = "";
+    cells = ",$cell={}";
     if (hasCell) {
         if (isGenerator) {
             cells = ",$cell=$gen.gi$cells";
-        }
-        else {
-            cells = ",$cell={}";
         }
     }
 
@@ -31509,8 +31514,11 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     //
     this.u.varDeclsCode += "}";
 
+    // inject __class__ cell when running python3
+    if (Sk.python3 && class_for_super) {
+        this.u.varDeclsCode += "$gbl.__class__=this." + class_for_super.v + ";";
+    }
 
-    //
     // finally, set up the block switch that the jump code expects
     //
     // Old switch code
@@ -31627,13 +31635,13 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     }
 };
 
-Compiler.prototype.cfunction = function (s) {
+Compiler.prototype.cfunction = function (s, class_for_super) {
     var funcorgen;
     goog.asserts.assert(s instanceof FunctionDef);
     funcorgen = this.buildcodeobj(s, s.name, s.decorator_list, s.args, function (scopename) {
         this.vseqstmt(s.body);
         out("return Sk.builtin.none.none$;"); // if we fall off the bottom, we want the ret to be None
-    });
+    }, class_for_super);
     this.nameop(s.name, Store, funcorgen);
 };
 
@@ -31770,9 +31778,10 @@ Compiler.prototype.cclass = function (s) {
     scopename = this.enterScope(s.name, s, s.lineno);
     entryBlock = this.newBlock("class entry");
 
-    this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$rest){var $gbl=$globals,$loc=$locals;";
+    this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$cell){var $gbl=$globals,$loc=$locals;";
     this.u.switchCode += "(function $" + s.name.v + "$_closure(){";
     this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[],$ret=undefined,$postfinally=undefined,$currLineNo=undefined,$currColNo=undefined;"
+
     if (Sk.execLimit !== null) {
         this.u.switchCode += "if (typeof Sk.execStart === 'undefined') {Sk.execStart = Date.now()}";
     }
@@ -31784,11 +31793,11 @@ Compiler.prototype.cclass = function (s) {
     this.u.switchCode += this.outputInterruptTest();
     this.u.switchCode += "switch($blk){";
     this.u.suffixCode = "}}catch(err){ if (!(err instanceof Sk.builtin.BaseException)) { err = new Sk.builtin.ExternalError(err); } err.traceback.push({lineno: $currLineNo, colno: $currColNo, filename: '"+this.filename+"'}); if ($exc.length>0) { $err = err; $blk=$exc.pop(); continue; } else { throw err; }}}"
-    this.u.suffixCode += "}).apply(null,$rest);});";
+    this.u.suffixCode += "}).call(null, $cell);});";
 
     this.u.private_ = s.name;
 
-    this.cbody(s.body);
+    this.cbody(s.body, s.name);
     out("return;");
 
     // build class
@@ -31798,7 +31807,7 @@ Compiler.prototype.cclass = function (s) {
     this.exitScope();
 
     // todo; metaclass
-    wrapped = this._gr("built", "Sk.misceval.buildClass($gbl,", scopename, ",", s.name["$r"]().v, ",[", bases, "])");
+    wrapped = this._gr("built", "Sk.misceval.buildClass($gbl,", scopename, ",", s.name["$r"]().v, ",[", bases, "], $cell)");
 
     // store our new class under the right name
     this.nameop(s.name, Store, wrapped);
@@ -31835,8 +31844,10 @@ Compiler.prototype.cbreak = function (s) {
 
 /**
  * compiles a statement
+ * @param {Object} s
+ * @param {Sk.builtin.str=} class_for_super
  */
-Compiler.prototype.vstmt = function (s) {
+Compiler.prototype.vstmt = function (s, class_for_super) {
     var i;
     var val;
     var n;
@@ -31849,7 +31860,7 @@ Compiler.prototype.vstmt = function (s) {
         debugBlock = this.newBlock("debug breakpoint for line "+s.lineno);
         out("if (Sk.breakpoints('"+this.filename+"',"+s.lineno+","+s.col_offset+")) {",
             "var $susp = $saveSuspension({data: {type: 'Sk.debug'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
-            "$susp.$blk = "+debugBlock+";",
+            "$susp.$blk = " + debugBlock + ";",
             "$susp.optional = true;",
             "return $susp;",
             "}");
@@ -31862,7 +31873,7 @@ Compiler.prototype.vstmt = function (s) {
 
     switch (s.constructor) {
         case FunctionDef:
-            this.cfunction(s);
+            this.cfunction(s, class_for_super);
             break;
         case ClassDef:
             this.cclass(s);
@@ -31931,7 +31942,7 @@ Compiler.prototype.vstmt = function (s) {
             out("debugger;");
             break;
         default:
-            goog.asserts.fail("unhandled case in vstmt: " + s.constructor.name);
+            goog.asserts.fail("unhandled case in vstmt: " + JSON.stringify(s));
     }
 };
 
@@ -32162,10 +32173,14 @@ Compiler.prototype.exitScope = function () {
     }
 };
 
-Compiler.prototype.cbody = function (stmts) {
+/**
+ * @param {Array} stmts
+ * @param {Sk.builtin.str=} class_for_super
+ */
+Compiler.prototype.cbody = function (stmts, class_for_super) {
     var i;
     for (i = 0; i < stmts.length; ++i) {
-        this.vstmt(stmts[i]);
+        this.vstmt(stmts[i], class_for_super);
     }
 };
 
@@ -32188,6 +32203,7 @@ Compiler.prototype.cprint = function (s) {
         out("Sk.misceval.print_(", /*dest, ',*/ "\"\\n\");");
     }
 };
+
 Compiler.prototype.cmod = function (mod) {
     //print("-----");
     //print(Sk.astDump(mod));
@@ -32197,7 +32213,7 @@ Compiler.prototype.cmod = function (mod) {
     this.u.prefixCode = "var " + modf + "=(function($forcegbl){";
     this.u.varDeclsCode =
         "var $gbl = $forcegbl || {}, $blk=" + entryBlock +
-        ",$exc=[],$loc=$gbl,$err=undefined;" + 
+        ",$exc=[],$loc=$gbl,$cell={},$err=undefined;" +
         "$loc.__file__=new Sk.builtins.str('" + this.filename +
         "');var $ret=undefined,$postfinally=undefined,$currLineNo=undefined,$currColNo=undefined;";
 
@@ -32479,10 +32495,14 @@ Sk.doOneTimeInitialization = function () {
         for (base = parent; base !== undefined; base = base.tp$base) {
             bases.push(base);
         }
-
+        
+        child.tp$mro = new Sk.builtin.tuple([child]);
+        if (!child.tp$base){ 
+            child.tp$base = bases[0];
+        }
         child["$d"] = new Sk.builtin.dict([]);
         child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
-        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([child]));
+        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, child.tp$mro);
     };
 
     for (x in Sk.builtin) {
@@ -33792,7 +33812,150 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
 };
 
 /* NOTE: See constants used for kwargs in constants.js */
-// Note: the hacky names on int, long, float have to correspond with the
+Sk.builtin.type_is_subtype_base_chain = function type_is_subtype_base_chain(a, b) {
+    do {
+        if (a == b) {
+            return true;
+        }
+
+        a = a.tp$base;
+    } while (a !== undefined);
+
+    return (b == Sk.builtin.object);
+};
+
+Sk.builtin.PyType_IsSubtype = function PyType_IsSubtype(a, b) {
+    var mro = a.tp$mro;
+    if (mro) {
+        /* Deal with multiple inheritance without recursion
+           by walking the MRO tuple */
+        goog.asserts.assert(mro instanceof Sk.builtin.tuple);
+        for (var i = 0; i < mro.v.length; i++) {
+            if (mro.v[i] == b) {
+                return true;
+            }
+        }
+        return false;
+    } else {
+        /* a is not completely initilized yet; follow tp_base */
+        return Sk.builtin.type_is_subtype_base_chain(a, b);
+    }
+};
+
+/**
+ * @constructor
+ * Sk.builtin.super_
+ */
+Sk.builtin.super_ = function super_ (a_type, self) {
+    Sk.builtin.pyCheckArgs("super", arguments, 1);
+
+    var type, obj, obj_type;
+
+    if (!(this instanceof Sk.builtin.super_)) {
+        return new Sk.builtin.super_(a_type, self);
+    }
+
+    Sk.misceval.callsim(Sk.builtin.super_.__init__, this, a_type, self);
+
+    return this;
+};
+
+Sk.builtin.super_.__init__ = new Sk.builtin.func(function(self, a_type, other_self) {
+    self.obj = other_self;
+    self.type = a_type;
+
+    if (!a_type.tp$mro) {
+        throw new Sk.builtin.TypeError("must be type, not " + a_type.ob$type.tp$name);
+    }
+
+    self.obj_type = a_type.tp$mro.v[1];
+
+    if (!other_self) {
+        throw new Sk.builtin.NotImplementedError("unbound super not supported because " +
+                "skulpts implementation of type descriptors aren't brilliant yet, see this " +
+                "question for more information https://stackoverflow.com/a/30190341/117242");
+    }
+
+    if (!Sk.builtin.PyType_IsSubtype(self.obj.ob$type, self.type)) {
+        throw new Sk.builtin.TypeError("super(type, obj): obj must be an instance of subtype of type");
+    }
+
+    return Sk.builtin.none.none$;
+});
+
+Sk.abstr.setUpInheritance("super", Sk.builtin.super_, Sk.builtin.object);
+
+/**
+ * Get an attribute
+ * @param {string} name JS name of the attribute
+ * @param {boolean=} canSuspend Can we return a suspension?
+ * @return {undefined}
+ */
+Sk.builtin.super_.prototype.tp$getattr = function (name, canSuspend) {
+    var res;
+    var f;
+    var descr;
+    var tp;
+    var dict;
+    var pyName = new Sk.builtin.str(name);
+    goog.asserts.assert(typeof name === "string");
+
+    tp = this.obj_type;
+    goog.asserts.assert(tp !== undefined, "object has no ob$type!");
+
+    dict = this.obj["$d"] || this.obj.constructor["$d"];
+
+    // todo; assert? force?
+    if (dict) {
+        if (dict.mp$lookup) {
+            res = dict.mp$lookup(pyName);
+        } else if (dict.mp$subscript) {
+            res = Sk.builtin._tryGetSubscript(dict, pyName);
+        } else if (typeof dict === "object") {
+            // todo; definitely the wrong place for this. other custom tp$getattr won't work on object -- bnm -- implemented custom __getattr__ in abstract.js
+            res = dict[name];
+        }
+        if (res !== undefined) {
+            return res;
+        }
+    }
+
+    descr = Sk.builtin.type.typeLookup(tp, name);
+
+    // otherwise, look in the type for a descr
+    if (descr !== undefined && descr !== null) {
+        f = descr.tp$descr_get;
+        // todo - data descriptors (ie those with tp$descr_set too) get a different lookup priority
+
+        if (f) {
+            // non-data descriptor
+            return f.call(descr, this.obj, this.obj_type, canSuspend);
+        }
+    }
+
+    if (descr !== undefined) {
+        return descr;
+    }
+
+    return undefined;
+};
+
+Sk.builtin.super_.prototype["$r"] = function super_repr(self) {
+    if (this.obj) {
+        return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.tp$name : "NULL") + "'>, <" + this.obj.tp$name + " object>>");
+    }
+
+    return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.tp$name : "NULL") + "'>, NULL>");
+};
+
+Sk.builtin.super_.__doc__ = new Sk.builtin.str(
+    "super(type, obj) -> bound super object; requires isinstance(obj, type)\n" +
+    "super(type) -> unbound super object\n" +
+    "super(type, type2) -> bound super object; requires issubclass(type2, type)\n" +
+    "Typical use to call a cooperative superclass method:\n" +
+    "class C(B):\n" +
+    "    def meth(self, arg):\n" +
+    "        super(C, self).meth(arg)");// Note: the hacky names on int, long, float have to correspond with the
 // uniquization that the compiler does for words that are reserved in
 // Javascript. This is a bit hokey.
 Sk.builtins = {
@@ -33894,7 +34057,7 @@ Sk.builtins = {
     "pow"       : Sk.builtin.pow,
     "reload"    : Sk.builtin.reload,
     "reversed"  : Sk.builtin.reversed,
-    "super"     : Sk.builtin.superbi,
+    "super"     : Sk.builtin.super_,
     "unichr"    : Sk.builtin.unichr,
     "vars"      : Sk.builtin.vars,
     "xrange"    : Sk.builtin.xrange,
