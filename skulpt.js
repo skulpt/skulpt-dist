@@ -4902,7 +4902,181 @@ define("promise/utils",
   });
 requireModule('promise/polyfill').polyfill();
 }(this));
-/**
+(function (global) {
+    "use strict";
+
+    if (global.setImmediate) {
+        return;
+    }
+
+    var nextHandle = 1; // Spec says greater than zero
+    var tasksByHandle = {};
+    var currentlyRunningATask = false;
+    var doc = global.document;
+    var setImmediate;
+
+    function addFromSetImmediateArguments(args) {
+        tasksByHandle[nextHandle] = partiallyApplied.apply(undefined, args);
+        return nextHandle++;
+    }
+
+    // This function accepts the same arguments as setImmediate, but
+    // returns a function that requires no arguments.
+    function partiallyApplied(handler, timeout) {
+        var args = [].slice.call(arguments, 1);
+        return function() {
+            if (typeof handler === "function") {
+                handler.apply(undefined, args);
+            } else {
+                (new Function("" + handler))();
+            }
+        };
+    }
+
+    function runIfPresent(handle) {
+        // From the spec: "Wait until any invocations of this algorithm started before this one have completed."
+        // So if we're currently running a task, we'll need to delay this invocation.
+        if (currentlyRunningATask) {
+            // Delay by doing a setTimeout. setImmediate was tried instead, but in Firefox 7 it generated a
+            // "too much recursion" error.
+            setTimeout(partiallyApplied(runIfPresent, handle), 0);
+        } else {
+            var task = tasksByHandle[handle];
+            if (task) {
+                currentlyRunningATask = true;
+                try {
+                    task();
+                } finally {
+                    clearImmediate(handle);
+                    currentlyRunningATask = false;
+                }
+            }
+        }
+    }
+
+    function clearImmediate(handle) {
+        delete tasksByHandle[handle];
+    }
+
+    function installNextTickImplementation() {
+        setImmediate = function() {
+            var handle = addFromSetImmediateArguments(arguments);
+            process.nextTick(partiallyApplied(runIfPresent, handle));
+            return handle;
+        };
+    }
+
+    function canUsePostMessage() {
+        // The test against `importScripts` prevents this implementation from being installed inside a web worker,
+        // where `global.postMessage` means something completely different and can't be used for this purpose.
+        if (global.postMessage && !global.importScripts) {
+            var postMessageIsAsynchronous = true;
+            var oldOnMessage = global.onmessage;
+            global.onmessage = function() {
+                postMessageIsAsynchronous = false;
+            };
+            global.postMessage("", "*");
+            global.onmessage = oldOnMessage;
+            return postMessageIsAsynchronous;
+        }
+    }
+
+    function installPostMessageImplementation() {
+        // Installs an event handler on `global` for the `message` event: see
+        // * https://developer.mozilla.org/en/DOM/window.postMessage
+        // * http://www.whatwg.org/specs/web-apps/current-work/multipage/comms.html#crossDocumentMessages
+
+        var messagePrefix = "setImmediate$" + Math.random() + "$";
+        var onGlobalMessage = function(event) {
+            if (event.source === global &&
+                typeof event.data === "string" &&
+                event.data.indexOf(messagePrefix) === 0) {
+                runIfPresent(+event.data.slice(messagePrefix.length));
+            }
+        };
+
+        if (global.addEventListener) {
+            global.addEventListener("message", onGlobalMessage, false);
+        } else {
+            global.attachEvent("onmessage", onGlobalMessage);
+        }
+
+        setImmediate = function() {
+            var handle = addFromSetImmediateArguments(arguments);
+            global.postMessage(messagePrefix + handle, "*");
+            return handle;
+        };
+    }
+
+    function installMessageChannelImplementation() {
+        var channel = new MessageChannel();
+        channel.port1.onmessage = function(event) {
+            var handle = event.data;
+            runIfPresent(handle);
+        };
+
+        setImmediate = function() {
+            var handle = addFromSetImmediateArguments(arguments);
+            channel.port2.postMessage(handle);
+            return handle;
+        };
+    }
+
+    function installReadyStateChangeImplementation() {
+        var html = doc.documentElement;
+        setImmediate = function() {
+            var handle = addFromSetImmediateArguments(arguments);
+            // Create a <script> element; its readystatechange event will be fired asynchronously once it is inserted
+            // into the document. Do so, thus queuing up the task. Remember to clean up once it's been called.
+            var script = doc.createElement("script");
+            script.onreadystatechange = function () {
+                runIfPresent(handle);
+                script.onreadystatechange = null;
+                html.removeChild(script);
+                script = null;
+            };
+            html.appendChild(script);
+            return handle;
+        };
+    }
+
+    function installSetTimeoutImplementation() {
+        setImmediate = function() {
+            var handle = addFromSetImmediateArguments(arguments);
+            setTimeout(partiallyApplied(runIfPresent, handle), 0);
+            return handle;
+        };
+    }
+
+    // If supported, we should attach to the prototype of global, since that is where setTimeout et al. live.
+    var attachTo = Object.getPrototypeOf && Object.getPrototypeOf(global);
+    attachTo = attachTo && attachTo.setTimeout ? attachTo : global;
+
+    // Don't get fooled by e.g. browserify environments.
+    if ({}.toString.call(global.process) === "[object process]") {
+        // For Node.js before 0.9
+        installNextTickImplementation();
+
+    } else if (canUsePostMessage()) {
+        // For non-IE10 modern browsers
+        installPostMessageImplementation();
+
+    } else if (global.MessageChannel) {
+        // For web workers, where supported
+        installMessageChannelImplementation();
+
+    } else if (doc && "onreadystatechange" in doc.createElement("script")) {
+        // For IE 6–8
+        installReadyStateChangeImplementation();
+
+    } else {
+        // For older browsers
+        installSetTimeoutImplementation();
+    }
+
+    attachTo.setImmediate = setImmediate;
+    attachTo.clearImmediate = clearImmediate;
+}(typeof self === "undefined" ? typeof global === "undefined" ? this : global : self));/**
  * Base namespace for Skulpt. This is the only symbol that Skulpt adds to the
  * global namespace. Other user accessible symbols are noted and described
  * below.
@@ -4920,9 +5094,59 @@ var Sk = Sk || {}; //jshint ignore:line
  * strings.
  * syspath: Setable to emulate PYTHONPATH environment variable (for finding
  * modules). Should be an array of JS strings.
+ * nonreadopen: Boolean - set to true to allow non-read file operations
+ * fileopen: Optional function to call any time a file is opened
+ * filewrite: Optional function to call when writing to a file
  *
  * Any variables that aren't set will be left alone.
  */
+
+Sk.bool_check = function(variable, name) {
+    if (variable === undefined || variable === null || typeof variable !== "boolean") {
+        throw new Error("must specify " + name + " and it must be a boolean");
+    }
+};
+
+Sk.python2 = {
+    print_function: false,
+    division: false,
+    absolute_import: null,
+    unicode_literals: false,
+    // skulpt specific
+    set_repr: false,
+    class_repr: false,
+    inherit_from_object: false,
+    super_args: false,
+    octal_number_literal: false,
+    bankers_rounding: false,
+    python_version: false,
+    dunder_next: false,
+    dunder_round: false,
+    exceptions: false,
+    no_long_type: false,
+    ceil_floor_int: false
+};
+
+Sk.python3 = {
+    print_function: true,
+    division: true,
+    absolute_import: null,
+    unicode_literals: true,
+    // skulpt specific
+    set_repr: true,
+    class_repr: true,
+    inherit_from_object: true,
+    super_args: true,
+    octal_number_literal: true,
+    bankers_rounding: true,
+    python_version: true,
+    dunder_next: true,
+    dunder_round: true,
+    exceptions: true,
+    no_long_type: true,
+    ceil_floor_int: true
+};
+
 Sk.configure = function (options) {
     "use strict";
     Sk.output = options["output"] || Sk.output;
@@ -4937,6 +5161,15 @@ Sk.configure = function (options) {
     Sk.read = options["read"] || Sk.read;
     goog.asserts.assert(typeof Sk.read === "function");
 
+    Sk.nonreadopen = options["nonreadopen"] || false;
+    goog.asserts.assert(typeof Sk.nonreadopen === "boolean");
+
+    Sk.fileopen = options["fileopen"] || undefined;
+    goog.asserts.assert(typeof Sk.fileopen === "function" || typeof Sk.fileopen === "undefined");
+
+    Sk.filewrite = options["filewrite"] || undefined;
+    goog.asserts.assert(typeof Sk.filewrite === "function" || typeof Sk.filewrite === "undefined");
+
     Sk.timeoutMsg = options["timeoutMsg"] || Sk.timeoutMsg;
     goog.asserts.assert(typeof Sk.timeoutMsg === "function");
     goog.exportSymbol("Sk.timeoutMsg", Sk.timeoutMsg);
@@ -4944,15 +5177,32 @@ Sk.configure = function (options) {
     Sk.sysargv = options["sysargv"] || Sk.sysargv;
     goog.asserts.assert(goog.isArrayLike(Sk.sysargv));
 
-    Sk.python3 = options["python3"] || Sk.python3;
-    goog.asserts.assert(typeof Sk.python3 === "boolean");
+    Sk.__future__ = options["__future__"] || Sk.python2;
+
+    Sk.bool_check(Sk.__future__.print_function, "Sk.__future__.print_function");
+    Sk.bool_check(Sk.__future__.division, "Sk.__future__.division");
+    Sk.bool_check(Sk.__future__.unicode_literals, "Sk.__future__.unicode_literals");
+    Sk.bool_check(Sk.__future__.set_repr, "Sk.__future__.set_repr");
+    Sk.bool_check(Sk.__future__.class_repr, "Sk.__future__.class_repr");
+    Sk.bool_check(Sk.__future__.inherit_from_object, "Sk.__future__.inherit_from_object");
+    Sk.bool_check(Sk.__future__.super_args, "Sk.__future__.super_args");
+    Sk.bool_check(Sk.__future__.octal_number_literal, "Sk.__future__.octal_number_literal");
+    Sk.bool_check(Sk.__future__.bankers_rounding, "Sk.__future__.bankers_rounding");
+    Sk.bool_check(Sk.__future__.python_version, "Sk.__future__.python_version");
+    Sk.bool_check(Sk.__future__.dunder_next, "Sk.__future__.dunder_next");
+    Sk.bool_check(Sk.__future__.dunder_round, "Sk.__future__.dunder_round");
+    Sk.bool_check(Sk.__future__.exceptions, "Sk.__future__.exceptions");
+    Sk.bool_check(Sk.__future__.no_long_type, "Sk.__future__.no_long_type");
+    Sk.bool_check(Sk.__future__.ceil_floor_int, "Sk.__future__.ceil_floor_int");
+
+    // in __future__ add checks for absolute_import
 
     Sk.imageProxy = options["imageProxy"] || "http://localhost:8080/320x";
-    goog.asserts.assert(typeof Sk.imageProxy === "string");
+    goog.asserts.assert(typeof Sk.imageProxy === "string" || typeof Sk.imageProxy === "function");
 
     Sk.inputfun = options["inputfun"] || Sk.inputfun;
     goog.asserts.assert(typeof Sk.inputfun === "function");
-    
+
     Sk.inputfunTakesPrompt = options["inputfunTakesPrompt"] || false;
     goog.asserts.assert(typeof Sk.inputfunTakesPrompt === "boolean");
 
@@ -4961,6 +5211,36 @@ Sk.configure = function (options) {
 
     Sk.debugging = options["debugging"] || false;
     goog.asserts.assert(typeof Sk.debugging === "boolean");
+
+    Sk.killableWhile = options["killableWhile"] || false;
+    goog.asserts.assert(typeof Sk.killableWhile === "boolean");
+
+    Sk.killableFor = options["killableFor"] || false;
+    goog.asserts.assert(typeof Sk.killableFor === "boolean");
+
+    Sk.signals = typeof options["signals"] !== undefined ? options["signals"] : null;
+    if (Sk.signals === true) {
+        Sk.signals = {
+            listeners: [],
+            addEventListener: function (handler) {
+                Sk.signals.listeners.push(handler);
+            },
+            removeEventListener: function (handler) {
+                var index = Sk.signals.listeners.indexOf(handler);
+                if (index >= 0) {
+                    Sk.signals.listeners.splice(index, 1); // Remove items
+                }
+            },
+            signal: function (signal, data) {
+                for (var i = 0; i < Sk.signals.listeners.length; i++) {
+                    Sk.signals.listeners[i].call(null, signal, data);
+                }
+            }
+        };
+    } else {
+        Sk.signals = null;
+    }
+    goog.asserts.assert(typeof Sk.signals === "object");
 
     Sk.breakpoints = options["breakpoints"] || function() { return true; };
     goog.asserts.assert(typeof Sk.breakpoints === "function");
@@ -4994,9 +5274,20 @@ Sk.configure = function (options) {
 
     Sk.misceval.softspace_ = false;
 
-    Sk.switch_version(Sk.python3);
+    Sk.switch_version("round$", Sk.__future__.dunder_round);
+    Sk.switch_version("next$", Sk.__future__.dunder_next);
+
+    Sk.builtin.lng.tp$name = Sk.__future__.no_long_type ? "int" : "long";
 };
+
 goog.exportSymbol("Sk.configure", Sk.configure);
+
+/*
+* Replaceable handler for uncaught exceptions
+*/
+Sk.uncaughtException = function(err) {
+    throw err;
+};
 
 /*
  * Replaceable handler for uncaught exceptions
@@ -5089,7 +5380,6 @@ if (!Sk.inBrowser) {
     };
 }
 
-Sk.python3 = false;
 Sk.inputfun = function (args) {
     return window.prompt(args);
 };
@@ -5106,7 +5396,7 @@ Sk.inputfun = function (args) {
 //   ...
 
 Sk.setup_method_mappings = function () {
-    Sk.methodMappings = {
+    return {
         "round$": {
             "classes": [Sk.builtin.float_,
                         Sk.builtin.int_,
@@ -5129,36 +5419,35 @@ Sk.setup_method_mappings = function () {
     };
 };
 
-Sk.switch_version = function (python3) {
-    var internal, klass, classes, idx, len, newmeth, oldmeth;
+Sk.switch_version = function (method_to_map, python3) {
+    var mapping, klass, classes, idx, len, newmeth, oldmeth, mappings;
 
-    if (!Sk.hasOwnProperty("methodMappings")) {
-        Sk.setup_method_mappings();
+    mappings = Sk.setup_method_mappings();
+
+    mapping = mappings[method_to_map];
+
+    if (python3) {
+        newmeth = mapping[3];
+        oldmeth = mapping[2];
+    } else {
+        newmeth = mapping[2];
+        oldmeth = mapping[3];
     }
 
-    for (internal in Sk.methodMappings) {
-        if (python3) {
-            newmeth = Sk.methodMappings[internal][3];
-            oldmeth = Sk.methodMappings[internal][2];
-        } else {
-            newmeth = Sk.methodMappings[internal][2];
-            oldmeth = Sk.methodMappings[internal][3];
+    classes = mapping["classes"];
+    len = classes.length;
+    for (idx = 0; idx < len; idx++) {
+        klass = classes[idx];
+        if (oldmeth && klass.prototype.hasOwnProperty(oldmeth)) {
+            delete klass.prototype[oldmeth];
         }
-        classes = Sk.methodMappings[internal]["classes"];
-        len = classes.length;
-        for (idx = 0; idx < len; idx++) {
-            klass = classes[idx];
-            if (oldmeth && klass.prototype.hasOwnProperty(oldmeth)) {
-                delete klass.prototype[oldmeth];
-            }
-            if (newmeth) {
-                klass.prototype[newmeth] = new Sk.builtin.func(klass.prototype[internal]);
-            }
+        if (newmeth) {
+            klass.prototype[newmeth] = new Sk.builtin.func(klass.prototype[method_to_map]);
         }
     }
 };
 
-goog.exportSymbol("Sk.python3", Sk.python3);
+goog.exportSymbol("Sk.__future__", Sk.__future__);
 goog.exportSymbol("Sk.inputfun", Sk.inputfun);
 goog.require("goog.asserts");
 if(Sk.builtin === undefined) {
@@ -5295,7 +5584,6 @@ Sk.builtin.type = function (name, bases, dict) {
             this["$d"].mp$ass_subscript(new Sk.builtin.str("__dict__"), this["$d"]);
         };
 
-
         var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
 
         var inheritsBuiltin = false;
@@ -5341,8 +5629,9 @@ Sk.builtin.type = function (name, bases, dict) {
             });
         };
 
-        if (bases.v.length === 0 && Sk.python3) {
+        if (bases.v.length === 0 && Sk.__future__.inherit_from_object) {
             // new style class, inherits from object by default
+            bases.v.push(Sk.builtin.object);
             Sk.abstr.setUpInheritance(_name, klass, Sk.builtin.object);
         }
 
@@ -5502,7 +5791,7 @@ Sk.builtin.type = function (name, bases, dict) {
             var self = this;
             var next;
 
-            if (Sk.python3) {
+            if (Sk.__future__.dunder_next) {
                 next = "__next__";
             } else {
                 next = "next";
@@ -5622,7 +5911,7 @@ Sk.builtin.type.makeIntoTypeObj = function (name, t) {
             cname = mod.v + ".";
         }
         ctype = "class";
-        if (!mod && !t.sk$klass && !Sk.python3) {
+        if (!mod && !t.sk$klass && !Sk.__future__.class_repr) {
             ctype = "type";
         }
         return new Sk.builtin.str("<" + ctype + " '" + cname + t.tp$name + "'>");
@@ -5640,7 +5929,7 @@ Sk.builtin.type.ob$type = Sk.builtin.type;
 Sk.builtin.type.tp$name = "type";
 Sk.builtin.type.sk$type = true;
 Sk.builtin.type["$r"] = function () {
-    if(Sk.python3) {
+    if(Sk.__future__.class_repr) {
         return new Sk.builtin.str("<class 'type'>");
     } else {
         return new Sk.builtin.str("<type 'type'>");
@@ -5845,12 +6134,10 @@ Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
     if (!this["$r"] || !other["$r"]) {
         return undefined;
     }
-    r1 = new Sk.builtin.str(this["$r"]().v.slice(1,6));
-    r2 = new Sk.builtin.str(other["$r"]().v.slice(1,6));
-    if (this["$r"]().v.slice(1,6) !== "class") {
-        r1 = this["$r"]();
-        r2 = other["$r"]();
-    }
+
+    r1 = this["$r"]();
+    r2 = other["$r"]();
+
     return r1.tp$richcompare(r2, op);
 };
 
@@ -6868,6 +7155,11 @@ Sk.builtin.object = function () {
     return this;
 };
 
+Sk.builtin.object.prototype.__init__ = function __init__() {
+    return Sk.builtin.none.none$;
+};
+Sk.builtin.object.prototype.__init__.co_kwargs = 1;
+
 Sk.builtin._tryGetSubscript = function(dict, pyName) {
     try {
         return dict.mp$subscript(pyName);
@@ -6898,6 +7190,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
     goog.asserts.assert(tp !== undefined, "object has no ob$type!");
 
     dict = this["$d"] || this.constructor["$d"];
+    //print("getattr", tp.tp$name, name);
 
     // todo; assert? force?
     if (dict) {
@@ -7085,7 +7378,7 @@ Sk.builtin.object.prototype["__format__"] = function (self, format_spec) {
     Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
-        if (Sk.python3) {
+        if (Sk.__future__.exceptions) {
             throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
         } else {
             throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
@@ -7195,6 +7488,14 @@ Sk.builtin.object.prototype["__ge__"] = function (self, other) {
     Sk.builtin.pyCheckArgs("__ge__", arguments, 1, 1, false, true);
 
     return self.ob$ge(other);
+};
+
+Sk.builtin.object.prototype.__get__ = function __get__(self, instance, owner) {
+    Sk.builtin.pyCheckArgs("__get__", arguments, 1, 2, false, true);
+
+    var l_owner = !owner ? instance.ob$type : owner;
+
+    return self.tp$descr_get(instance, l_owner);
 };
 
 /** Default implementations of Javascript functions used in dunder methods */
@@ -7330,7 +7631,7 @@ Sk.builtin.object.prototype.ob$ge = function (other) {
 Sk.builtin.object.pythonFunctions = ["__repr__", "__str__", "__hash__",
                                      "__eq__", "__ne__", "__lt__", "__le__",
                                      "__gt__", "__ge__", "__getattribute__",
-                                     "__setattr__", "__format__"];
+                                     "__setattr__", "__format__", "__get__"];
 
 /**
  * @constructor
@@ -7574,6 +7875,12 @@ goog.exportSymbol("Sk.builtin.checkFunction", Sk.builtin.checkFunction);
  *
  */
 Sk.builtin.func = function (code, globals, closure, closure2) {
+    if (!(this instanceof Sk.builtin.func)) {
+        // otherwise it assigned .func_code and .func_globals somewhere and in certain
+        // situations that will cause a lot of strange errors.
+        throw new Error("builtin func should be called as a class with `new`");
+    }
+
     var k;
     this.func_code = code;
     this.func_globals = globals || null;
@@ -7584,7 +7891,10 @@ Sk.builtin.func = function (code, globals, closure, closure2) {
         }
     }
 
-    this.__class__ = Sk.builtin.func;
+    this["$d"] = {
+        "__name__": code["co_name"],
+        "__class__": Sk.builtin.func
+    };
     this.func_closure = closure;
     this.tp$name = (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || this.func_code.name || "<native JS>";
     return this;
@@ -7616,58 +7926,82 @@ Sk.builtin.func.prototype.__get__ = function __get__(self, instance, owner) {
     return self.tp$descr_get(instance, owner);
 };
 
-Sk.builtin.func.prototype.tp$call = function (args, kw) {
-    var j;
-    var i;
-    var numvarnames;
-    var varnames;
-    var kwlen;
-    var kwargsarr;
-    var expectskw;
-    var name;
-    var numargs;
+Sk.builtin.func.prototype.tp$getname = function () {
+    return (this.func_code && this.func_code["co_name"] && this.func_code["co_name"].v) || this.func_code.name || "<native JS>";
+};
 
-    expectskw = this.func_code["co_kwargs"];
-    kwargsarr = [];
+Sk.builtin.func.prototype.tp$call = function (args, kw) {
+    var i;
+    var kwix;
+    var varnames = this.func_code.co_varnames || [];
+    var defaults = this.func_code.$defaults || [];
+    var kwargsarr = [];
+    var expectskw = this.func_code["co_kwargs"];
+    var name;
+    var nargs = args.length;
+    var varargs = [];
+    var defaultsNeeded = varnames.length - nargs > defaults.length ? defaults.length : varnames.length - nargs;
+    var offset = varnames.length - defaults.length;
 
     if (this.func_code["no_kw"] && kw) {
-        throw new Sk.builtin.TypeError(this.tp$name + "() takes no keyword arguments");
+        throw new Sk.builtin.TypeError(this.tp$getname() + "() takes no keyword arguments");
     }
 
     if (kw) {
-        // bind the kw args
-        kwlen = kw.length;
-        varnames = this.func_code["co_varnames"];
-        numvarnames = varnames && varnames.length;
-        for (i = 0; i < kwlen; i += 2) {
-            // todo; make this a dict mapping name to offset
-            for (j = 0; j < numvarnames; ++j) {
-                if (kw[i] === varnames[j]) {
-                    break;
+        for (i = 0; i < kw.length; i += 2) {
+            if (varnames && ((kwix = varnames.indexOf(kw[i])) !== -1)) {
+                if (kwix < nargs) {
+                    name = this.tp$getname();
+                    if (name in Sk.builtins && this === Sk.builtins[name]) {
+                        throw new Sk.builtin.TypeError("Argument given by name ('" + kw[i] + "') and position (" + (kwix + 1) + ")");
+                    }
+                    throw new Sk.builtin.TypeError(name + "() got multiple values for keyword argument '" + kw[i] + "'");
                 }
-            }
-            if (varnames && j !== numvarnames) {
-                if (j in args) {
-                    throw new Sk.builtin.TypeError(this.tp$name + "() got multiple values for keyword argument '" + kw[i] + "'");
-                }
-                args[j] = kw[i + 1];
+                varargs[kwix] = kw[i + 1];
             } else if (expectskw) {
                 // build kwargs dict
                 kwargsarr.push(new Sk.builtin.str(kw[i]));
                 kwargsarr.push(kw[i + 1]);
             } else {
-                throw new Sk.builtin.TypeError(this.tp$name + "() got an unexpected keyword argument '" + kw[i] + "'");
+                name = this.tp$getname();
+                if (name in Sk.builtins && this === Sk.builtins[name]) {
+                    throw new Sk.builtin.TypeError("'" + kw[i] + "' is an invalid keyword argument for this function");
+                }
+                throw new Sk.builtin.TypeError(name + "() got an unexpected keyword argument '" + kw[i] + "'");
+            }
+        }
+    }
+
+    // add defaults if there are enough because if we add them and leave a hole in the args array, pycheckargs doesn't work correctly
+    // maybe we should fix pycheckargs too though.
+    if (defaultsNeeded <= defaults.length) {
+        for (i = defaults.length - defaultsNeeded; i < defaults.length; i++) {
+            if (!varargs[offset + i]) {
+                varargs[offset + i] = defaults[i];
+            }
+        }
+    }
+
+    // add arguments found in varargs
+    for (i = 0; i < varargs.length; i++) {
+        if (varargs[i]) {
+            args[i] = varargs[i];
+        }
+    }
+
+    if (kw && nargs < varnames.length - defaults.length) {
+        for (i = nargs; i < varnames.length - defaults.length; i++) {
+            if (kw.indexOf(varnames[i]) === -1) {
+                throw new Sk.builtin.TypeError(this.tp$getname() + "() takes atleast " + (varnames.length - defaults.length) + " arguments (" + (nargs + varargs.filter(function(x) { return x; }).length) +  " given)");
             }
         }
     }
 
     if (this.func_closure) {
         // todo; OK to modify?
-        if (this.func_code["co_varnames"]) {
+        if (varnames) {
             // Make sure all default arguments are in args before adding closure
-            numargs = args.length;
-            numvarnames = this.func_code["co_varnames"].length;
-            for (i = numargs; i < numvarnames; i++) {
+            for (i = args.length; i < varnames.length; i++) {
                 args.push(undefined);
             }
         }
@@ -7679,15 +8013,18 @@ Sk.builtin.func.prototype.tp$call = function (args, kw) {
         args.unshift(kwargsarr);
     }
 
-    //print(JSON.stringify(args, null, 2));
-
     // note: functions expect 'this' to be globals to avoid having to
     // slice/unshift onto the main args
     return this.func_code.apply(this.func_globals, args);
 };
 
 Sk.builtin.func.prototype["$r"] = function () {
-    return new Sk.builtin.str("<function " + this.tp$name + ">");
+    var name = this.tp$getname();
+    if (name in Sk.builtins && this === Sk.builtins[name]) {
+        return new Sk.builtin.str("<built-in function " + name + ">");
+    } else {
+        return new Sk.builtin.str("<function " + name + ">");
+    }
 };/**
  * builtins are supposed to come from the __builtin__ module, but we don't do
  * that yet.
@@ -7836,9 +8173,9 @@ Sk.builtin.asnum$nofloat = function (a) {
         a = a.toString();
     }
 
-    //	Sk.debugout("INITIAL: " + a);
+    //  Sk.debugout("INITIAL: " + a);
 
-    //	If not a float, great, just return this
+    //  If not a float, great, just return this
     if (a.indexOf(".") < 0 && a.indexOf("e") < 0 && a.indexOf("E") < 0) {
         return a;
     }
@@ -7859,7 +8196,7 @@ Sk.builtin.asnum$nofloat = function (a) {
 
     decimal = mantissa.indexOf(".");
 
-    //	Simplest case, no decimal
+    //  Simplest case, no decimal
     if (decimal < 0) {
         if (expon >= 0) {
             // Just add more zeroes and we're done
@@ -7876,7 +8213,7 @@ Sk.builtin.asnum$nofloat = function (a) {
         }
     }
 
-    //	Negative exponent OR decimal (neg or pos exp)
+    //  Negative exponent OR decimal (neg or pos exp)
     if (decimal === 0) {
         mantissa = mantissa.substr(1);
     } else if (decimal < mantissa.length) {
@@ -7908,7 +8245,7 @@ Sk.builtin.round = function round (number, ndigits) {
         if (!Sk.builtin.checkFunction(number)) {
             throw new Sk.builtin.TypeError("a float is required");
         } else {
-            if (!Sk.python3) {
+            if (!Sk.__future__.exceptions) {
                 throw new Sk.builtin.AttributeError(Sk.abstr.typeName(number) + " instance has no attribute '__float__'");
             }
         }
@@ -7918,7 +8255,7 @@ Sk.builtin.round = function round (number, ndigits) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(ndigits) + "' object cannot be interpreted as an index");
     }
 
-    if (!Sk.python3 && number.round$) {
+    if (!Sk.__future__.dunder_round && number.round$) {
         return number.round$(number, ndigits);
     }
 
@@ -7946,7 +8283,7 @@ Sk.builtin.len = function len (item) {
         if (Sk.builtin.checkInt(j)) {
             return int_(j);
         } else {
-            if (Sk.python3) {
+            if (Sk.__future__.exceptions) {
                 throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(j) + "' object cannot be interpreted as an integer");
             } else {
                 throw new Sk.builtin.TypeError("__len__() should return an int");
@@ -7968,7 +8305,7 @@ Sk.builtin.len = function len (item) {
             if (special != null) {
                 return Sk.misceval.callsim(special, item);
             } else {
-                if (Sk.python3) {
+                if (Sk.__future__.exceptions) {
                     throw new Sk.builtin.TypeError("object of type '" + Sk.abstr.typeName(item) + "' has no len()");
                 } else {
                     throw new Sk.builtin.AttributeError(Sk.abstr.typeName(item) + " instance has no attribute '__len__'");
@@ -8172,6 +8509,12 @@ Sk.builtin.abs = function abs (x) {
     throw new TypeError("bad operand type for abs(): '" + Sk.abstr.typeName(x) + "'");
 };
 
+// fabs belongs in the math module but has been a Skulpt builtin since 41665a97d (2012).
+// Left in for backwards compatibility for now
+Sk.builtin.fabs = function fabs(x) {
+    return Sk.builtin.abs(x);
+};
+
 Sk.builtin.ord = function ord (x) {
     Sk.builtin.pyCheckArgs("ord", arguments, 1, 1);
 
@@ -8253,7 +8596,7 @@ Sk.builtin.oct = function oct (x) {
     if (!Sk.misceval.isIndex(x)) {
         throw new Sk.builtin.TypeError("oct() argument can't be converted to hex");
     }
-    if (Sk.python3) {
+    if (Sk.__future__.octal_number_literal) {
         return Sk.builtin.int2str_(x, 8, "0o");
     } else {
         return Sk.builtin.int2str_(x, 8, "0");
@@ -8401,6 +8744,12 @@ Sk.builtin.open = function open (filename, mode, bufsize) {
         mode = new Sk.builtin.str("r");
     }
 
+    if (/\+/.test(mode.v)) {
+        throw "todo; haven't implemented read/write mode";
+    } else if ((mode.v === "w" || mode.v === "wb" || mode.v === "a" || mode.v === "ab") && !Sk.nonreadopen) {
+        throw "todo; haven't implemented non-read opens";
+    }
+
     return new Sk.builtin.file(filename, mode, bufsize);
 };
 
@@ -8535,17 +8884,18 @@ Sk.builtin.setattr = function setattr (obj, name, value) {
 };
 
 Sk.builtin.raw_input = function (prompt) {
-    var sys = Sk.importModule("sys");
     var lprompt = prompt ? prompt : "";
 
-    if (Sk.inputfunTakesPrompt) {
-        return Sk.misceval.callsimOrSuspend(Sk.builtin.file.$readline, sys["$d"]["stdin"], null, lprompt);
-    }
-
-    return Sk.misceval.chain(undefined, function () {
-        return Sk.misceval.callsimOrSuspend(sys["$d"]["stdout"]["write"], sys["$d"]["stdout"], new Sk.builtin.str(prompt));
-    }, function () {
-        return Sk.misceval.callsimOrSuspend(sys["$d"]["stdin"]["readline"], sys["$d"]["stdin"]);
+    return Sk.misceval.chain(Sk.importModule("sys", false, true), function (sys) {
+        if (Sk.inputfunTakesPrompt) {
+            return Sk.misceval.callsimOrSuspend(Sk.builtin.file.$readline, sys["$d"]["stdin"], null, lprompt);
+        } else {
+            return Sk.misceval.chain(undefined, function() {
+                return Sk.misceval.callsimOrSuspend(sys["$d"]["stdout"]["write"], sys["$d"]["stdout"], new Sk.builtin.str(lprompt));
+            }, function () {
+                return Sk.misceval.callsimOrSuspend(sys["$d"]["stdin"]["readline"], sys["$d"]["stdin"]);
+            });
+        }
     });
 };
 
@@ -8574,8 +8924,8 @@ Sk.builtin.eval_ = function eval_ () {
 };
 
 Sk.builtin.map = function map (fun, seq) {
-    var iter, item;
-    var retval;
+    var iter;
+    var retval = [];
     var next;
     var nones;
     var args;
@@ -8619,15 +8969,20 @@ Sk.builtin.map = function map (fun, seq) {
         }
         seq = new Sk.builtin.list(combined);
     }
+
     if (!Sk.builtin.checkIterable(seq)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
     }
 
-    retval = [];
+    iter = Sk.abstr.iter(seq);
 
-    for (iter = Sk.abstr.iter(seq), item = iter.tp$iternext();
-         item !== undefined;
-         item = iter.tp$iternext()) {
+    return (function loopDeLoop(i) {
+        var item = i.tp$iternext();
+
+        if (item === undefined) {
+            return new Sk.builtin.list(retval);
+        }
+
         if (fun === Sk.builtin.none.none$) {
             if (item instanceof Array) {
                 // With None function and multiple sequences,
@@ -8635,17 +8990,20 @@ Sk.builtin.map = function map (fun, seq) {
                 item = new Sk.builtin.tuple(item);
             }
             retval.push(item);
-        } else {
-            if (!(item instanceof Array)) {
-                // If there was only one iterable, convert to Javascript
-                // Array for call to apply.
-                item = [item];
-            }
-            retval.push(Sk.misceval.apply(fun, undefined, undefined, undefined, item));
+            return loopDeLoop(iter);
         }
-    }
 
-    return new Sk.builtin.list(retval);
+        if (!(item instanceof Array)) {
+            // If there was only one iterable, convert to Javascript
+            // Array for call to apply.
+            item = [item];
+        }
+
+        return Sk.misceval.chain(Sk.misceval.applyOrSuspend(fun, undefined, undefined, undefined, item), function (result) {
+            retval.push(result);
+            return loopDeLoop(iter);
+        });
+    }(iter));
 };
 
 Sk.builtin.reduce = function reduce (fun, seq, initializer) {
@@ -8804,7 +9162,7 @@ Sk.builtin.pow = function pow (a, b, c) {
             throw new Sk.builtin.TypeError("pow() 3rd argument not allowed unless all arguments are integers");
         }
         if (b_num < 0) {
-            if (Sk.python3) {
+            if (Sk.__future__.exceptions) {
                 throw new Sk.builtin.ValueError("pow() 2nd argument cannot be negative when 3rd argument specified");
             } else {
                 throw new Sk.builtin.TypeError("pow() 2nd argument cannot be negative when 3rd argument specified");
@@ -9097,7 +9455,6 @@ Sk.builtin.coerce = function coerce () {
 Sk.builtin.intern = function intern () {
     throw new Sk.builtin.NotImplementedError("intern is not yet implemented");
 };
-
 
 /*
  Sk.builtinFiles = {};
@@ -10488,24 +10845,28 @@ goog.exportSymbol("Sk.misceval.isTrue", Sk.misceval.isTrue);
 
 Sk.misceval.softspace_ = false;
 Sk.misceval.print_ = function (x) {
-    // this was function print(x)   not sure why...
-    var isspace;
     var s;
+
+    function isspace(c) {
+        return c === "\n" || c === "\t" || c === "\r";
+    }
+
     if (Sk.misceval.softspace_) {
         if (x !== "\n") {
             Sk.output(" ");
         }
         Sk.misceval.softspace_ = false;
     }
+
     s = new Sk.builtin.str(x);
-    var sys = Sk.importModule("sys");
-    Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], s]);
-    isspace = function (c) {
-        return c === "\n" || c === "\t" || c === "\r";
-    };
-    if (s.v.length === 0 || !isspace(s.v[s.v.length - 1]) || s.v[s.v.length - 1] === " ") {
-        Sk.misceval.softspace_ = true;
-    }
+
+    return Sk.misceval.chain(Sk.importModule("sys", false, true), function(sys) {
+        return Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], s]);
+    }, function () {
+        if (s.v.length === 0 || !isspace(s.v[s.v.length - 1]) || s.v[s.v.length - 1] === " ") {
+            Sk.misceval.softspace_ = true;
+        }
+    });
 };
 goog.exportSymbol("Sk.misceval.print_", Sk.misceval.print_);
 
@@ -10517,6 +10878,9 @@ Sk.misceval.loadname = function (name, other) {
     var bi;
     var v = other[name];
     if (v !== undefined) {
+        if (typeof v === "function" && v["$d"] === undefined && v["tp$name"] === undefined) {
+            return v();
+        }
         return v;
     }
 
@@ -10724,7 +11088,11 @@ Sk.misceval.asyncToPromise = function(suspendablefn, suspHandlers) {
                 try {
                     // jsh*nt insists these be defined outside the loop
                     var resume = function() {
-                        handleResponse(r.resume());
+                        try {
+                            handleResponse(r.resume());
+                        } catch (e) {
+                            reject(e);
+                        }
                     };
                     var resumeWithData = function resolved(x) {
                         try {
@@ -10763,7 +11131,13 @@ Sk.misceval.asyncToPromise = function(suspendablefn, suspHandlers) {
                         } else if (r.data["type"] == "Sk.yield") {
                             // Assumes all yields are optional, as Sk.setTimeout might
                             // not be able to yield.
-                            Sk.setTimeout(resume, 0);
+                            //Sk.setTimeout(resume, 0);
+                            setImmediate(resume);
+                            return;
+
+                        } else if (r.data["type"] == "Sk.delay") {
+                            //Sk.setTimeout(resume, 1);
+                            setImmediate(resume);
                             return;
 
                         } else if (r.optional) {
@@ -10963,19 +11337,18 @@ goog.exportSymbol("Sk.misceval.Break", Sk.misceval.Break);
  */
 Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
     var fcall;
-    var kwix;
-    var numPosParams;
-    var numNonOptParams;
     var it, i;
 
     if (func === null || func instanceof Sk.builtin.none) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
-    } else if (typeof func === "function" && func.tp$call === undefined) {
-        // This happens in the wrapper functions around generators
-        // (that creates the iterator), and all the builtin functions
-        // (in builtin.js, for example) as they are javascript functions,
-        // not Sk.builtin.func objects.
+    }
+    
+    if (typeof func === "function" && func.tp$call === undefined) {
+        func = new Sk.builtin.func(func);
+    }
 
+    fcall = func.tp$call;
+    if (fcall !== undefined) {
         if (varargseq) {
             for (it = varargseq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
                 args.push(i);
@@ -10991,69 +11364,20 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
                 kws.push(Sk.abstr.objectGetItem(kwdict, i, false));
             }
         }
-
-        //goog.asserts.assert(((kws === undefined) || (kws.length === 0)));
-        //print('kw args location: '+ kws + ' args ' + args.length)
-        if (kws !== undefined && kws.length > 0) {
-            if (!func.co_varnames) {
-                throw new Sk.builtin.ValueError("Keyword arguments are not supported by this function");
-            }
-
-            //number of positionally placed optional parameters
-            numNonOptParams = func.co_numargs - func.co_varnames.length;
-            numPosParams = args.length - numNonOptParams;
-
-            //add defaults
-            args = args.concat(func.$defaults.slice(numPosParams));
-
-            for (i = 0; i < kws.length; i = i + 2) {
-                kwix = func.co_varnames.indexOf(kws[i]);
-
-                if (kwix === -1) {
-                    throw new Sk.builtin.TypeError("'" + kws[i] + "' is an invalid keyword argument for this function");
-                }
-
-                if (kwix < numPosParams) {
-                    throw new Sk.builtin.TypeError("Argument given by name ('" + kws[i] + "') and position (" + (kwix + numNonOptParams + 1) + ")");
-                }
-
-                args[kwix + numNonOptParams] = kws[i + 1];
-            }
-        }
-        //append kw args to args, filling in the default value where none is provided.
-        return func.apply(null, args);
-    } else {
-        fcall = func.tp$call;
-        if (fcall !== undefined) {
-            if (varargseq) {
-                for (it = varargseq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-                    args.push(i);
-                }
-            }
-
-            if (kwdict) {
-                for (it = Sk.abstr.iter(kwdict), i = it.tp$iternext(); i!== undefined; i = it.tp$iternext()) {
-                    if (!Sk.builtin.checkString(i)) {
-                        throw new Sk.builtin.TypeError("Function keywords must be strings");
-                    }
-                    kws.push(i.v);
-                    kws.push(Sk.abstr.objectGetItem(kwdict, i, false));
-                }
-            }
-            return fcall.call(func, args, kws, kwdict);
-        }
-
-        // todo; can we push this into a tp$call somewhere so there's
-        // not redundant checks everywhere for all of these __x__ ones?
-        fcall = func.__call__;
-        if (fcall !== undefined) {
-            // func is actually the object here because we got __call__
-            // from it. todo; should probably use descr_get here
-            args.unshift(func);
-            return Sk.misceval.apply(fcall, kwdict, varargseq, kws, args);
-        }
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
+        return fcall.call(func, args, kws, kwdict);
     }
+
+    // todo; can we push this into a tp$call somewhere so there's
+    // not redundant checks everywhere for all of these __x__ ones?
+    fcall = func.__call__;
+    if (fcall !== undefined) {
+        // func is actually the object here because we got __call__
+        // from it. todo; should probably use descr_get here
+        args.unshift(func);
+        return Sk.misceval.apply(fcall, kwdict, varargseq, kws, args);
+    }
+
+    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
 };
 goog.exportSymbol("Sk.misceval.applyOrSuspend", Sk.misceval.applyOrSuspend);
 
@@ -11690,7 +12014,7 @@ Sk.builtin.list.prototype.__delitem__ = new Sk.builtin.func(function (self, inde
  * @param {?=} key optional
  * @param {?=} reverse optional
  */
-Sk.builtin.list.prototype.list_sort_ = function (self, cmp, key, reverse) {
+Sk.builtin.list.prototype.list_sort_ = function sort(self, cmp, key, reverse) {
     var mucked;
     var j;
     var keyvalue;
@@ -11698,8 +12022,8 @@ Sk.builtin.list.prototype.list_sort_ = function (self, cmp, key, reverse) {
     var i;
     var zero;
     var timsort;
-    var has_key = key !== undefined && key !== null;
-    var has_cmp = cmp !== undefined && cmp !== null;
+    var has_key = key !== undefined && key !== null && key !== Sk.builtin.none.none$;
+    var has_cmp = cmp !== undefined && cmp !== null && cmp !== Sk.builtin.none.none$;
     var rev;
 
     if (reverse === undefined) {
@@ -11765,6 +12089,8 @@ Sk.builtin.list.prototype.list_sort_ = function (self, cmp, key, reverse) {
 
     return Sk.builtin.none.none$;
 };
+Sk.builtin.list.prototype.list_sort_.co_varnames = ["__self__", "cmp", "key", "reverse"];
+Sk.builtin.list.prototype.list_sort_.$defaults = [Sk.builtin.none.none$, Sk.builtin.none.none$, false];
 
 /**
  * @param {Sk.builtin.list=} self optional
@@ -11904,13 +12230,8 @@ Sk.builtin.list.prototype["count"] = new Sk.builtin.func(function (self, item) {
 });
 
 Sk.builtin.list.prototype["reverse"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_reverse_);
-
 Sk.builtin.list.prototype["sort"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_sort_);
 
-// Make sure that key/value variations of lst.sort() work
-// See issue 45 on github as to possible alternate approaches to this and
-// why this was chosen - csev
-Sk.builtin.list.prototype["sort"].func_code["co_varnames"] = ["__self__", "cmp", "key", "reverse"];
 goog.exportSymbol("Sk.builtin.list", Sk.builtin.list);
 
 /**
@@ -12340,7 +12661,7 @@ Sk.builtin.str.prototype["__format__"] = new Sk.builtin.func(function (self, for
     Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
-        if (Sk.python3) {
+        if (Sk.__future__.exceptions) {
             throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
         } else {
             throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
@@ -14300,7 +14621,24 @@ Sk.builtin.dict.prototype.ob$ne = function (other) {
 };
 
 Sk.builtin.dict.prototype["copy"] = new Sk.builtin.func(function (self) {
-    throw new Sk.builtin.NotImplementedError("dict.copy is not yet implemented in Skulpt");
+    Sk.builtin.pyCheckArgs("copy", arguments, 0, 0, false, true);
+
+    var it; // Iterator
+    var k; // Key of dict item
+    var v; // Value of dict item
+    var newCopy = new Sk.builtin.dict([]);
+
+    for (it = Sk.abstr.iter(self), k = it.tp$iternext();
+            k !== undefined;
+            k = it.tp$iternext()) {
+        v = self.mp$subscript(k);
+        if (v === undefined) {
+            v = null;
+        }
+        newCopy.mp$ass_subscript(k, v);
+    }
+
+    return newCopy;
 });
 
 Sk.builtin.dict.$fromkeys = function fromkeys(self, seq, value) {
@@ -16969,13 +17307,12 @@ Sk.builtin.biginteger.prototype.isProbablePrime = Sk.builtin.biginteger.prototyp
  * and tries to use `__index__` and/or `__int__` if base is not a number
  *
  * @extends {Sk.builtin.numtype}
- * 
+ *
  * @param  {!(Object|number)} x    Python object or Javascript number to convert to Python int
- * @param  {!(Object|number)=} base Optional base, can only be used when x is Sk.builtin.str
+ * @param  {!(Object|number|Sk.builtin.none)=} base Optional base, can only be used when x is Sk.builtin.str
  * @return {(Sk.builtin.int_|Sk.builtin.lng)}      Python int (or long, if overflow)
  */
 Sk.builtin.int_ = function (x, base) {
-    "use strict";
     var val;
     var ret; // return value
     var magicName; // name of magic method
@@ -16995,7 +17332,7 @@ Sk.builtin.int_ = function (x, base) {
     }
 
     // if base is not of type int, try calling .__index__
-    if(base !== undefined && !Sk.builtin.checkInt(base)) {
+    if(base !== Sk.builtin.none.none$ && base !== undefined && !Sk.builtin.checkInt(base)) {
         if (Sk.builtin.checkFloat(base)) {
             throw new Sk.builtin.TypeError("integer argument expected, got " + Sk.abstr.typeName(base));
         } else if (base.__index__) {
@@ -17009,6 +17346,9 @@ Sk.builtin.int_ = function (x, base) {
 
     if (x instanceof Sk.builtin.str) {
         base = Sk.builtin.asnum$(base);
+        if (base === Sk.builtin.none.none$) {
+            base = 10;
+        }
 
         val = Sk.str2number(x.v, base, parseInt, function (x) {
             return -x;
@@ -17023,7 +17363,7 @@ Sk.builtin.int_ = function (x, base) {
         return this;
     }
 
-    if (base !== undefined) {
+    if (base !== undefined && base !== Sk.builtin.none.none$) {
         throw new Sk.builtin.TypeError("int() can't convert non-string with explicit base");
     }
 
@@ -17257,7 +17597,7 @@ Sk.builtin.int_.prototype.nb$reflected_multiply = function (other) {
 /** @override */
 Sk.builtin.int_.prototype.nb$divide = function (other) {
     var thisAsLong, thisAsFloat;
-    if (Sk.python3) {
+    if (Sk.__future__.division) {
         thisAsFloat = new Sk.builtin.float_(this.v);
         return thisAsFloat.nb$divide(other);
     }
@@ -17593,7 +17933,7 @@ Sk.builtin.int_.prototype.nb$lshift = function (other) {
                 return new Sk.builtin.lng(this.v).nb$lshift(new Sk.builtin.int_(shift));
             }
 
-            tmp = this.v * 2 * Sk.builtin.int_.$shiftconsts[shift]; 
+            tmp = this.v * 2 * Sk.builtin.int_.$shiftconsts[shift];
             if (tmp > Sk.builtin.int_.threshold$ || tmp < -Sk.builtin.int_.threshold$) {
                 // Fail, recompute with longs
                 return new Sk.builtin.lng(tmp);
@@ -17933,7 +18273,7 @@ Sk.builtin.int_.prototype.round$ = function (self, ndigits) {
         ndigs = Sk.misceval.asIndex(ndigits);
     }
 
-    if (Sk.python3) {
+    if (Sk.__future__.bankers_rounding) {
         num10 = number * Math.pow(10, ndigs);
         rounded = Math.round(num10);
         bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
@@ -17952,7 +18292,7 @@ Sk.builtin.int_.prototype.__format__= function (obj, format_spec) {
     Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
-        if (Sk.python3) {
+        if (Sk.__future__.exceptions) {
             throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
         } else {
             throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
@@ -18019,8 +18359,8 @@ Sk.builtin.int_.prototype.str$ = function (base, sign) {
  * Takes a JavaScript string and returns a number using the parser and negater
  *  functions (for int/long right now)
  * @param  {string} s       Javascript string to convert to a number.
- * @param  {number} base    The base of the number.
- * @param  {function(string, number): number} parser  Function which should take
+ * @param  {(number)} base    The base of the number.
+ * @param  {function(*, (number|undefined)): number} parser  Function which should take
  *  a string that is a postive number which only contains characters that are
  *  valid in the given base and a base and return a number.
  * @param  {function((number|Sk.builtin.biginteger)): number} negater Function which should take a
@@ -18029,7 +18369,6 @@ Sk.builtin.int_.prototype.str$ = function (base, sign) {
  * @return {number}         The number equivalent of the string in the given base
  */
 Sk.str2number = function (s, base, parser, negater, fname) {
-    "use strict";
     var origs = s,
         neg = false,
         i,
@@ -18051,7 +18390,7 @@ Sk.str2number = function (s, base, parser, negater, fname) {
         s = s.substring(1);
     }
 
-    if (base === undefined) {
+    if (base === null || base === undefined) {
         base = 10;
     } // default radix is 10, not dwim
 
@@ -18964,7 +19303,7 @@ Sk.builtin.float_.prototype.round$ = function (self, ndigits) {
         ndigs = Sk.misceval.asIndex(ndigits);
     }
 
-    if (Sk.python3) {
+    if (Sk.__future__.bankers_rounding) {
         num10 = number * Math.pow(10, ndigs);
         rounded = Math.round(num10);
         bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
@@ -18987,7 +19326,7 @@ Sk.builtin.float_.prototype.__format__= function (obj, format_spec) {
     Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
-        if (Sk.python3) {
+        if (Sk.__future__.exceptions) {
             throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
         } else {
             throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
@@ -19428,7 +19767,7 @@ goog.exportSymbol("Sk.builtin.nmber", Sk.builtin.nmber);
  * Constructor for Python long. Also used for builtin long().
  *
  * @extends {Sk.builtin.numtype}
- * 
+ *
  * @param {*} x Object or number to convert to Python long.
  * @param {number=} base Optional base.
  * @return {Sk.builtin.lng} Python long
@@ -19499,7 +19838,7 @@ Sk.builtin.lng.prototype.__format__= function (obj, format_spec) {
     Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
-        if (Sk.python3) {
+        if (Sk.__future__.exceptions) {
             throw new Sk.builtin.TypeError("format() argument 2 must be str, not " + Sk.abstr.typeName(format_spec));
         } else {
             throw new Sk.builtin.TypeError("format expects arg 2 to be string or unicode, not " + Sk.abstr.typeName(format_spec));
@@ -19530,7 +19869,7 @@ Sk.builtin.lng.prototype.round$ = function (self, ndigits) {
         ndigs = Sk.misceval.asIndex(ndigits);
     }
 
-    if (Sk.python3) {
+    if (Sk.__future__.bankers_rounding) {
         num10 = number * Math.pow(10, ndigs);
         rounded = Math.round(num10);
         bankRound = (((((num10>0)?num10:(-num10))%1)===0.5)?(((0===(rounded%2)))?rounded:(rounded-1)):rounded);
@@ -19671,7 +20010,7 @@ Sk.builtin.lng.prototype.nb$inplace_subtract = Sk.builtin.lng.prototype.nb$subtr
 
 Sk.builtin.lng.prototype.nb$multiply = function (other) {
     var thisAsFloat;
-    
+
     if (other instanceof Sk.builtin.float_) {
         thisAsFloat = new Sk.builtin.float_(this.str$(10, true));
         return thisAsFloat.nb$multiply(other);
@@ -19910,7 +20249,7 @@ Sk.builtin.lng.prototype.nb$power = function (n, mod) {
         return new Sk.builtin.lng(this.biginteger.modPowInt(n, mod));
     }
 
-    if (n instanceof Sk.builtin.float_ || 
+    if (n instanceof Sk.builtin.float_ ||
         (n instanceof Sk.builtin.int_ && n.v < 0)) {
         thisAsFloat = new Sk.builtin.float_(this.str$(10, true));
         return thisAsFloat.nb$power(n);
@@ -20151,7 +20490,7 @@ Sk.builtin.lng.prototype.longCompare = function (other) {
         other = new Sk.builtin.lng(other);
     }
 
-    if (other instanceof Sk.builtin.int_ || 
+    if (other instanceof Sk.builtin.int_ ||
         (other instanceof Sk.builtin.float_ && other.v % 1 === 0)) {
         otherAsLong = new Sk.builtin.lng(other.v);
         return this.longCompare(otherAsLong);
@@ -21706,7 +22045,8 @@ Sk.builtin.set.prototype["$r"] = function () {
     for (it = Sk.abstr.iter(this), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
         ret.push(Sk.misceval.objectRepr(i).v);
     }
-    if(Sk.python3) {
+
+    if(Sk.__future__.set_repr) {
         return new Sk.builtin.str("{" + ret.join(", ") + "}");
     } else {
         return new Sk.builtin.str("set([" + ret.join(", ") + "])");
@@ -22197,10 +22537,10 @@ var print_f = function function_print(kwa) {
         // currently not tested, though it seems that we need to see how we should access the write function in a correct manner
         Sk.misceval.callsim(kw_list.file.write, kw_list.file, new Sk.builtin.str(s)); // callsim to write function
     } else {
-        var sys = Sk.importModule("sys");
-        Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
+        return Sk.misceval.chain(Sk.importModule("sys", false, true), function(sys) {
+            return Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
+        });
     }
-
     // ToDo:
     // cpython print function may receive another flush kwarg that flushes the output stream immediatelly
 };
@@ -22467,8 +22807,26 @@ Sk.builtin.file = function (name, mode, buffering) {
     } else if (this.name === "/dev/stderr") {
         this.fileno = 2;
     } else {
-        this.fileno = 11;
-        this.data$ = Sk.read(name.v);
+        if (Sk.inBrowser) {  // todo:  Maybe provide a replaceable function for non-import files
+            this.fileno = 10;
+            elem = document.getElementById(name.v);
+            if (elem == null) {
+                if (mode.v == "w" || mode.v == "a") {
+                    this.data$ = "";
+                } else {
+                    throw new Sk.builtin.IOError("[Errno 2] No such file or directory: '" + name.v + "'");
+                }
+            } else {
+                if (elem.nodeName.toLowerCase() == "textarea") {
+                    this.data$ = elem.value;
+                } else {
+                    this.data$ = elem.textContent;
+                }
+            }
+        } else {
+            this.fileno = 11;
+            this.data$ = Sk.read(name.v);
+        }
 
         this.lineList = this.data$.split("\n");
         this.lineList = this.lineList.slice(0, -1);
@@ -22481,6 +22839,10 @@ Sk.builtin.file = function (name, mode, buffering) {
     this.pos$ = 0;
 
     this.__class__ = Sk.builtin.file;
+
+    if (Sk.fileopen && this.fileno >= 10) {
+        Sk.fileopen(this);
+    }
 
     return this;
 };
@@ -22650,13 +23012,25 @@ Sk.builtin.file.prototype["truncate"] = new Sk.builtin.func(function truncate(se
 Sk.builtin.file.prototype["write"] = new Sk.builtin.func(function write(self, str) {
     var mode = Sk.ffi.remapToJs(self.mode);
     if (mode === "w" || mode === "wb" || mode === "a" || mode === "ab") {
-        if (self.fileno === 1) {
-            Sk.output(Sk.ffi.remapToJs(str));
+        if (Sk.filewrite) {
+            if (self.closed) {
+                throw new Sk.builtin.ValueError("I/O operation on closed file");
+            }
+
+            if (self.fileno === 1) {
+                Sk.output(Sk.ffi.remapToJs(str));
+            } else {
+                Sk.filewrite(self, str);
+            }
         } else {
-            goog.asserts.fail();
+            if (self.fileno === 1) {
+                Sk.output(Sk.ffi.remapToJs(str));
+            } else {
+                goog.asserts.fail();
+            }
         }
     } else {
-        goog.asserts.fail();
+        throw new Sk.builtin.IOError("File not open for writing");
     }
 });
 
@@ -22680,28 +23054,54 @@ Sk.ffi.remapToPy = function (obj) {
     var kvs;
     var i;
     var arr;
+
+    if (obj === null || typeof obj === "undefined") {
+        return Sk.builtin.none.none$;
+    }
+
+    if (obj.ob$type) {
+        return obj;
+    }
+
+    if (obj instanceof Sk.misceval.Suspension) {
+        return obj;
+    }
+
     if (Object.prototype.toString.call(obj) === "[object Array]") {
         arr = [];
         for (i = 0; i < obj.length; ++i) {
             arr.push(Sk.ffi.remapToPy(obj[i]));
         }
         return new Sk.builtin.list(arr);
-    } else if (obj === null) {
-        return Sk.builtin.none.none$;
-    } else if (typeof obj === "object") {
+    }
+
+    if (typeof obj === "object") {
         kvs = [];
         for (k in obj) {
             kvs.push(Sk.ffi.remapToPy(k));
             kvs.push(Sk.ffi.remapToPy(obj[k]));
         }
         return new Sk.builtin.dict(kvs);
-    } else if (typeof obj === "string") {
-        return new Sk.builtin.str(obj);
-    } else if (typeof obj === "number") {
-        return Sk.builtin.assk$(obj);
-    } else if (typeof obj === "boolean") {
-        return new Sk.builtin.bool(obj);
     }
+
+    if (typeof obj === "string") {
+        return new Sk.builtin.str(obj);
+    }
+
+    if (typeof obj === "number") {
+        return Sk.builtin.assk$(obj);
+    }
+
+    if (typeof obj === "boolean") {
+        return new Sk.builtin.bool(obj);
+    } else if (typeof obj === "undefined") {
+        return Sk.builtin.none.none$;
+    }
+
+    if (typeof obj === "function") {
+        return new Sk.builtin.func(obj);
+    }
+
     goog.asserts.fail("unhandled remap type " + typeof(obj));
 };
 goog.exportSymbol("Sk.ffi.remapToPy", Sk.ffi.remapToPy);
@@ -22750,6 +23150,8 @@ Sk.ffi.remapToJs = function (obj) {
         return Sk.builtin.asnum$(obj);
     } else if (typeof obj === "number" || typeof obj === "boolean") {
         return obj;
+    } else if (obj === undefined) {
+        return undefined;
     } else {
         return obj.v;
     }
@@ -25167,7 +25569,7 @@ Parser.prototype.classify = function (type, value, context) {
         ilabel = this.grammar.keywords.hasOwnProperty(value) && this.grammar.keywords[value];
 
         /* Check for handling print as an builtin function */
-        if(value === "print" && (this.p_flags & Parser.CO_FUTURE_PRINT_FUNCTION || Sk.python3 === true)) {
+        if(value === "print" && (this.p_flags & Parser.CO_FUTURE_PRINT_FUNCTION || Sk.__future__.print_function === true)) {
             ilabel = false; // ilabel determines if the value is a keyword
         }
 
@@ -28255,7 +28657,7 @@ function parsestr (c, s) {
 
     // treats every sequence as unicodes even if they are not treated with uU prefix
     // kinda hacking though working for most purposes
-    if((c.c_flags & Parser.CO_FUTURE_UNICODE_LITERALS || Sk.python3 === true)) {
+    if((c.c_flags & Parser.CO_FUTURE_UNICODE_LITERALS || Sk.__future__.unicode_literals === true)) {
         unicode = true;
     }
 
@@ -30100,7 +30502,12 @@ var reservedWords_ = {
     "with": true
 };
 
-function fixReservedWords (name) {
+/**
+ * Fix reserved words
+ *
+ * @param {string} name
+ */
+function fixReservedWords(name) {
     if (reservedWords_[name] !== true) {
         return name;
     }
@@ -30436,7 +30843,7 @@ Compiler.prototype.ccall = function (e) {
     }
     else {
         out ("$ret;"); // This forces a failure if $ret isn't defined
-        if (Sk.python3 && e.func.id && e.func.id.v === "super" && args.length == 0) {
+        if (Sk.__future__.super_args && e.func.id && e.func.id.v === "super" && args.length == 0) {
             // make sure there is a self variable
             // note that it's part of the js API spec: https://developer.mozilla.org/en/docs/Web/API/Window/self
             // so we should probably add self to the mangling
@@ -31025,7 +31432,23 @@ Compiler.prototype.cwhile = function (s) {
         this.pushContinueBlock(top);
 
         this.setBlock(body);
+
+        if ((Sk.debugging || Sk.killableWhile) && this.u.canSuspend) {
+            var suspType = 'Sk.delay';
+            var debugBlock = this.newBlock("debug breakpoint for line "+s.lineno);
+            out("if (Sk.breakpoints('"+this.filename+"',"+s.lineno+","+s.col_offset+")) {",
+                "var $susp = $saveSuspension({data: {type: '"+suspType+"'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
+                "$susp.$blk = "+debugBlock+";",
+                "$susp.optional = true;",
+                "return $susp;",
+                "}");
+            this._jump(debugBlock);
+            this.setBlock(debugBlock);
+            this.u.doesSuspend = true;
+        }
+
         this.vseqstmt(s.body);
+
         this._jump(top);
 
         this.popContinueBlock();
@@ -31078,6 +31501,20 @@ Compiler.prototype.cfor = function (s) {
     nexti = this._gr("next", "$ret");
     this._jumpundef(nexti, cleanup); // todo; this should be handled by StopIteration
     target = this.vexpr(s.target, nexti);
+
+    if ((Sk.debugging || Sk.killableFor) && this.u.canSuspend) {
+        var suspType = 'Sk.delay';
+        var debugBlock = this.newBlock("debug breakpoint for line "+s.lineno);
+        out("if (Sk.breakpoints('"+this.filename+"',"+s.lineno+","+s.col_offset+")) {",
+            "var $susp = $saveSuspension({data: {type: '"+suspType+"'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
+            "$susp.$blk = "+debugBlock+";",
+            "$susp.optional = true;",
+            "return $susp;",
+            "}");
+        this._jump(debugBlock);
+        this.setBlock(debugBlock);
+        this.u.doesSuspend = true;
+    }
 
     // execute body
     this.vseqstmt(s.body);
@@ -31410,12 +31847,13 @@ Compiler.prototype.cfromimport = function (s) {
     var storeName;
     var got;
     var alias;
+    var aliasOut;
     var mod;
     var i;
     var n = s.names.length;
     var names = [];
     for (i = 0; i < n; ++i) {
-        names[i] = s.names[i].name["$r"]().v;
+        names[i] = "'" + fixReservedWords(s.names[i].name.v) + "'";
     }
     out("$ret = Sk.builtin.__import__(", s.module["$r"]().v, ",$gbl,$loc,[", names, "]);");
 
@@ -31426,6 +31864,7 @@ Compiler.prototype.cfromimport = function (s) {
     mod = this._gr("module", "$ret");
     for (i = 0; i < n; ++i) {
         alias = s.names[i];
+        aliasOut = "'" + fixReservedWords(alias.name.v) + "'";
         if (i === 0 && alias.name.v === "*") {
             goog.asserts.assert(n === 1);
             out("Sk.importStar(", mod, ",$loc, $gbl);");
@@ -31433,7 +31872,7 @@ Compiler.prototype.cfromimport = function (s) {
         }
 
         //out("print(\"getting Sk.abstr.gattr(", mod, ",", alias.name["$r"]().v, ")\");");
-        got = this._gr("item", "Sk.abstr.gattr(", mod, ",", alias.name["$r"]().v, ")");
+        got = this._gr("item", "Sk.abstr.gattr(", mod, ",", aliasOut, ")");
         //out("print('got');");
         storeName = alias.name;
         if (alias.asname) {
@@ -31597,7 +32036,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     //
     this.u.varDeclsCode += "if ("+scopename+".$wakingSuspension!==undefined) { $wakeFromSuspension(); } else {";
 
-    //
+    // this could potentially get removed if generators would learn to deal with args, kw, kwargs, varargs
     // initialize default arguments. we store the values of the defaults to
     // this code object as .$defaults just below after we exit this scope.
     //
@@ -31922,8 +32361,8 @@ Compiler.prototype.cclass = function (s) {
     scopename = this.enterScope(s.name, s, s.lineno);
     entryBlock = this.newBlock("class entry");
 
-    this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$cell){var $gbl=$globals,$loc=$locals;";
-    this.u.switchCode += "(function $" + s.name.v + "$_closure(){";
+    this.u.prefixCode = "var " + scopename + "=(function $" + s.name.v + "$class_outer($globals,$locals,$cell){var $gbl=$globals,$loc=$locals;$free=$globals;";
+    this.u.switchCode += "(function $" + s.name.v + "$_closure($cell){";
     this.u.switchCode += "var $blk=" + entryBlock + ",$exc=[],$ret=undefined,$postfinally=undefined,$currLineNo=undefined,$currColNo=undefined;"
 
     if (Sk.execLimit !== null) {
@@ -32341,11 +32780,14 @@ Compiler.prototype.cprint = function (s) {
     n = s.values.length;
     // todo; dest disabled
     for (i = 0; i < n; ++i) {
-        out("Sk.misceval.print_(", /*dest, ',',*/ "new Sk.builtins['str'](", this.vexpr(s.values[i]), ").v);");
+        out("$ret = Sk.misceval.print_(", /*dest, ',',*/ "new Sk.builtins['str'](", this.vexpr(s.values[i]), ").v);");
+        this._checkSuspension(s);
     }
     if (s.nl) {
-        out("Sk.misceval.print_(", /*dest, ',*/ "\"\\n\");");
+        out("$ret = Sk.misceval.print_(", /*dest, ',*/ "\"\\n\");");
+        this._checkSuspension(s);
     }
+
 };
 
 Compiler.prototype.cmod = function (mod) {
@@ -32372,6 +32814,7 @@ Compiler.prototype.cmod = function (mod) {
     this.u.varDeclsCode += "if ("+modf+".$wakingSuspension!==undefined) { $wakeFromSuspension(); }" +
         "if (Sk.retainGlobals) {" +
         "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl; $loc = $gbl; }" +
+        "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl; $loc = $gbl; $loc.__file__=new Sk.builtins.str('" + this.filename + "');}" +
         "    else { Sk.globals = $gbl; }" +
         "} else { Sk.globals = $gbl; }";
 
@@ -32458,7 +32901,8 @@ Sk.fixReservedNames = fixReservedNames;
 goog.exportSymbol("Sk.fixReservedNames", Sk.fixReservedNames);
 
 Sk.unfixReserved = unfixReserved;
-goog.exportSymbol("Sk.unfixReserved", Sk.unfixReserved);/**
+goog.exportSymbol("Sk.unfixReserved", Sk.unfixReserved);
+/**
  * @namespace Sk
  *
  */
@@ -32466,107 +32910,6 @@ goog.exportSymbol("Sk.unfixReserved", Sk.unfixReserved);/**
 // this is stored into sys specially, rather than created by sys
 Sk.sysmodules = new Sk.builtin.dict([]);
 Sk.realsyspath = undefined;
-Sk.externalLibraryCache = {};
-
-Sk.loadExternalLibraryInternal_ = function (path, inject) {
-    var scriptElement;
-    var request, result;
-
-    if (path == null) {
-        return void(0);
-    }
-
-    if (Sk.externalLibraryCache[path]) {
-        return Sk.externalLibraryCache[path];
-    }
-
-    request = new XMLHttpRequest();
-    request.open("GET", path, false);
-    request.send();
-
-    if (request.status !== 200) {
-        return void(0);
-    }
-
-    result = request.responseText;
-
-    if (inject) {
-        scriptElement = document.createElement("script");
-        scriptElement.type = "text/javascript";
-        scriptElement.text = result;
-        document.getElementsByTagName("head")[0].appendChild(scriptElement);
-    }
-
-    return result;
-};
-
-Sk.loadExternalLibrary = function (name) {
-    var i;
-    var externalLibraryInfo, path,  module,
-        dependencies, dep, ext, extMatch, co;
-
-    // check if the library has already been loaded and cached
-    if (Sk.externalLibraryCache[name]) {
-        return Sk.externalLibraryCache[name];
-    }
-
-    externalLibraryInfo = Sk.externalLibraries && Sk.externalLibraries[name];
-
-    // if no external library info can be found, bail out
-    if (!externalLibraryInfo) {
-        return void(0);
-    }
-
-    // if the external library info is just a string, assume it is the path
-    // otherwise dig into the info to find the path
-    path = typeof externalLibraryInfo === "string" ?
-        externalLibraryInfo :
-        externalLibraryInfo.path;
-
-    if (typeof path !== "string") {
-        throw new Sk.builtin.ImportError("Invalid path specified for " + name);
-    }
-
-    // attempt to determine the type of the library (js or py)
-    // which is either specified explicitly in the library info
-    // or inferred from the file extension
-    ext = externalLibraryInfo.type;
-    if (!ext) {
-        extMatch = path.match(/\.(js|py)$/);
-        ext = extMatch && extMatch[1];
-    }
-
-    if (!ext) {
-        throw new Sk.builtin.ImportError("Invalid file extension specified for " + name);
-    }
-
-    module = Sk.loadExternalLibraryInternal_(path, false);
-
-    if (!module) {
-        throw new Sk.builtin.ImportError("Failed to load remote module '" + name + "'");
-    }
-
-    // if the library has any js dependencies, load them in now
-    dependencies = externalLibraryInfo.dependencies;
-    if (dependencies && dependencies.length) {
-        for (i = 0; i < dependencies.length; i++) {
-            dep = Sk.loadExternalLibraryInternal_(dependencies[i], true);
-            if (!dep) {
-                throw new Sk.builtin.ImportError("Failed to load dependencies required for " + name);
-            }
-        }
-    }
-
-    if (ext === "js") {
-        co = { funcname: "$builtinmodule", code: module };
-    } else {
-        co = Sk.compile(module, path, "exec", true);
-    }
-
-    Sk.externalLibraryCache[name] = co;
-
-    return co;
-};
 
 /**
  * @param {string} name to look for
@@ -32620,8 +32963,8 @@ Sk.importSearchPathForName = function (name, ext, searchPath) {
  *
  * @return {undefined}
  */
-Sk.doOneTimeInitialization = function () {
-    var proto, name, i, j, x, func, typesWithFunctionsToWrap, builtin_type;
+Sk.doOneTimeInitialization = function (canSuspend) {
+    var proto, name, i, x, func, typesWithFunctionsToWrap, builtin_type, j;
 
     // can't fill these out when making the type because tuple/dict aren't
     // defined yet.
@@ -32638,9 +32981,9 @@ Sk.doOneTimeInitialization = function () {
         for (base = parent; base !== undefined; base = base.tp$base) {
             bases.push(base);
         }
-        
+
         child.tp$mro = new Sk.builtin.tuple([child]);
-        if (!child.tp$base){ 
+        if (!child.tp$base){
             child.tp$base = bases[0];
         }
         child["$d"] = new Sk.builtin.dict([]);
@@ -32671,6 +33014,7 @@ Sk.doOneTimeInitialization = function () {
                 break;
             }
 
+            proto[name].co_kwargs = null;
             proto[name] = new Sk.builtin.func(proto[name]);
         }
     }
@@ -32690,7 +33034,7 @@ Sk.doOneTimeInitialization = function () {
  * currently only pull once from Sk.syspath. User might want to change
  * from js or from py.
  */
-Sk.importSetUpPath = function () {
+Sk.importSetUpPath = function (canSuspend) {
     var i;
     var paths;
     if (!Sk.realsyspath) {
@@ -32704,7 +33048,7 @@ Sk.importSetUpPath = function () {
         }
         Sk.realsyspath = new Sk.builtin.list(paths);
 
-        Sk.doOneTimeInitialization();
+        Sk.doOneTimeInitialization(canSuspend);
     }
 };
 
@@ -32738,7 +33082,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
     var relativePackageName = relativeToPackage !== undefined ? relativeToPackage.tp$getattr("__name__") : undefined;
     var absolutePackagePrefix = relativePackageName !== undefined ? relativePackageName.v + "." : "";
     var searchPath = relativeToPackage !== undefined ? relativeToPackage.tp$getattr("__path__") : undefined;
-    Sk.importSetUpPath();
+    Sk.importSetUpPath(canSuspend);
 
     // if no module name override, supplied, use default name
     if (modname === undefined) {
@@ -32770,7 +33114,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
     }
 
     ret = Sk.misceval.chain(topLevelModuleToReturn, function(topLevelModuleToReturn_) {
-        var codeAndPath, co, googClosure, external;
+        var codeAndPath, co, googClosure;
         var searchFileName = name;
         var result;
 
@@ -32794,51 +33138,44 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
             filename = name + ".py";
             co = Sk.compile(suppliedPyBody, filename, "exec", canSuspend);
         } else {
-            // If an onBeforeImport method is supplied, call it and if
-            // the result is false or a string, prevent the import.
-            // This allows for a user to conditionally prevent the usage
-            // of certain libraries.
-            if (Sk.onBeforeImport && typeof Sk.onBeforeImport === "function") {
-                result = Sk.onBeforeImport(name);
+            co = Sk.misceval.chain(undefined, function() {
+                // If an onBeforeImport method is supplied, call it and if
+                // the result is false or a string, prevent the import.
+                // This allows for a user to conditionally prevent the usage
+                // of certain libraries.
+                if (Sk.onBeforeImport && typeof Sk.onBeforeImport === "function") {
+                    return Sk.onBeforeImport(name);
+                }
+
+                return;
+            }, function(result) {
                 if (result === false) {
                     throw new Sk.builtin.ImportError("Importing " + name + " is not allowed");
                 } else if (typeof result === "string") {
                     throw new Sk.builtin.ImportError(result);
                 }
-            }
 
-            // check first for an externally loaded library
-            external = Sk.loadExternalLibrary(name);
-            if (external) {
-                co = external;
-                if (Sk.externalLibraries) {
-                    filename = Sk.externalLibraries[name].path; // get path from config
-                } else {
-                    filename = "unknown";
-                }
-                // ToDo: check if this is a dotted name or import from ...
-            } else {
                 // Try loading as a builtin (i.e. already in JS) module, then try .py files
-                co = Sk.misceval.chain(Sk.importSearchPathForName(searchFileName, ".js", searchPath), function(codeAndPath) {
-                    if (codeAndPath) {
-                        return {funcname: "$builtinmodule", code: codeAndPath.code,
-                                filename: codeAndPath.filename, packagePath: codeAndPath.packagePath};
-                    } else {
-                        return Sk.misceval.chain(Sk.importSearchPathForName(searchFileName, ".py", searchPath), function(codeAndPath_) {
-                            codeAndPath = codeAndPath_; // We'll want it in a moment
-                            if (codeAndPath) {
-                                return Sk.compile(codeAndPath.code, codeAndPath.filename, "exec", canSuspend);
-                            }
-                        }, function(co) {
-                            if (co) {
-                                co.packagePath = codeAndPath.packagePath;
-                                return co;
-                            }
-                        });
-                    }
-                });
+                return Sk.importSearchPathForName(searchFileName, ".js", searchPath);
+            }, function(codeAndPath) {
+                if (codeAndPath) {
+                    return {funcname: "$builtinmodule", code: codeAndPath.code,
+                            filename: codeAndPath.filename, packagePath: codeAndPath.packagePath};
+                } else {
+                    return Sk.misceval.chain(Sk.importSearchPathForName(searchFileName, ".py", searchPath), function(codeAndPath_) {
+                        codeAndPath = codeAndPath_; // We'll want it in a moment
+                        if (codeAndPath) {
+                            return Sk.compile(codeAndPath.code, codeAndPath.filename, "exec", canSuspend);
+                        }
+                    }, function(co) {
+                        if (co) {
+                            co.packagePath = codeAndPath.packagePath;
+                            return co;
+                        }
+                    });
+                }
+            });
 
-            }
         }
         return co;
 
@@ -33007,9 +33344,9 @@ Sk.importMainWithBody = function (name, dumpJS, body, canSuspend) {
 };
 
 /**
- * Imports internal python files into the `__builin__` module. Used during startup 
- * to compile and import all *.py files from the src/ directory. 
- * 
+ * Imports internal python files into the `__builin__` module. Used during startup
+ * to compile and import all *.py files from the src/ directory.
+ *
  * @param name {string}  File name to use for messages related to this run
  * @param dumpJS {boolean} print out the compiled javascript
  * @param body {string} Python Code
@@ -33085,7 +33422,7 @@ Sk.builtin.__import__ = function (name, globals, locals, fromlist) {
                 var fromName; // name of current module for fromlist
                 var fromImportName, fromImportModName; // dotted name
                 var lastDottedName = dottedName[dottedName.length-1];
-                
+
                 var found; // Contains sysmodules the "name"
                 var foundFromName; // Contains the sysmodules[name] the current item from the fromList
                 var importChain;
@@ -33952,7 +34289,6 @@ Sk.builtin.type_is_subtype_base_chain = function type_is_subtype_base_chain(a, b
         if (a == b) {
             return true;
         }
-
         a = a.tp$base;
     } while (a !== undefined);
 
@@ -33983,8 +34319,6 @@ Sk.builtin.PyType_IsSubtype = function PyType_IsSubtype(a, b) {
  */
 Sk.builtin.super_ = function super_ (a_type, self) {
     Sk.builtin.pyCheckArgs("super", arguments, 1);
-
-    var type, obj, obj_type;
 
     if (!(this instanceof Sk.builtin.super_)) {
         return new Sk.builtin.super_(a_type, self);
@@ -34094,40 +34428,35 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 // uniquization that the compiler does for words that are reserved in
 // Javascript. This is a bit hokey.
 Sk.builtins = {
-    "range"     : Sk.builtin.range,
-    "round"     : Sk.builtin.round,
-    "len"       : Sk.builtin.len,
-    "min"       : Sk.builtin.min,
-    "max"       : Sk.builtin.max,
-    "sum"       : Sk.builtin.sum,
-    "zip"       : Sk.builtin.zip,
-    "abs"       : Sk.builtin.abs,
-    "fabs"      : Sk.builtin.abs,	//	Added by RNL
-    "ord"       : Sk.builtin.ord,
-    "chr"       : Sk.builtin.chr,
-    "hex"       : Sk.builtin.hex,
-    "oct"       : Sk.builtin.oct,
-    "bin"       : Sk.builtin.bin,
-    "dir"       : Sk.builtin.dir,
-    "repr"      : Sk.builtin.repr,
-    "open"      : Sk.builtin.open,
-    "isinstance": Sk.builtin.isinstance,
-    "hash"      : Sk.builtin.hash,
-    "getattr"   : Sk.builtin.getattr,
-    "float_$rw$": Sk.builtin.float_,
-    "int_$rw$"  : Sk.builtin.int_,
-    "hasattr"   : Sk.builtin.hasattr,
-    "id"        : Sk.builtin.id,
+    "range"     : new Sk.builtin.func(Sk.builtin.range),
+    "round"     : new Sk.builtin.func(Sk.builtin.round),
+    "len"       : new Sk.builtin.func(Sk.builtin.len),
+    "min"       : new Sk.builtin.func(Sk.builtin.min),
+    "max"       : new Sk.builtin.func(Sk.builtin.max),
+    "sum"       : new Sk.builtin.func(Sk.builtin.sum),
+    "zip"       : new Sk.builtin.func(Sk.builtin.zip),
+    "abs"       : new Sk.builtin.func(Sk.builtin.abs),
+    "fabs"      : new Sk.builtin.func(Sk.builtin.fabs),
+    "ord"       : new Sk.builtin.func(Sk.builtin.ord),
+    "chr"       : new Sk.builtin.func(Sk.builtin.chr),
+    "hex"       : new Sk.builtin.func(Sk.builtin.hex),
+    "oct"       : new Sk.builtin.func(Sk.builtin.oct),
+    "bin"       : new Sk.builtin.func(Sk.builtin.bin),
+    "dir"       : new Sk.builtin.func(Sk.builtin.dir),
+    "repr"      : new Sk.builtin.func(Sk.builtin.repr),
+    "open"      : new Sk.builtin.func(Sk.builtin.open),
+    "isinstance": new Sk.builtin.func(Sk.builtin.isinstance),
+    "hash"      : new Sk.builtin.func(Sk.builtin.hash),
+    "getattr"   : new Sk.builtin.func(Sk.builtin.getattr),
+    "hasattr"   : new Sk.builtin.func(Sk.builtin.hasattr),
+    "id"        : new Sk.builtin.func(Sk.builtin.id),
 
-    "map"   : Sk.builtin.map,
-    "filter": Sk.builtin.filter,
-    "reduce": Sk.builtin.reduce,
-    "sorted": Sk.builtin.sorted,
-
-    "bool"     : Sk.builtin.bool,
-    "any"      : Sk.builtin.any,
-    "all"      : Sk.builtin.all,
-    "enumerate": Sk.builtin.enumerate,
+    "map"       : new Sk.builtin.func(Sk.builtin.map),
+    "filter"    : new Sk.builtin.func(Sk.builtin.filter),
+    "reduce"    : new Sk.builtin.func(Sk.builtin.reduce),
+    "sorted"    : new Sk.builtin.func(Sk.builtin.sorted),
+    "any"       : new Sk.builtin.func(Sk.builtin.any),
+    "all"       : new Sk.builtin.func(Sk.builtin.all),
 
     "AttributeError"     : Sk.builtin.AttributeError,
     "ValueError"         : Sk.builtin.ValueError,
@@ -34146,9 +34475,15 @@ Sk.builtins = {
     "SystemExit"         : Sk.builtin.SystemExit,
     "OverflowError"      : Sk.builtin.OverflowError,
     "OperationError"     : Sk.builtin.OperationError,
+    "NegativePowerError" : Sk.builtin.NegativePowerError,
     "RuntimeError"       : Sk.builtin.RuntimeError,
     "StopIteration"      : Sk.builtin.StopIteration,
 
+    "float_$rw$": Sk.builtin.float_,
+    "int_$rw$"  : Sk.builtin.int_,
+    "bool"      : Sk.builtin.bool,
+    "complex"   : Sk.builtin.complex,
+    "enumerate" : Sk.builtin.enumerate,
     "dict"      : Sk.builtin.dict,
     "file"      : Sk.builtin.file,
     "function"  : Sk.builtin.func,
@@ -34162,21 +34497,21 @@ Sk.builtins = {
     "set"       : Sk.builtin.set,
     "tuple"     : Sk.builtin.tuple,
     "type"      : Sk.builtin.type,
-    "input"     : Sk.builtin.input,
-    "raw_input" : Sk.builtin.raw_input,
-    "setattr"   : Sk.builtin.setattr,
+
+    "input"     : new Sk.builtin.func(Sk.builtin.input),
+    "raw_input" : new Sk.builtin.func(Sk.builtin.raw_input),
+    "setattr"   : new Sk.builtin.func(Sk.builtin.setattr),
     /*'read': Sk.builtin.read,*/
     "jseval"    : Sk.builtin.jseval,
     "jsmillis"  : Sk.builtin.jsmillis,
-    "quit"      : Sk.builtin.quit,
-    "exit"      : Sk.builtin.quit,
+    "quit"      : new Sk.builtin.func(Sk.builtin.quit),
+    "exit"      : new Sk.builtin.func(Sk.builtin.quit),
     "print"     : Sk.builtin.print,
-    "divmod"    : Sk.builtin.divmod,
-    "format"    : Sk.builtin.format,
-    "globals"   : Sk.builtin.globals,
-    "issubclass": Sk.builtin.issubclass,
+    "divmod"    : new Sk.builtin.func(Sk.builtin.divmod),
+    "format"    : new Sk.builtin.func(Sk.builtin.format),
+    "globals"   : new Sk.builtin.func(Sk.builtin.globals),
+    "issubclass": new Sk.builtin.func(Sk.builtin.issubclass),
     "iter"      : Sk.builtin.iter,
-    "complex"   : Sk.builtin.complex,
 
     // Functions below are not implemented
     "bytearray" : Sk.builtin.bytearray,
@@ -34221,21 +34556,65 @@ Sk.builtin.bool.false$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builti
 /* Constants used for kwargs */
 
 // Sk.builtin.int_
-Sk.builtin.int_.co_varnames = [ "base" ];
-Sk.builtin.int_.co_numargs = 2;
-Sk.builtin.int_.$defaults = [ new Sk.builtin.int_(10) ];
+Sk.builtin.int_.co_varnames = [ "number", "base" ];
+Sk.builtin.int_.$defaults = [ Sk.builtin.none.none$ ];
 
 // Sk.builtin.lng
-Sk.builtin.lng.co_varnames = [ "base" ];
-Sk.builtin.lng.co_numargs = 2;
-Sk.builtin.lng.$defaults = [ new Sk.builtin.int_(10) ];
+Sk.builtin.lng.co_varnames = [ "number", "base" ];
+Sk.builtin.lng.$defaults = [ Sk.builtin.none.none$ ];
 
 // Sk.builtin.sorted
-Sk.builtin.sorted.co_varnames = ["cmp", "key", "reverse"];
-Sk.builtin.sorted.co_numargs = 4;
+Sk.builtin.sorted.co_varnames = ["list", "cmp", "key", "reverse"];
 Sk.builtin.sorted.$defaults = [Sk.builtin.none.none$, Sk.builtin.none.none$, Sk.builtin.bool.false$];
 
 // Sk.builtin.dict.fromkeys
 Sk.builtin.dict.$fromkeys.co_name = new Sk.builtin.str("fromkeys");
 Sk.builtin.dict.prototype["fromkeys"] = new Sk.builtin.func(Sk.builtin.dict.$fromkeys);
+
+var builtinNames = [
+    "int_",
+    "lng",
+    "sorted",
+    "range",
+    "round",
+    "len",
+    "min",
+    "max",
+    "sum",
+    "zip",
+    "abs",
+    "fabs",
+    "ord",
+    "chr",
+    "hex",
+    "oct",
+    "bin",
+    "dir",
+    "repr",
+    "open",
+    "isinstance",
+    "hash",
+    "getattr",
+    "hasattr",
+    "id",
+    "map",
+    "filter",
+    "reduce",
+    "sorted",
+    "any",
+    "all",
+    "input",
+    "raw_input",
+    "setattr",
+    "quit",
+    "quit",
+    "divmod",
+    "format",
+    "globals",
+    "issubclass"
+];
+
+for (var i = 0; i < builtinNames.length; i++) {
+    Sk.builtin[builtinNames[i]].co_name = new Sk.builtin.str(builtinNames[i]);
+}
 Sk.internalPy={"files": {"src/staticmethod.py": "class staticmethod(object):\n    \"Emulate PyStaticMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, objtype=None):\n        return self.f\n", "src/property.py": "class property(object):\n    \"Emulate PyProperty_Type() in Objects/descrobject.c\"\n\n    def __init__(self, fget=None, fset=None, fdel=None, doc=None):\n        self.fget = fget\n        self.fset = fset\n        self.fdel = fdel\n        if doc is None and fget is not None:\n            if hasattr(fget, '__doc__'):\n                doc = fget.__doc__\n            else:\n                doc = None\n        self.__doc__ = doc\n\n    def __get__(self, obj, objtype=None):\n        if obj is None:\n            return self\n        if self.fget is None:\n            raise AttributeError(\"unreadable attribute\")\n        return self.fget(obj)\n\n    def __set__(self, obj, value):\n        if self.fset is None:\n            raise AttributeError(\"can't set attribute\")\n        self.fset(obj, value)\n\n    def __delete__(self, obj):\n        if self.fdel is None:\n            raise AttributeError(\"can't delete attribute\")\n        self.fdel(obj)\n\n    def getter(self, fget):\n        return type(self)(fget, self.fset, self.fdel, self.__doc__)\n\n    def setter(self, fset):\n        return type(self)(self.fget, fset, self.fdel, self.__doc__)\n\n    def deleter(self, fdel):\n        return type(self)(self.fget, self.fset, fdel, self.__doc__)\n", "src/classmethod.py": "class classmethod(object):\n    \"Emulate PyClassMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, klass=None):\n        if klass is None:\n            klass = type(obj)\n        def newfunc(*args):\n            return self.f(klass, *args)\n        return newfunc\n"}};
