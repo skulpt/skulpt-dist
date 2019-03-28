@@ -6142,7 +6142,7 @@ Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
 };
 
 Sk.builtin.type.prototype["__format__"] = function(self, format_spec) {
-    Sk.builtin.pyCheckArgs("__format__", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 1, 2);
     return new Sk.builtin.str(self);
 };
 
@@ -7355,7 +7355,7 @@ Sk.builtin.object.prototype.tp$descr_set = undefined;   // Nonsense for closure 
  * @instance
  */
 Sk.builtin.object.prototype["__new__"] = function (cls) {
-    Sk.builtin.pyCheckArgs("__new__", arguments, 1, 1, false, false);
+    Sk.builtin.pyCheckArgsLen("__new__", arguments.length, 1, 1, false, false);
 
     return new cls([], []);
 };
@@ -7367,7 +7367,7 @@ Sk.builtin.object.prototype["__new__"] = function (cls) {
  * @instance
  */
 Sk.builtin.object.prototype["__repr__"] = function (self) {
-    Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__repr__", arguments.length, 0, 0, false, true);
 
     return self["$r"]();
 };
@@ -7375,7 +7375,7 @@ Sk.builtin.object.prototype["__repr__"] = function (self) {
 
 Sk.builtin.object.prototype["__format__"] = function (self, format_spec) {
     var formatstr;
-    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
         if (Sk.__future__.exceptions) {
@@ -7401,7 +7401,7 @@ Sk.builtin.object.prototype["__format__"] = function (self, format_spec) {
  * @instance
  */
 Sk.builtin.object.prototype["__str__"] = function (self) {
-    Sk.builtin.pyCheckArgs("__str__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__str__", arguments.length, 0, 0, false, true);
 
     return self["$r"]();
 };
@@ -7413,7 +7413,7 @@ Sk.builtin.object.prototype["__str__"] = function (self) {
  * @instance
  */
 Sk.builtin.object.prototype["__hash__"] = function (self) {
-    Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__hash__", arguments.length, 0, 0, false, true);
 
     return self.tp$hash();
 };
@@ -7425,7 +7425,7 @@ Sk.builtin.object.prototype["__hash__"] = function (self) {
  * @instance
  */
 Sk.builtin.object.prototype["__eq__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__eq__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__eq__", arguments.length, 1, 1, false, true);
 
     return self.ob$eq(other);
 };
@@ -7437,7 +7437,7 @@ Sk.builtin.object.prototype["__eq__"] = function (self, other) {
  * @instance
  */
 Sk.builtin.object.prototype["__ne__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__ne__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__ne__", arguments.length, 1, 1, false, true);
 
     return self.ob$ne(other);
 };
@@ -7449,7 +7449,7 @@ Sk.builtin.object.prototype["__ne__"] = function (self, other) {
  * @instance
  */
 Sk.builtin.object.prototype["__lt__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__lt__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__lt__", arguments.length, 1, 1, false, true);
 
     return self.ob$lt(other);
 };
@@ -7461,7 +7461,7 @@ Sk.builtin.object.prototype["__lt__"] = function (self, other) {
  * @instance
  */
 Sk.builtin.object.prototype["__le__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__le__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__le__", arguments.length, 1, 1, false, true);
 
     return self.ob$le(other);
 };
@@ -7473,7 +7473,7 @@ Sk.builtin.object.prototype["__le__"] = function (self, other) {
  * @instance
  */
 Sk.builtin.object.prototype["__gt__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__gt__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__gt__", arguments.length, 1, 1, false, true);
 
     return self.ob$gt(other);
 };
@@ -7485,7 +7485,7 @@ Sk.builtin.object.prototype["__gt__"] = function (self, other) {
  * @instance
  */
 Sk.builtin.object.prototype["__ge__"] = function (self, other) {
-    Sk.builtin.pyCheckArgs("__ge__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__ge__", arguments.length, 1, 1, false, true);
 
     return self.ob$ge(other);
 };
@@ -7717,6 +7717,45 @@ Sk.builtin.pyCheckArgs = function (name, args, minargs, maxargs, kwargs, free) {
 goog.exportSymbol("Sk.builtin.pyCheckArgs", Sk.builtin.pyCheckArgs);
 
 /**
+ * Check arguments to Python functions to ensure the correct number of
+ * arguments are passed.
+ *
+ * @param {string} name the name of the function
+ * @param {number} nargs the args passed to the function
+ * @param {number} minargs the minimum number of allowable arguments
+ * @param {number=} maxargs optional maximum number of allowable
+ * arguments (default: Infinity)
+ * @param {boolean=} kwargs optional true if kwargs, false otherwise
+ * (default: false)
+ * @param {boolean=} free optional true if free vars, false otherwise
+ * (default: false)
+ */
+Sk.builtin.pyCheckArgsLen = function (name, nargs, minargs, maxargs, kwargs, free) {
+    var msg = "";
+
+    if (maxargs === undefined) {
+        maxargs = Infinity;
+    }
+    if (kwargs) {
+        nargs -= 1;
+    }
+    if (free) {
+        nargs -= 1;
+    }
+    if ((nargs < minargs) || (nargs > maxargs)) {
+        if (minargs === maxargs) {
+            msg = name + "() takes exactly " + minargs + " arguments";
+        } else if (nargs < minargs) {
+            msg = name + "() takes at least " + minargs + " arguments";
+        } else {
+            msg = name + "() takes at most " + maxargs + " arguments";
+        }
+        msg += " (" + nargs + " given)";
+        throw new Sk.builtin.TypeError(msg);
+    }
+};
+
+/**
  * Check type of argument to Python functions.
  *
  * @param {string} name the name of the argument
@@ -7910,7 +7949,7 @@ Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
 Sk.builtin.func.pythonFunctions = ["__get__"];
 
 Sk.builtin.func.prototype.__get__ = function __get__(self, instance, owner) {
-    Sk.builtin.pyCheckArgs("__get__", arguments, 1, 2, false, true);
+    Sk.builtin.pyCheckArgsLen("__get__", arguments.length, 1, 2, false, true);
     if (instance === Sk.builtin.none.none$ && owner === Sk.builtin.none.none$) {
         throw new Sk.builtin.TypeError("__get__(None, None) is invalid");
     }
@@ -8017,7 +8056,8 @@ Sk.builtin.func.prototype["$r"] = function () {
     } else {
         return new Sk.builtin.str("<function " + name + ">");
     }
-};/**
+};
+/**
  * builtins are supposed to come from the __builtin__ module, but we don't do
  * that yet.
  * todo; these should all be func objects too, otherwise str() of them won't
@@ -8028,7 +8068,7 @@ Sk.builtin.range = function range (start, stop, step) {
     var ret = [];
     var i;
 
-    Sk.builtin.pyCheckArgs("range", arguments, 1, 3);
+    Sk.builtin.pyCheckArgsLen("range", arguments.length, 1, 3);
     Sk.builtin.pyCheckType("start", "integer", Sk.builtin.checkInt(start));
     if (stop !== undefined) {
         Sk.builtin.pyCheckType("stop", "integer", Sk.builtin.checkInt(stop));
@@ -8231,7 +8271,7 @@ goog.exportSymbol("Sk.builtin.asnum$nofloat", Sk.builtin.asnum$nofloat);
 
 Sk.builtin.round = function round (number, ndigits) {
     var special;
-    Sk.builtin.pyCheckArgs("round", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("round", arguments.length, 1, 2);
 
     if (!Sk.builtin.checkNumber(number)) {
         if (!Sk.builtin.checkFunction(number)) {
@@ -8268,7 +8308,7 @@ Sk.builtin.round = function round (number, ndigits) {
 Sk.builtin.len = function len (item) {
     var intcheck;
     var special;
-    Sk.builtin.pyCheckArgs("len", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("len", arguments.length, 1, 1);
 
     var int_ = function(i) { return new Sk.builtin.int_(i); };
     intcheck = function(j) {
@@ -8315,7 +8355,7 @@ Sk.builtin.min = function min () {
     var i;
     var lowest;
     var args;
-    Sk.builtin.pyCheckArgs("min", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("min", arguments.length, 1);
 
     args = Sk.misceval.arrayFromArguments(arguments);
     lowest = args[0];
@@ -8336,7 +8376,7 @@ Sk.builtin.max = function max () {
     var i;
     var highest;
     var args;
-    Sk.builtin.pyCheckArgs("max", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("max", arguments.length, 1);
 
     args = Sk.misceval.arrayFromArguments(arguments);
     highest = args[0];
@@ -8356,7 +8396,7 @@ Sk.builtin.max = function max () {
 Sk.builtin.any = function any (iter) {
     var it, i;
 
-    Sk.builtin.pyCheckArgs("any", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("any", arguments.length, 1, 1);
     if (!Sk.builtin.checkIterable(iter)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
             "' object is not iterable");
@@ -8375,7 +8415,7 @@ Sk.builtin.any = function any (iter) {
 Sk.builtin.all = function all (iter) {
     var it, i;
 
-    Sk.builtin.pyCheckArgs("all", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("all", arguments.length, 1, 1);
     if (!Sk.builtin.checkIterable(iter)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
             "' object is not iterable");
@@ -8397,7 +8437,7 @@ Sk.builtin.sum = function sum (iter, start) {
     var it, i;
     var has_float;
 
-    Sk.builtin.pyCheckArgs("sum", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("sum", arguments.length, 1, 2);
     Sk.builtin.pyCheckType("iter", "iterable", Sk.builtin.checkIterable(iter));
     if (start !== undefined && Sk.builtin.checkString(start)) {
         throw new Sk.builtin.TypeError("sum() can't sum strings [use ''.join(seq) instead]");
@@ -8478,7 +8518,7 @@ Sk.builtin.zip = function zip () {
 };
 
 Sk.builtin.abs = function abs (x) {
-    Sk.builtin.pyCheckArgs("abs", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("abs", arguments.length, 1, 1);
 
     if (x instanceof Sk.builtin.int_) {
         return new Sk.builtin.int_(Math.abs(x.v));
@@ -8508,7 +8548,7 @@ Sk.builtin.fabs = function fabs(x) {
 };
 
 Sk.builtin.ord = function ord (x) {
-    Sk.builtin.pyCheckArgs("ord", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("ord", arguments.length, 1, 1);
 
     if (!Sk.builtin.checkString(x)) {
         throw new Sk.builtin.TypeError("ord() expected a string of length 1, but " + Sk.abstr.typeName(x) + " found");
@@ -8519,7 +8559,7 @@ Sk.builtin.ord = function ord (x) {
 };
 
 Sk.builtin.chr = function chr (x) {
-    Sk.builtin.pyCheckArgs("chr", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("chr", arguments.length, 1, 1);
     if (!Sk.builtin.checkInt(x)) {
         throw new Sk.builtin.TypeError("an integer is required");
     }
@@ -8534,7 +8574,7 @@ Sk.builtin.chr = function chr (x) {
 };
 
 Sk.builtin.unichr = function unichr (x) {
-    Sk.builtin.pyCheckArgs("chr", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("chr", arguments.length, 1, 1);
     if (!Sk.builtin.checkInt(x)) {
         throw new Sk.builtin.TypeError("an integer is required");
     }
@@ -8576,7 +8616,7 @@ Sk.builtin.int2str_ = function helper_ (x, radix, prefix) {
 };
 
 Sk.builtin.hex = function hex (x) {
-    Sk.builtin.pyCheckArgs("hex", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("hex", arguments.length, 1, 1);
     if (!Sk.misceval.isIndex(x)) {
         throw new Sk.builtin.TypeError("hex() argument can't be converted to hex");
     }
@@ -8584,7 +8624,7 @@ Sk.builtin.hex = function hex (x) {
 };
 
 Sk.builtin.oct = function oct (x) {
-    Sk.builtin.pyCheckArgs("oct", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("oct", arguments.length, 1, 1);
     if (!Sk.misceval.isIndex(x)) {
         throw new Sk.builtin.TypeError("oct() argument can't be converted to hex");
     }
@@ -8596,7 +8636,7 @@ Sk.builtin.oct = function oct (x) {
 };
 
 Sk.builtin.bin = function bin (x) {
-    Sk.builtin.pyCheckArgs("bin", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("bin", arguments.length, 1, 1);
     if (!Sk.misceval.isIndex(x)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(x) + "' object can't be interpreted as an index");
     }
@@ -8614,7 +8654,7 @@ Sk.builtin.dir = function dir (x) {
     var k;
     var names;
     var getName;
-    Sk.builtin.pyCheckArgs("dir", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("dir", arguments.length, 1, 1);
 
     getName = function (k) {
         var s = null;
@@ -8725,13 +8765,13 @@ Sk.builtin.dir.slotNameToRichName = function (k) {
 };
 
 Sk.builtin.repr = function repr (x) {
-    Sk.builtin.pyCheckArgs("repr", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("repr", arguments.length, 1, 1);
 
     return Sk.misceval.objectRepr(x);
 };
 
 Sk.builtin.open = function open (filename, mode, bufsize) {
-    Sk.builtin.pyCheckArgs("open", arguments, 1, 3);
+    Sk.builtin.pyCheckArgsLen("open", arguments.length, 1, 3);
     if (mode === undefined) {
         mode = new Sk.builtin.str("r");
     }
@@ -8748,7 +8788,7 @@ Sk.builtin.open = function open (filename, mode, bufsize) {
 Sk.builtin.isinstance = function isinstance (obj, type) {
     var issubclass;
     var i;
-    Sk.builtin.pyCheckArgs("isinstance", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("isinstance", arguments.length, 2, 2);
     if (!Sk.builtin.checkClass(type) && !(type instanceof Sk.builtin.tuple)) {
         throw new Sk.builtin.TypeError("isinstance() arg 2 must be a class, type, or tuple of classes and types");
     }
@@ -8805,7 +8845,7 @@ Sk.builtin.isinstance = function isinstance (obj, type) {
 
 Sk.builtin.hash = function hash (value) {
     var junk;
-    Sk.builtin.pyCheckArgs("hash", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("hash", arguments.length, 1, 1);
 
     // Useless object to get compiler to allow check for __hash__ property
     junk = {__hash__: function () {
@@ -8840,7 +8880,7 @@ Sk.builtin.hash = function hash (value) {
 
 Sk.builtin.getattr = function getattr (obj, name, default_) {
     var ret, mangledName;
-    Sk.builtin.pyCheckArgs("getattr", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("getattr", arguments.length, 2, 3);
     if (!Sk.builtin.checkString(name)) {
         throw new Sk.builtin.TypeError("attribute name must be string");
     }
@@ -8858,7 +8898,7 @@ Sk.builtin.getattr = function getattr (obj, name, default_) {
 };
 
 Sk.builtin.setattr = function setattr (obj, name, value) {
-    Sk.builtin.pyCheckArgs("setattr", arguments, 3, 3);
+    Sk.builtin.pyCheckArgsLen("setattr", arguments.length, 3, 3);
     // cannot set or del attr from builtin type
     if (obj === undefined || obj["$r"] === undefined || obj["$r"]().v.slice(1,5) !== "type") {
         if (!Sk.builtin.checkString(name)) {
@@ -8924,7 +8964,7 @@ Sk.builtin.map = function map (fun, seq) {
     var i;
     var iterables;
     var combined;
-    Sk.builtin.pyCheckArgs("map", arguments, 2);
+    Sk.builtin.pyCheckArgsLen("map", arguments.length, 2);
 
     if (arguments.length > 2) {
         // Pack sequences into one list of Javascript Arrays
@@ -8994,7 +9034,7 @@ Sk.builtin.reduce = function reduce (fun, seq, initializer) {
     var item;
     var accum_value;
     var iter;
-    Sk.builtin.pyCheckArgs("reduce", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("reduce", arguments.length, 2, 3);
     if (!Sk.builtin.checkIterable(seq)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
     }
@@ -9023,7 +9063,7 @@ Sk.builtin.filter = function filter (fun, iterable) {
     var ret;
     var add;
     var ctor;
-    Sk.builtin.pyCheckArgs("filter", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("filter", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkIterable(iterable)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iterable) + "' object is not iterable");
@@ -9076,7 +9116,7 @@ Sk.builtin.filter = function filter (fun, iterable) {
 };
 
 Sk.builtin.hasattr = function hasattr (obj, attr) {
-    Sk.builtin.pyCheckArgs("hasattr", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("hasattr", arguments.length, 2, 2);
     var special, ret;
     if (!Sk.builtin.checkString(attr)) {
         throw new Sk.builtin.TypeError("hasattr(): attribute name must be string");
@@ -9102,7 +9142,7 @@ Sk.builtin.pow = function pow (a, b, c) {
     var c_num;
     var b_num;
     var a_num;
-    Sk.builtin.pyCheckArgs("pow", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("pow", arguments.length, 2, 3);
 
     if (c instanceof Sk.builtin.none) {
         c = undefined;
@@ -9176,7 +9216,7 @@ Sk.builtin.quit = function quit (msg) {
 Sk.builtin.issubclass = function issubclass (c1, c2) {
     var i;
     var issubclass_internal;
-    Sk.builtin.pyCheckArgs("issubclass", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("issubclass", arguments.length, 2, 2);
     if (!Sk.builtin.checkClass(c1)) {
         throw new Sk.builtin.TypeError("issubclass() arg 1 must be a class");
     }
@@ -9253,7 +9293,7 @@ Sk.builtin.divmod = function divmod (a, b) {
  * built-in types: Format Specification Mini-Language.
  */
 Sk.builtin.format = function format (value, format_spec) {
-    Sk.builtin.pyCheckArgs("format", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("format", arguments.length, 1, 2);
 
     if (format_spec === undefined) {
         format_spec = Sk.builtin.str.$emptystr;
@@ -9263,7 +9303,7 @@ Sk.builtin.format = function format (value, format_spec) {
 };
 
 Sk.builtin.reversed = function reversed (seq) {
-    Sk.builtin.pyCheckArgs("reversed", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("reversed", arguments.length, 1, 1);
 
     var special = Sk.abstr.lookupSpecial(seq, "__reversed__");
     if (special != null) {
@@ -9311,7 +9351,7 @@ Sk.builtin.reversed = function reversed (seq) {
 };
 
 Sk.builtin.id = function (obj) {
-    Sk.builtin.pyCheckArgs("id", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("id", arguments.length, 1, 1);
 
     if (obj.__id === undefined) {
         Sk.builtin.idCount += 1;
@@ -9327,7 +9367,7 @@ Sk.builtin.bytearray = function bytearray () {
 
 Sk.builtin.callable = function callable (obj) {
     // check num of args
-    Sk.builtin.pyCheckArgs("callable", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("callable", arguments.length, 1, 1);
 
     if (Sk.builtin.checkCallable(obj)) {
         return Sk.builtin.bool.true$;
@@ -9336,7 +9376,7 @@ Sk.builtin.callable = function callable (obj) {
 };
 
 Sk.builtin.delattr = function delattr (obj, attr) {
-    Sk.builtin.pyCheckArgs("delattr", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("delattr", arguments.length, 2, 2);
     if (obj["$d"][attr.v] !== undefined) {
         var ret = Sk.misceval.tryCatch(function() {
             var try1 = Sk.builtin.setattr(obj, attr, undefined);
@@ -9379,7 +9419,7 @@ Sk.builtin.help = function help () {
 };
 
 Sk.builtin.iter = function iter (obj, sentinel) {
-    Sk.builtin.pyCheckArgs("iter", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("iter", arguments.length, 1, 2);
     if (arguments.length === 1) {
         if (!Sk.builtin.checkIterable(obj)) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) +
@@ -9405,7 +9445,7 @@ Sk.builtin.memoryview = function memoryview () {
 
 Sk.builtin.next_ = function next_ (iter, default_) {
     var nxt;
-    Sk.builtin.pyCheckArgs("next", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("next", arguments.length, 1, 2);
     if (!iter.tp$iternext) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iter) +
             "' object is not an iterator");
@@ -10074,7 +10114,7 @@ goog.exportSymbol("Sk", Sk);
  */
 Sk.builtin.method = function (func, self, klass, builtin) {
     if (!(this instanceof Sk.builtin.method)) {
-        Sk.builtin.pyCheckArgs("method", arguments, 3, 3);
+        Sk.builtin.pyCheckArgsLen("method", arguments.length, 3, 3);
         if (!Sk.builtin.checkCallable(func)) {
             throw new Sk.builtin.TypeError("First argument must be callable");
         }
@@ -10140,7 +10180,7 @@ Sk.builtin.method.prototype.tp$descr_get = function (obj, objtype) {
 Sk.builtin.method.pythonFunctions = ["__get__"];
 
 Sk.builtin.method.prototype.__get__ = function __get__(self, instance, owner) {
-    Sk.builtin.pyCheckArgs("__get__", arguments, 1, 2, false, true);
+    Sk.builtin.pyCheckArgsLen("__get__", arguments.length, 1, 2, false, true);
     if (instance === Sk.builtin.none.none$ && owner === Sk.builtin.none.none$) {
         throw new Sk.builtin.TypeError("__get__(None, None) is invalid");
     }
@@ -11470,7 +11510,7 @@ Sk.builtin.seqtype.sk$abstract = true;
  */
 Sk.builtin.seqtype.prototype["__len__"] = new Sk.builtin.func(function (self) {
 
-    Sk.builtin.pyCheckArgs("__len__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__len__", arguments.length, 0, 0, false, true);
 
     return new Sk.builtin.int_(self.sq$length());    
 
@@ -11485,7 +11525,7 @@ Sk.builtin.seqtype.prototype["__len__"] = new Sk.builtin.func(function (self) {
  */
 Sk.builtin.seqtype.prototype["__iter__"] = new Sk.builtin.func(function (self) {
 
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, false, true);
 
     return self.tp$iter();
 
@@ -11500,7 +11540,7 @@ Sk.builtin.seqtype.prototype["__iter__"] = new Sk.builtin.func(function (self) {
  */
 Sk.builtin.seqtype.prototype["__contains__"] = new Sk.builtin.func(function (self, item) {
 
-    Sk.builtin.pyCheckArgs("__contains__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__contains__", arguments.length, 1, 1, false, true);
 
     if (self.sq$contains(item)) {
         return Sk.builtin.bool.true$;
@@ -11519,7 +11559,7 @@ Sk.builtin.seqtype.prototype["__contains__"] = new Sk.builtin.func(function (sel
  */
 Sk.builtin.seqtype.prototype["__getitem__"] = new Sk.builtin.func(function (self, key) {
 
-    Sk.builtin.pyCheckArgs("__getitem__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__getitem__", arguments.length, 1, 1, false, true);
 
     return self.mp$subscript(key);
 
@@ -11534,7 +11574,7 @@ Sk.builtin.seqtype.prototype["__getitem__"] = new Sk.builtin.func(function (self
  */
 Sk.builtin.seqtype.prototype["__add__"] = new Sk.builtin.func(function (self, other) {
 
-    Sk.builtin.pyCheckArgs("__add__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__add__", arguments.length, 1, 1, false, true);
 
     return self.sq$concat(other);
 
@@ -11549,7 +11589,7 @@ Sk.builtin.seqtype.prototype["__add__"] = new Sk.builtin.func(function (self, ot
  */
 Sk.builtin.seqtype.prototype["__mul__"] = new Sk.builtin.func(function (self, n) {
 
-    Sk.builtin.pyCheckArgs("__mul__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__mul__", arguments.length, 1, 1, false, true);
 
     if (!Sk.misceval.isIndex(n)) {
         throw new Sk.builtin.TypeError("can't multiply sequence by non-int of type '" + Sk.abstr.typeName(n) + "'");
@@ -11568,7 +11608,7 @@ Sk.builtin.seqtype.prototype["__mul__"] = new Sk.builtin.func(function (self, n)
  */
 Sk.builtin.seqtype.prototype["__rmul__"] = new Sk.builtin.func(function (self, n) {
 
-    Sk.builtin.pyCheckArgs("__rmul__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rmul__", arguments.length, 1, 1, false, true);
 
     return self.sq$repeat(n);    
 
@@ -11797,7 +11837,7 @@ Sk.builtin.list.prototype.tp$richcompare = function (w, op) {
 };
 
 Sk.builtin.list.prototype.__iter__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, true, false);
     return new Sk.builtin.list_iter_(self);
 });
 
@@ -11870,7 +11910,7 @@ Sk.builtin.list.prototype.sq$contains = function (item) {
 };
 
 Sk.builtin.list.prototype.__contains__ = new Sk.builtin.func(function(self, item) {
-    Sk.builtin.pyCheckArgs("__contains__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__contains__", arguments.length, 2, 2);
     return new Sk.builtin.bool(self.sq$contains(item));
 });
 
@@ -12084,7 +12124,7 @@ Sk.builtin.list.prototype.list_reverse_ = function (self) {
     var newarr;
     var old;
     var len;
-    Sk.builtin.pyCheckArgs("reverse", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("reverse", arguments.length, 1, 1);
 
     len = self.v.length;
     old = self.v;
@@ -12099,14 +12139,14 @@ Sk.builtin.list.prototype.list_reverse_ = function (self) {
 //Sk.builtin.list.prototype.__reversed__ = todo;
 
 Sk.builtin.list.prototype["append"] = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("append", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("append", arguments.length, 2, 2);
 
     self.v.push(item);
     return Sk.builtin.none.none$;
 });
 
 Sk.builtin.list.prototype["insert"] = new Sk.builtin.func(function (self, i, x) {
-    Sk.builtin.pyCheckArgs("insert", arguments, 3, 3);
+    Sk.builtin.pyCheckArgsLen("insert", arguments.length, 3, 3);
     if (!Sk.builtin.checkNumber(i)) {
         throw new Sk.builtin.TypeError("an integer is required");
     }
@@ -12125,14 +12165,14 @@ Sk.builtin.list.prototype["insert"] = new Sk.builtin.func(function (self, i, x) 
 });
 
 Sk.builtin.list.prototype["extend"] = new Sk.builtin.func(function (self, b) {
-    Sk.builtin.pyCheckArgs("extend", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("extend", arguments.length, 2, 2);
     self.list_extend_(b);
     return Sk.builtin.none.none$;
 });
 
 Sk.builtin.list.prototype["pop"] = new Sk.builtin.func(function (self, i) {
     var ret;
-    Sk.builtin.pyCheckArgs("pop", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("pop", arguments.length, 1, 2);
     if (i === undefined) {
         i = self.v.length - 1;
     }
@@ -12155,7 +12195,7 @@ Sk.builtin.list.prototype["pop"] = new Sk.builtin.func(function (self, i) {
 
 Sk.builtin.list.prototype["remove"] = new Sk.builtin.func(function (self, item) {
     var idx;
-    Sk.builtin.pyCheckArgs("remove", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("remove", arguments.length, 2, 2);
 
     idx = Sk.builtin.list.prototype["index"].func_code(self, item);
     self.v.splice(Sk.builtin.asnum$(idx), 1);
@@ -12166,7 +12206,7 @@ Sk.builtin.list.prototype["index"] = new Sk.builtin.func(function (self, item, s
     var i;
     var obj;
     var len;
-    Sk.builtin.pyCheckArgs("index", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("index", arguments.length, 2, 4);
     if (start !== undefined && !Sk.builtin.checkInt(start)) {
         throw new Sk.builtin.TypeError("slice indices must be integers");
     }
@@ -12200,7 +12240,7 @@ Sk.builtin.list.prototype["count"] = new Sk.builtin.func(function (self, item) {
     var count;
     var obj;
     var len;
-    Sk.builtin.pyCheckArgs("count", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("count", arguments.length, 2, 2);
 
     len = self.v.length;
     obj = self.v;
@@ -12266,6 +12306,9 @@ Sk.builtin.interned = {};
  */
 Sk.builtin.str = function (x) {
     var ret;
+
+    Sk.builtin.pyCheckArgsLen("str", arguments.length, 0, 1);
+
     if (x === undefined) {
         x = "";
     }
@@ -12491,12 +12534,12 @@ Sk.builtin.str.re_escape_ = function (s) {
 };
 
 Sk.builtin.str.prototype["lower"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("lower", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("lower", arguments.length, 1, 1);
     return new Sk.builtin.str(self.v.toLowerCase());
 });
 
 Sk.builtin.str.prototype["upper"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("upper", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("upper", arguments.length, 1, 1);
     return new Sk.builtin.str(self.v.toUpperCase());
 });
 
@@ -12504,7 +12547,7 @@ Sk.builtin.str.prototype["capitalize"] = new Sk.builtin.func(function (self) {
     var i;
     var cap;
     var orig;
-    Sk.builtin.pyCheckArgs("capitalize", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("capitalize", arguments.length, 1, 1);
     orig = self.v;
 
     if (orig.length === 0) {
@@ -12521,7 +12564,7 @@ Sk.builtin.str.prototype["capitalize"] = new Sk.builtin.func(function (self) {
 Sk.builtin.str.prototype["join"] = new Sk.builtin.func(function (self, seq) {
     var it, i;
     var arrOfStrs;
-    Sk.builtin.pyCheckArgs("join", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("join", arguments.length, 2, 2);
     Sk.builtin.pyCheckType("seq", "iterable", Sk.builtin.checkIterable(seq));
     arrOfStrs = [];
     for (it = seq.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
@@ -12541,7 +12584,7 @@ Sk.builtin.str.prototype["split"] = new Sk.builtin.func(function (self, on, howm
     var s;
     var str;
     var regex;
-    Sk.builtin.pyCheckArgs("split", arguments, 1, 3);
+    Sk.builtin.pyCheckArgsLen("split", arguments.length, 1, 3);
     if ((on === undefined) || (on instanceof Sk.builtin.none)) {
         on = null;
     }
@@ -12595,7 +12638,7 @@ Sk.builtin.str.prototype["split"] = new Sk.builtin.func(function (self, on, howm
 Sk.builtin.str.prototype["strip"] = new Sk.builtin.func(function (self, chars) {
     var regex;
     var pattern;
-    Sk.builtin.pyCheckArgs("strip", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("strip", arguments.length, 1, 2);
     if ((chars !== undefined) && !Sk.builtin.checkString(chars)) {
         throw new Sk.builtin.TypeError("strip arg must be None or str");
     }
@@ -12611,7 +12654,7 @@ Sk.builtin.str.prototype["strip"] = new Sk.builtin.func(function (self, chars) {
 Sk.builtin.str.prototype["lstrip"] = new Sk.builtin.func(function (self, chars) {
     var regex;
     var pattern;
-    Sk.builtin.pyCheckArgs("lstrip", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("lstrip", arguments.length, 1, 2);
     if ((chars !== undefined) && !Sk.builtin.checkString(chars)) {
         throw new Sk.builtin.TypeError("lstrip arg must be None or str");
     }
@@ -12627,7 +12670,7 @@ Sk.builtin.str.prototype["lstrip"] = new Sk.builtin.func(function (self, chars) 
 Sk.builtin.str.prototype["rstrip"] = new Sk.builtin.func(function (self, chars) {
     var regex;
     var pattern;
-    Sk.builtin.pyCheckArgs("rstrip", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("rstrip", arguments.length, 1, 2);
     if ((chars !== undefined) && !Sk.builtin.checkString(chars)) {
         throw new Sk.builtin.TypeError("rstrip arg must be None or str");
     }
@@ -12642,7 +12685,7 @@ Sk.builtin.str.prototype["rstrip"] = new Sk.builtin.func(function (self, chars) 
 
 Sk.builtin.str.prototype["__format__"] = new Sk.builtin.func(function (self, format_spec) {
     var formatstr;
-    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
         if (Sk.__future__.exceptions) {
@@ -12663,7 +12706,7 @@ Sk.builtin.str.prototype["__format__"] = new Sk.builtin.func(function (self, for
 Sk.builtin.str.prototype["partition"] = new Sk.builtin.func(function (self, sep) {
     var pos;
     var sepStr;
-    Sk.builtin.pyCheckArgs("partition", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("partition", arguments.length, 2, 2);
     Sk.builtin.pyCheckType("sep", "string", Sk.builtin.checkString(sep));
     sepStr = new Sk.builtin.str(sep);
     pos = self.v.indexOf(sepStr.v);
@@ -12680,7 +12723,7 @@ Sk.builtin.str.prototype["partition"] = new Sk.builtin.func(function (self, sep)
 Sk.builtin.str.prototype["rpartition"] = new Sk.builtin.func(function (self, sep) {
     var pos;
     var sepStr;
-    Sk.builtin.pyCheckArgs("rpartition", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("rpartition", arguments.length, 2, 2);
     Sk.builtin.pyCheckType("sep", "string", Sk.builtin.checkString(sep));
     sepStr = new Sk.builtin.str(sep);
     pos = self.v.lastIndexOf(sepStr.v);
@@ -12699,7 +12742,7 @@ Sk.builtin.str.prototype["count"] = new Sk.builtin.func(function (self, pat, sta
     var ctl;
     var slice;
     var m;
-    Sk.builtin.pyCheckArgs("count", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("count", arguments.length, 2, 4);
     if (!Sk.builtin.checkString(pat)) {
         throw new Sk.builtin.TypeError("expected a character buffer object");
     }
@@ -12738,7 +12781,7 @@ Sk.builtin.str.prototype["count"] = new Sk.builtin.func(function (self, pat, sta
 
 Sk.builtin.str.prototype["ljust"] = new Sk.builtin.func(function (self, len, fillchar) {
     var newstr;
-    Sk.builtin.pyCheckArgs("ljust", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("ljust", arguments.length, 2, 3);
     if (!Sk.builtin.checkInt(len)) {
         throw new Sk.builtin.TypeError("integer argument exepcted, got " + Sk.abstr.typeName(len));
     }
@@ -12761,7 +12804,7 @@ Sk.builtin.str.prototype["ljust"] = new Sk.builtin.func(function (self, len, fil
 
 Sk.builtin.str.prototype["rjust"] = new Sk.builtin.func(function (self, len, fillchar) {
     var newstr;
-    Sk.builtin.pyCheckArgs("rjust", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("rjust", arguments.length, 2, 3);
     if (!Sk.builtin.checkInt(len)) {
         throw new Sk.builtin.TypeError("integer argument exepcted, got " + Sk.abstr.typeName(len));
     }
@@ -12786,7 +12829,7 @@ Sk.builtin.str.prototype["rjust"] = new Sk.builtin.func(function (self, len, fil
 Sk.builtin.str.prototype["center"] = new Sk.builtin.func(function (self, len, fillchar) {
     var newstr;
     var newstr1;
-    Sk.builtin.pyCheckArgs("center", arguments, 2, 3);
+    Sk.builtin.pyCheckArgsLen("center", arguments.length, 2, 3);
     if (!Sk.builtin.checkInt(len)) {
         throw new Sk.builtin.TypeError("integer argument exepcted, got " + Sk.abstr.typeName(len));
     }
@@ -12814,7 +12857,7 @@ Sk.builtin.str.prototype["center"] = new Sk.builtin.func(function (self, len, fi
 
 Sk.builtin.str.prototype["find"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
-    Sk.builtin.pyCheckArgs("find", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("find", arguments.length, 2, 4);
     if (!Sk.builtin.checkString(tgt)) {
         throw new Sk.builtin.TypeError("expected a character buffer object");
     }
@@ -12847,7 +12890,7 @@ Sk.builtin.str.prototype["find"] = new Sk.builtin.func(function (self, tgt, star
 
 Sk.builtin.str.prototype["index"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
-    Sk.builtin.pyCheckArgs("index", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("index", arguments.length, 2, 4);
     idx = Sk.misceval.callsim(self["find"], self, tgt, start, end);
     if (Sk.builtin.asnum$(idx) === -1) {
         throw new Sk.builtin.ValueError("substring not found");
@@ -12857,7 +12900,7 @@ Sk.builtin.str.prototype["index"] = new Sk.builtin.func(function (self, tgt, sta
 
 Sk.builtin.str.prototype["rfind"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
-    Sk.builtin.pyCheckArgs("rfind", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("rfind", arguments.length, 2, 4);
     if (!Sk.builtin.checkString(tgt)) {
         throw new Sk.builtin.TypeError("expected a character buffer object");
     }
@@ -12891,7 +12934,7 @@ Sk.builtin.str.prototype["rfind"] = new Sk.builtin.func(function (self, tgt, sta
 
 Sk.builtin.str.prototype["rindex"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
-    Sk.builtin.pyCheckArgs("rindex", arguments, 2, 4);
+    Sk.builtin.pyCheckArgsLen("rindex", arguments.length, 2, 4);
     idx = Sk.misceval.callsim(self["rfind"], self, tgt, start, end);
     if (Sk.builtin.asnum$(idx) === -1) {
         throw new Sk.builtin.ValueError("substring not found");
@@ -12900,14 +12943,14 @@ Sk.builtin.str.prototype["rindex"] = new Sk.builtin.func(function (self, tgt, st
 });
 
 Sk.builtin.str.prototype["startswith"] = new Sk.builtin.func(function (self, tgt) {
-    Sk.builtin.pyCheckArgs("startswith", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("startswith", arguments.length, 2, 2);
     Sk.builtin.pyCheckType("tgt", "string", Sk.builtin.checkString(tgt));
     return new Sk.builtin.bool( self.v.indexOf(tgt.v) === 0);
 });
 
 // http://stackoverflow.com/questions/280634/endswith-in-javascript
 Sk.builtin.str.prototype["endswith"] = new Sk.builtin.func(function (self, tgt) {
-    Sk.builtin.pyCheckArgs("endswith", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("endswith", arguments.length, 2, 2);
     Sk.builtin.pyCheckType("tgt", "string", Sk.builtin.checkString(tgt));
     return new Sk.builtin.bool( self.v.indexOf(tgt.v, self.v.length - tgt.v.length) !== -1);
 });
@@ -12915,7 +12958,7 @@ Sk.builtin.str.prototype["endswith"] = new Sk.builtin.func(function (self, tgt) 
 Sk.builtin.str.prototype["replace"] = new Sk.builtin.func(function (self, oldS, newS, count) {
     var c;
     var patt;
-    Sk.builtin.pyCheckArgs("replace", arguments, 3, 4);
+    Sk.builtin.pyCheckArgsLen("replace", arguments.length, 3, 4);
     Sk.builtin.pyCheckType("oldS", "string", Sk.builtin.checkString(oldS));
     Sk.builtin.pyCheckType("newS", "string", Sk.builtin.checkString(newS));
     if ((count !== undefined) && !Sk.builtin.checkInt(count)) {
@@ -12949,7 +12992,7 @@ Sk.builtin.str.prototype["zfill"] = new Sk.builtin.func(function (self, len) {
     var offset;
     var pad = "";
 
-    Sk.builtin.pyCheckArgs("zfill", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("zfill", arguments.length, 2, 2);
     if (! Sk.builtin.checkInt(len)) {
         throw new Sk.builtin.TypeError("integer argument exepected, got " + Sk.abstr.typeName(len));
     }
@@ -12969,12 +13012,12 @@ Sk.builtin.str.prototype["zfill"] = new Sk.builtin.func(function (self, len) {
 });
 
 Sk.builtin.str.prototype["isdigit"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isdigit", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isdigit", arguments.length, 1, 1);
     return new Sk.builtin.bool( /^\d+$/.test(self.v));
 });
 
 Sk.builtin.str.prototype["isspace"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isspace", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isspace", arguments.length, 1, 1);
     return new Sk.builtin.bool( /^\s+$/.test(self.v));
 });
 
@@ -12990,7 +13033,7 @@ Sk.builtin.str.prototype["expandtabs"] = new Sk.builtin.func(function (self, tab
     var spaces;
     var expanded;
 
-    Sk.builtin.pyCheckArgs("expandtabs", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("expandtabs", arguments.length, 1, 2);
 
 
     if ((tabsize !== undefined) && ! Sk.builtin.checkInt(tabsize)) {
@@ -13011,7 +13054,7 @@ Sk.builtin.str.prototype["expandtabs"] = new Sk.builtin.func(function (self, tab
 
 Sk.builtin.str.prototype["swapcase"] = new Sk.builtin.func(function (self) {
     var ret;
-    Sk.builtin.pyCheckArgs("swapcase", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("swapcase", arguments.length, 1, 1);
 
 
     ret = self.v.replace(/[a-z]/gi, function(c) {
@@ -13032,7 +13075,7 @@ Sk.builtin.str.prototype["splitlines"] = new Sk.builtin.func(function (self, kee
     var eol;
     var sol = 0;
     var slice;
-    Sk.builtin.pyCheckArgs("splitlines", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("splitlines", arguments.length, 1, 2);
     if ((keepends !== undefined) && ! Sk.builtin.checkBool(keepends)) {
         throw new Sk.builtin.TypeError("boolean argument expected, got " + Sk.abstr.typeName(keepends));
     }
@@ -13078,7 +13121,7 @@ Sk.builtin.str.prototype["splitlines"] = new Sk.builtin.func(function (self, kee
 Sk.builtin.str.prototype["title"] = new Sk.builtin.func(function (self) {
     var ret;
 
-    Sk.builtin.pyCheckArgs("title", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("title", arguments.length, 1, 1);
 
     ret = self.v.replace(/[a-z][a-z]*/gi, function(str) {
         return str[0].toUpperCase() + str.substr(1).toLowerCase();
@@ -13088,28 +13131,28 @@ Sk.builtin.str.prototype["title"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.str.prototype["isalpha"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isalpha", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isalpha", arguments.length, 1, 1);
     return new Sk.builtin.bool( self.v.length && goog.string.isAlpha(self.v));
 });
 
 Sk.builtin.str.prototype["isalnum"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isalnum", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isalnum", arguments.length, 1, 1);
     return new Sk.builtin.bool( self.v.length && goog.string.isAlphaNumeric(self.v));
 });
 
 // does not account for unicode numeric values
 Sk.builtin.str.prototype["isnumeric"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isnumeric", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isnumeric", arguments.length, 1, 1);
     return new Sk.builtin.bool( self.v.length && goog.string.isNumeric(self.v));
 });
 
 Sk.builtin.str.prototype["islower"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("islower", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("islower", arguments.length, 1, 1);
     return new Sk.builtin.bool( self.v.length && /[a-z]/.test(self.v) && !/[A-Z]/.test(self.v));
 });
 
 Sk.builtin.str.prototype["isupper"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("isupper", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("isupper", arguments.length, 1, 1);
     return new Sk.builtin.bool( self.v.length && !/[a-z]/.test(self.v) && /[A-Z]/.test(self.v));
 });
 
@@ -13121,7 +13164,7 @@ Sk.builtin.str.prototype["istitle"] = new Sk.builtin.func(function (self) {
     var previous_is_cased = false;
     var pos;
     var ch;
-    Sk.builtin.pyCheckArgs("istitle", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("istitle", arguments.length, 1, 1);
     for (pos = 0; pos < input.length; pos ++) {
         ch = input.charAt(pos);
         if (! /[a-z]/.test(ch) && /[A-Z]/.test(ch)) {
@@ -13434,7 +13477,7 @@ Sk.abstr.setUpInheritance("iterator", Sk.builtin.str_iter_, Sk.builtin.object);
 Sk.builtin.str_iter_.prototype.__class__ = Sk.builtin.str_iter_;
 
 Sk.builtin.str_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, true, false);
     return self;
 });
 
@@ -13455,7 +13498,7 @@ var format = function (kwa) {
     var replFunc;
     var arg_dict = {};
 
-    Sk.builtin.pyCheckArgs("format", arguments, 0, Infinity, true, true);
+    Sk.builtin.pyCheckArgsLen("format", arguments.length, 0, Infinity, true, true);
 
 
     args = new Sk.builtins["tuple"](Array.prototype.slice.call(arguments, 1)); /*vararg*/
@@ -13794,6 +13837,7 @@ Sk.builtin.str.prototype["format"] = new Sk.builtin.func(format);
 Sk.builtin.tuple = function (L) {
     var it, i;
     if (!(this instanceof Sk.builtin.tuple)) {
+        Sk.builtin.pyCheckArgsLen("tuple", arguments.length, 0, 1);
         return new Sk.builtin.tuple(L);
     }
 
@@ -13909,7 +13953,7 @@ Sk.builtin.tuple.prototype.nb$multiply = Sk.builtin.tuple.prototype.sq$repeat;
 Sk.builtin.tuple.prototype.nb$inplace_multiply = Sk.builtin.tuple.prototype.sq$repeat;
 
 Sk.builtin.tuple.prototype.__iter__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 1, 1);
     return new Sk.builtin.tuple_iter_(self);
 });
 
@@ -14142,7 +14186,7 @@ Sk.builtin.dict = function dict (L) {
 
 Sk.builtin.dict.tp$call = function(args, kw) {
     var d, i;
-    Sk.builtin.pyCheckArgs("dict", args, 0, 1);
+    Sk.builtin.pyCheckArgsLen("dict", args, 0, 1);
     d = new Sk.builtin.dict(args[0]);
     if (kw) {
         for (i = 0; i < kw.length; i += 2) {
@@ -14210,7 +14254,7 @@ Sk.builtin.dict.prototype.mp$lookup = function (key) {
 };
 
 Sk.builtin.dict.prototype.mp$subscript = function (key) {
-    Sk.builtin.pyCheckArgs("[]", arguments, 1, 2, false, false);
+    Sk.builtin.pyCheckArgsLen("[]", arguments.length, 1, 2, false, false);
     var s;
     var res = this.mp$lookup(key);
 
@@ -14257,7 +14301,7 @@ Sk.builtin.dict.prototype.mp$ass_subscript = function (key, w) {
 };
 
 Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
-    Sk.builtin.pyCheckArgs("del", arguments, 1, 1, false, false);
+    Sk.builtin.pyCheckArgsLen("del", arguments.length, 1, 1, false, false);
     var k = kf(key);
     var bucket = this.buckets[k.v];
     var item;
@@ -14306,7 +14350,7 @@ Sk.builtin.dict.prototype.mp$length = function () {
 };
 
 Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
-    Sk.builtin.pyCheckArgs("get()", arguments, 1, 2, false, true);
+    Sk.builtin.pyCheckArgsLen("get()", arguments.length, 1, 2, false, true);
     var ret;
 
     if (d === undefined) {
@@ -14322,7 +14366,7 @@ Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
 });
 
 Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
-    Sk.builtin.pyCheckArgs("pop()", arguments, 1, 2, false, true);
+    Sk.builtin.pyCheckArgsLen("pop()", arguments.length, 1, 2, false, true);
     var k = kf(key);
     var bucket = self.buckets[k.v];
     var item;
@@ -14346,12 +14390,12 @@ Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
 });
 
 Sk.builtin.dict.prototype["has_key"] = new Sk.builtin.func(function (self, k) {
-    Sk.builtin.pyCheckArgs("has_key()", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("has_key()", arguments.length, 1, 1, false, true);
     return new Sk.builtin.bool( self.sq$contains(k));
 });
 
 Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("items()", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("items()", arguments.length, 0, 0, false, true);
     var v;
     var iter, k;
     var ret = [];
@@ -14370,7 +14414,7 @@ Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("keys()", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("keys()", arguments.length, 0, 0, false, true);
     var iter, k;
     var ret = [];
 
@@ -14383,7 +14427,7 @@ Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("values()", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("values()", arguments.length, 0, 0, false, true);
     var v;
     var iter, k;
     var ret = [];
@@ -14401,7 +14445,7 @@ Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.dict.prototype["clear"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("clear()", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("clear()", arguments.length, 0, 0, false, true);
     var k;
     var iter;
 
@@ -14504,7 +14548,7 @@ update_f.co_kwargs = true;
 Sk.builtin.dict.prototype.update = new Sk.builtin.func(update_f);
 
 Sk.builtin.dict.prototype.__contains__ = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("__contains__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__contains__", arguments.length, 2, 2);
     return new Sk.builtin.bool(self.sq$contains(item));
 });
 
@@ -14514,38 +14558,38 @@ Sk.builtin.dict.prototype.__cmp__ = new Sk.builtin.func(function (self, other, o
 });
 
 Sk.builtin.dict.prototype.__delitem__ = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("__delitem__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__delitem__", arguments.length, 1, 1, false, true);
     return Sk.builtin.dict.prototype.mp$del_subscript.call(self, item);
 });
 
 Sk.builtin.dict.prototype.__getitem__ = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("__getitem__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__getitem__", arguments.length, 1, 1, false, true);
     return Sk.builtin.dict.prototype.mp$subscript.call(self, item);
 });
 
 Sk.builtin.dict.prototype.__setitem__ = new Sk.builtin.func(function (self, item, value) {
-    Sk.builtin.pyCheckArgs("__setitem__", arguments, 2, 2, false, true);
+    Sk.builtin.pyCheckArgsLen("__setitem__", arguments.length, 2, 2, false, true);
     return Sk.builtin.dict.prototype.mp$ass_subscript.call(self, item, value);
 });
 
 Sk.builtin.dict.prototype.__hash__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__hash__", arguments.length, 0, 0, false, true);
     return Sk.builtin.dict.prototype.tp$hash.call(self);
 });
 
 Sk.builtin.dict.prototype.__len__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__len__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__len__", arguments.length, 0, 0, false, true);
     return Sk.builtin.dict.prototype.mp$length.call(self);
 });
 
 Sk.builtin.dict.prototype.__getattribute__ = new Sk.builtin.func(function (self, attr) {
-    Sk.builtin.pyCheckArgs("__getattribute__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__getattribute__", arguments.length, 1, 1, false, true);
     if (!Sk.builtin.checkString(attr)) { throw new Sk.builtin.TypeError("__getattribute__ requires a string"); }
     return Sk.builtin.dict.prototype.tp$getattr.call(self, Sk.ffi.remapToJs(attr));
 });
 
 Sk.builtin.dict.prototype.__iter__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, false, true);
 
     return new Sk.builtin.dict_iter_(self);
 });
@@ -14555,7 +14599,7 @@ Sk.builtin.dict.prototype.tp$iter = function () {
 };
 
 Sk.builtin.dict.prototype.__repr__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__repr__", arguments.length, 0, 0, false, true);
     return Sk.builtin.dict.prototype["$r"].call(self);
 });
 
@@ -14605,7 +14649,7 @@ Sk.builtin.dict.prototype.ob$ne = function (other) {
 };
 
 Sk.builtin.dict.prototype["copy"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("copy", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("copy", arguments.length, 0, 0, false, true);
 
     var it; // Iterator
     var k; // Key of dict item
@@ -14630,14 +14674,14 @@ Sk.builtin.dict.$fromkeys = function fromkeys(self, seq, value) {
 
     if (self instanceof Sk.builtin.dict) {
         // instance call
-        Sk.builtin.pyCheckArgs("fromkeys", arguments, 1, 2, false, true);
+        Sk.builtin.pyCheckArgsLen("fromkeys", arguments.length, 1, 2, false, true);
 
         res = self;
         iterable = seq;
         val = value === undefined ? Sk.builtin.none.none$ : value;
     } else {
         // static call
-        Sk.builtin.pyCheckArgs("fromkeys", arguments, 1, 2, false, false);
+        Sk.builtin.pyCheckArgsLen("fromkeys", arguments.length, 1, 2, false, false);
 
         res = new Sk.builtin.dict([]);
         iterable = self;
@@ -14777,7 +14821,7 @@ Sk.builtin.numtype.prototype["__abs__"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.NotImplementedError("__abs__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__abs__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__abs__", arguments.length, 0, 0, false, true);
     return self.nb$abs();
 
 });
@@ -14795,7 +14839,7 @@ Sk.builtin.numtype.prototype["__neg__"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.NotImplementedError("__neg__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__neg__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__neg__", arguments.length, 0, 0, false, true);
     return self.nb$negative();
 
 });
@@ -14813,7 +14857,7 @@ Sk.builtin.numtype.prototype["__pos__"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.NotImplementedError("__pos__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__pos__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__pos__", arguments.length, 0, 0, false, true);
     return self.nb$positive();
 
 });
@@ -14831,7 +14875,7 @@ Sk.builtin.numtype.prototype["__int__"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.NotImplementedError("__int__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__int__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__int__", arguments.length, 0, 0, false, true);
     return self.nb$int_();
 
 });
@@ -14849,7 +14893,7 @@ Sk.builtin.numtype.prototype["__long__"] = new Sk.builtin.func(function (self) {
         throw new Sk.builtin.NotImplementedError("__long__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__long__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__long__", arguments.length, 0, 0, false, true);
     return self.nb$lng();
 
 });
@@ -14867,7 +14911,7 @@ Sk.builtin.numtype.prototype["__float__"] = new Sk.builtin.func(function (self) 
         throw new Sk.builtin.NotImplementedError("__float__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__float__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__float__", arguments.length, 0, 0, false, true);
     return self.nb$float_();
 
 });
@@ -14885,7 +14929,7 @@ Sk.builtin.numtype.prototype["__add__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__add__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__add__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__add__", arguments.length, 1, 1, false, true);
     return self.nb$add(other);
 
 });
@@ -14903,7 +14947,7 @@ Sk.builtin.numtype.prototype["__radd__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__radd__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__radd__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__radd__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_add(other);
 
 });
@@ -14921,7 +14965,7 @@ Sk.builtin.numtype.prototype["__sub__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__sub__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__sub__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__sub__", arguments.length, 1, 1, false, true);
     return self.nb$subtract(other);
 
 });
@@ -14939,7 +14983,7 @@ Sk.builtin.numtype.prototype["__rsub__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__rsub__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rsub__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rsub__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_subtract(other);
 
 });
@@ -14957,7 +15001,7 @@ Sk.builtin.numtype.prototype["__mul__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__mul__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__mul__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__mul__", arguments.length, 1, 1, false, true);
     return self.nb$multiply(other);
 
 });
@@ -14975,7 +15019,7 @@ Sk.builtin.numtype.prototype["__rmul__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__rmul__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rmul__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rmul__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_multiply(other);
 
 });
@@ -14993,7 +15037,7 @@ Sk.builtin.numtype.prototype["__div__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__div__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__div__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__div__", arguments.length, 1, 1, false, true);
     return self.nb$divide(other);
 
 });
@@ -15011,7 +15055,7 @@ Sk.builtin.numtype.prototype["__rdiv__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__rdiv__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rdiv__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rdiv__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_divide(other);
 
 });
@@ -15029,7 +15073,7 @@ Sk.builtin.numtype.prototype["__floordiv__"] = new Sk.builtin.func(function (sel
         throw new Sk.builtin.NotImplementedError("__floordiv__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__floordiv__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__floordiv__", arguments.length, 1, 1, false, true);
     return self.nb$floor_divide(other);
 
 });
@@ -15047,7 +15091,7 @@ Sk.builtin.numtype.prototype["__rfloordiv__"] = new Sk.builtin.func(function (se
         throw new Sk.builtin.NotImplementedError("__rfloordiv__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rfloordiv__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rfloordiv__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_floor_divide(other);
 
 });
@@ -15065,7 +15109,7 @@ Sk.builtin.numtype.prototype["__mod__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__mod__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__mod__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__mod__", arguments.length, 1, 1, false, true);
     return self.nb$remainder(other);
 
 });
@@ -15083,7 +15127,7 @@ Sk.builtin.numtype.prototype["__rmod__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__rmod__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rmod__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rmod__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_remainder(other);
 
 });
@@ -15101,7 +15145,7 @@ Sk.builtin.numtype.prototype["__divmod__"] = new Sk.builtin.func(function (self,
         throw new Sk.builtin.NotImplementedError("__divmod__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__divmod__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__divmod__", arguments.length, 1, 1, false, true);
     return self.nb$divmod(other);
 
 });
@@ -15119,7 +15163,7 @@ Sk.builtin.numtype.prototype["__rdivmod__"] = new Sk.builtin.func(function (self
         throw new Sk.builtin.NotImplementedError("__rdivmod__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rdivmod__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rdivmod__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_divmod(other);
 
 });
@@ -15137,7 +15181,7 @@ Sk.builtin.numtype.prototype["__pow__"] = new Sk.builtin.func(function (self, ot
         throw new Sk.builtin.NotImplementedError("__pow__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__pow__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__pow__", arguments.length, 1, 1, false, true);
     return self.nb$power(other);
 
 });
@@ -15155,7 +15199,7 @@ Sk.builtin.numtype.prototype["__rpow__"] = new Sk.builtin.func(function (self, o
         throw new Sk.builtin.NotImplementedError("__rpow__ is not yet implemented");
     }
 
-    Sk.builtin.pyCheckArgs("__rpow__", arguments, 1, 1, false, true);
+    Sk.builtin.pyCheckArgsLen("__rpow__", arguments.length, 1, 1, false, true);
     return self.nb$reflected_power(other);
 
 });
@@ -18242,7 +18286,7 @@ Sk.builtin.int_.prototype.ob$ge = function (other) {
  * @return {Sk.builtin.int_} The rounded integer.
  */
 Sk.builtin.int_.prototype.round$ = function (self, ndigits) {
-    Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("__round__", arguments.length, 1, 2);
 
     var result, multiplier, number, num10, rounded, bankRound, ndigs;
 
@@ -18273,7 +18317,7 @@ Sk.builtin.int_.prototype.round$ = function (self, ndigits) {
 
 Sk.builtin.int_.prototype.__format__= function (obj, format_spec) {
     var formatstr;
-    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
         if (Sk.__future__.exceptions) {
@@ -18467,7 +18511,7 @@ goog.exportSymbol("Sk.builtin.int_", Sk.builtin.int_);
  * @return {Sk.builtin.bool} Sk.builtin.bool.true$ if x is true, Sk.builtin.bool.false$ otherwise
  */
 Sk.builtin.bool = function (x) {
-    Sk.builtin.pyCheckArgs("bool", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("bool", arguments.length, 1);
     if (Sk.misceval.isTrue(x)) {
         return Sk.builtin.bool.true$;
     } else {
@@ -19272,7 +19316,7 @@ Sk.builtin.float_.prototype.ob$ge = function (other) {
  * @return {Sk.builtin.float_|Sk.builtin.int_} The rounded float.
  */
 Sk.builtin.float_.prototype.round$ = function (self, ndigits) {
-    Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("__round__", arguments.length, 1, 2);
 
     var result, multiplier, number, num10, rounded, bankRound, ndigs;
 
@@ -19307,7 +19351,7 @@ Sk.builtin.float_.prototype.round$ = function (self, ndigits) {
 
 Sk.builtin.float_.prototype.__format__= function (obj, format_spec) {
     var formatstr;
-    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
         if (Sk.__future__.exceptions) {
@@ -19819,7 +19863,7 @@ Sk.builtin.lng.prototype.nb$int_ = function() {
 
 Sk.builtin.lng.prototype.__format__= function (obj, format_spec) {
     var formatstr;
-    Sk.builtin.pyCheckArgs("__format__", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 2, 2);
 
     if (!Sk.builtin.checkString(format_spec)) {
         if (Sk.__future__.exceptions) {
@@ -19838,7 +19882,7 @@ Sk.builtin.lng.prototype.__format__= function (obj, format_spec) {
 };
 
 Sk.builtin.lng.prototype.round$ = function (self, ndigits) {
-    Sk.builtin.pyCheckArgs("__round__", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("__round__", arguments.length, 1, 2);
 
     var result, multiplier, number, num10, rounded, bankRound, ndigs;
 
@@ -20605,7 +20649,7 @@ Math.hypot = Math.hypot || function() {
  * 
  */
 Sk.builtin.complex = function (real, imag) {
-    Sk.builtin.pyCheckArgs("complex", arguments, 0, 2);
+    Sk.builtin.pyCheckArgsLen("complex", arguments.length, 0, 2);
 
     var r, i, tmp; // PyObject
     var nbr, nbi; // real, imag as numbers
@@ -21540,14 +21584,14 @@ Sk.builtin.complex.prototype.int$bool.co_name = new Sk.builtin.str("__bool__");
 Sk.builtin.complex.prototype.__bool__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$bool); 
 
 Sk.builtin.complex.prototype.int$truediv = function __truediv__(self, other){
-    Sk.builtin.pyCheckArgs("__truediv__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__truediv__", arguments.length, 1, 1, true);
     return self.nb$divide.call(self, other);
 };
 Sk.builtin.complex.prototype.int$truediv.co_name = new Sk.builtin.str("__truediv__");
 Sk.builtin.complex.prototype.__truediv__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$truediv); 
 
 Sk.builtin.complex.prototype.int$hash = function __hash__(self){
-    Sk.builtin.pyCheckArgs("__hash__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__hash__", arguments.length, 0, 0, true);
 
     return self.tp$hash.call(self);
 };
@@ -21555,7 +21599,7 @@ Sk.builtin.complex.prototype.int$hash.co_name = new Sk.builtin.str("__hash__");
 Sk.builtin.complex.prototype.__hash__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$hash); 
 
 Sk.builtin.complex.prototype.int$add = function __add__(self, other){
-    Sk.builtin.pyCheckArgs("__add__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__add__", arguments.length, 1, 1, true);
     return self.nb$add.call(self, other);
 };
 Sk.builtin.complex.prototype.int$add.co_name = new Sk.builtin.str("__add__");
@@ -21563,7 +21607,7 @@ Sk.builtin.complex.prototype.__add__ = new Sk.builtin.func(Sk.builtin.complex.pr
 
 
 Sk.builtin.complex.prototype.int$repr = function __repr__(self){
-    Sk.builtin.pyCheckArgs("__repr__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__repr__", arguments.length, 0, 0, true);
 
     return self["r$"].call(self);
 };
@@ -21571,7 +21615,7 @@ Sk.builtin.complex.prototype.int$repr.co_name = new Sk.builtin.str("__repr__");
 Sk.builtin.complex.prototype.__repr__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$repr); 
 
 Sk.builtin.complex.prototype.int$str = function __str__(self){
-    Sk.builtin.pyCheckArgs("__str__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__str__", arguments.length, 0, 0, true);
 
     return self.tp$str.call(self);
 };
@@ -21579,62 +21623,62 @@ Sk.builtin.complex.prototype.int$str.co_name = new Sk.builtin.str("__str__");
 Sk.builtin.complex.prototype.__str__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$str); 
 
 Sk.builtin.complex.prototype.int$sub = function __sub__(self, other){
-    Sk.builtin.pyCheckArgs("__sub__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__sub__", arguments.length, 1, 1, true);
     return self.nb$subtract.call(self, other);
 };
 Sk.builtin.complex.prototype.int$sub.co_name = new Sk.builtin.str("__sub__");
 Sk.builtin.complex.prototype.__sub__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$sub); 
 
 Sk.builtin.complex.prototype.int$mul = function __mul__(self, other){
-    Sk.builtin.pyCheckArgs("__mul__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__mul__", arguments.length, 1, 1, true);
     return self.nb$multiply.call(self, other);
 };
 Sk.builtin.complex.prototype.int$mul.co_name = new Sk.builtin.str("__mul__");
 Sk.builtin.complex.prototype.__mul__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$mul); 
 
 Sk.builtin.complex.prototype.int$div = function __div__(self, other){
-    Sk.builtin.pyCheckArgs("__div__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__div__", arguments.length, 1, 1, true);
     return self.nb$divide.call(self, other);
 };
 Sk.builtin.complex.prototype.int$div.co_name = new Sk.builtin.str("__div__");
 Sk.builtin.complex.prototype.__div__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$div); 
 
 Sk.builtin.complex.prototype.int$floordiv = function __floordiv__(self, other){
-    Sk.builtin.pyCheckArgs("__floordiv__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__floordiv__", arguments.length, 1, 1, true);
     return self.nb$floor_divide.call(self, other);
 };
 Sk.builtin.complex.prototype.int$floordiv.co_name = new Sk.builtin.str("__floordiv__");
 Sk.builtin.complex.prototype.__floordiv__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$floordiv); 
 
 Sk.builtin.complex.prototype.int$mod = function __mod__(self, other){
-    Sk.builtin.pyCheckArgs("__mod__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__mod__", arguments.length, 1, 1, true);
     return self.nb$remainder.call(self, other);
 };
 Sk.builtin.complex.prototype.int$mod.co_name = new Sk.builtin.str("__mod__");
 Sk.builtin.complex.prototype.__mod__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$mod); 
 
 Sk.builtin.complex.prototype.int$pow = function __pow__(self, other, z){
-    Sk.builtin.pyCheckArgs("__pow__", arguments, 1, 2, true);
+    Sk.builtin.pyCheckArgsLen("__pow__", arguments.length, 1, 2, true);
     return self.nb$power.call(self, other, z);
 };
 Sk.builtin.complex.prototype.int$pow.co_name = new Sk.builtin.str("__pow__");
 Sk.builtin.complex.prototype.__pow__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$pow); 
 
 Sk.builtin.complex.prototype.int$neg = function __neg__(self){
-    Sk.builtin.pyCheckArgs("__neg__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__neg__", arguments.length, 0, 0, true);
     return self.nb$negative.call(self);
 };
 Sk.builtin.complex.prototype.__neg__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$neg); 
 
 Sk.builtin.complex.prototype.int$pos = function __pos__(self){
-    Sk.builtin.pyCheckArgs("__pos__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__pos__", arguments.length, 0, 0, true);
     return self.nb$positive.call(self);
 };
 Sk.builtin.complex.prototype.int$pos.co_name = new Sk.builtin.str("__pos__");
 Sk.builtin.complex.prototype.__pos__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$pos); 
 
 Sk.builtin.complex.prototype.int$conjugate = function conjugate(self){
-    Sk.builtin.pyCheckArgs("conjugate", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("conjugate", arguments.length, 0, 0, true);
     var _imag = self.imag.v;
     _imag = -_imag;
 
@@ -21645,7 +21689,7 @@ Sk.builtin.complex.prototype.conjugate = new Sk.builtin.func(Sk.builtin.complex.
 
 // deprecated
 Sk.builtin.complex.prototype.int$divmod = function __divmod__(self, other){
-    Sk.builtin.pyCheckArgs("__divmod__", arguments, 1, 1, true);
+    Sk.builtin.pyCheckArgsLen("__divmod__", arguments.length, 1, 1, true);
 
     var div, mod; // Py_complex
     var d, m, z; // PyObject
@@ -21668,7 +21712,7 @@ Sk.builtin.complex.prototype.int$divmod.co_name = new Sk.builtin.str("__divmod__
 Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$divmod); 
 
 Sk.builtin.complex.prototype.int$getnewargs = function __getnewargs__(self){
-    Sk.builtin.pyCheckArgs("__getnewargs__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__getnewargs__", arguments.length, 0, 0, true);
 
     return new Sk.builtin.tuple([self.real, self.imag]);
 };
@@ -21676,7 +21720,7 @@ Sk.builtin.complex.prototype.int$getnewargs.co_name = new Sk.builtin.str("__getn
 Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$getnewargs); 
 
 Sk.builtin.complex.prototype.int$nonzero = function __nonzero__(self){
-    Sk.builtin.pyCheckArgs("__nonzero__", arguments, 0, 0, true);
+    Sk.builtin.pyCheckArgsLen("__nonzero__", arguments.length, 0, 0, true);
 
     if(self.real.v !== 0.0 || self.imag.v !== 0.0) {
         return Sk.builtin.bool.true$;
@@ -21812,7 +21856,7 @@ Sk.builtin.complex.PyOS_double_to_string.Py_DTST_NAN = 2;
  * @param {Object=} step
  */
 Sk.builtin.slice = function slice (start, stop, step) {
-    Sk.builtin.pyCheckArgs("slice", arguments, 1, 3, false, false);
+    Sk.builtin.pyCheckArgsLen("slice", arguments.length, 1, 3, false, false);
 
     if ((step !== undefined) && Sk.misceval.isIndex(step) && (Sk.misceval.asIndex(step) === 0)) {
         throw new Sk.builtin.ValueError("slice step cannot be zero");
@@ -21953,7 +21997,7 @@ Sk.builtin.slice.prototype.slice_indices_ = function (length) {
 };
 
 Sk.builtin.slice.prototype["indices"] = new Sk.builtin.func(function (self, length) {
-    Sk.builtin.pyCheckArgs("indices", arguments, 2, 2, false, false);
+    Sk.builtin.pyCheckArgsLen("indices", arguments.length, 2, 2, false, false);
 
     length = Sk.builtin.asnum$(length);
     var sss = self.slice_indices_(length);
@@ -21994,6 +22038,7 @@ Sk.builtin.set = function (S) {
     var it, i;
     var S_list;
     if (!(this instanceof Sk.builtin.set)) {
+        Sk.builtin.pyCheckArgsLen("set", arguments.length, 0, 1);
         return new Sk.builtin.set(S);
     }
 
@@ -22150,7 +22195,7 @@ Sk.builtin.set.prototype.nb$subtract = function(other){
 };
 
 Sk.builtin.set.prototype["__iter__"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, false, true);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, false, true);
     return new Sk.builtin.set_iter_(self);
 });
 
@@ -22171,7 +22216,7 @@ Sk.builtin.set.prototype["isdisjoint"] = new Sk.builtin.func(function (self, oth
     var isIn;
     var it, item;
 
-    Sk.builtin.pyCheckArgs("isdisjoint", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("isdisjoint", arguments.length, 2, 2);
     if (!Sk.builtin.checkIterable(other)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(other) + "' object is not iterable");
     }
@@ -22190,7 +22235,7 @@ Sk.builtin.set.prototype["issubset"] = new Sk.builtin.func(function (self, other
     var it, item;
     var selfLength, otherLength;
 
-    Sk.builtin.pyCheckArgs("issubset", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("issubset", arguments.length, 2, 2);
     if (!Sk.builtin.checkIterable(other)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(other) + "' object is not iterable");
     }
@@ -22212,14 +22257,14 @@ Sk.builtin.set.prototype["issubset"] = new Sk.builtin.func(function (self, other
 });
 
 Sk.builtin.set.prototype["issuperset"] = new Sk.builtin.func(function (self, other) {
-    Sk.builtin.pyCheckArgs("issuperset", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("issuperset", arguments.length, 2, 2);
     return Sk.builtin.set.prototype["issubset"].func_code(other, self);
 });
 
 Sk.builtin.set.prototype["union"] = new Sk.builtin.func(function (self) {
     var S, i, new_args;
 
-    Sk.builtin.pyCheckArgs("union", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("union", arguments.length, 1);
 
     S = Sk.builtin.set.prototype["copy"].func_code(self);
     new_args = [S];
@@ -22234,7 +22279,7 @@ Sk.builtin.set.prototype["union"] = new Sk.builtin.func(function (self) {
 Sk.builtin.set.prototype["intersection"] = new Sk.builtin.func(function (self) {
     var S, i, new_args;
 
-    Sk.builtin.pyCheckArgs("intersection", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("intersection", arguments.length, 1);
 
     S = Sk.builtin.set.prototype["copy"].func_code(self);
     new_args = [S];
@@ -22249,7 +22294,7 @@ Sk.builtin.set.prototype["intersection"] = new Sk.builtin.func(function (self) {
 Sk.builtin.set.prototype["difference"] = new Sk.builtin.func(function (self, other) {
     var S, i, new_args;
 
-    Sk.builtin.pyCheckArgs("difference", arguments, 2);
+    Sk.builtin.pyCheckArgsLen("difference", arguments.length, 2);
 
     S = Sk.builtin.set.prototype["copy"].func_code(self);
     new_args = [S];
@@ -22264,7 +22309,7 @@ Sk.builtin.set.prototype["difference"] = new Sk.builtin.func(function (self, oth
 Sk.builtin.set.prototype["symmetric_difference"] = new Sk.builtin.func(function (self, other) {
     var it, item, S;
 
-    Sk.builtin.pyCheckArgs("symmetric_difference", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("symmetric_difference", arguments.length, 2, 2);
 
     S = Sk.builtin.set.prototype["union"].func_code(self, other);
     for (it = Sk.abstr.iter(S), item = it.tp$iternext(); item !== undefined; item = it.tp$iternext()) {
@@ -22276,14 +22321,14 @@ Sk.builtin.set.prototype["symmetric_difference"] = new Sk.builtin.func(function 
 });
 
 Sk.builtin.set.prototype["copy"] = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("copy", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("copy", arguments.length, 1, 1);
     return new Sk.builtin.set(self);
 });
 
 Sk.builtin.set.prototype["update"] = new Sk.builtin.func(function (self, other) {
     var i, it, item, arg;
 
-    Sk.builtin.pyCheckArgs("update", arguments, 2);
+    Sk.builtin.pyCheckArgsLen("update", arguments.length, 2);
 
     for (i = 1; i < arguments.length; i++) {
         arg = arguments[i];
@@ -22303,7 +22348,7 @@ Sk.builtin.set.prototype["update"] = new Sk.builtin.func(function (self, other) 
 Sk.builtin.set.prototype["intersection_update"] = new Sk.builtin.func(function (self, other) {
     var i, it, item;
 
-    Sk.builtin.pyCheckArgs("intersection_update", arguments, 2);
+    Sk.builtin.pyCheckArgsLen("intersection_update", arguments.length, 2);
     for (i = 1; i < arguments.length; i++) {
         if (!Sk.builtin.checkIterable(arguments[i])) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(arguments[i]) +
@@ -22325,7 +22370,7 @@ Sk.builtin.set.prototype["intersection_update"] = new Sk.builtin.func(function (
 Sk.builtin.set.prototype["difference_update"] = new Sk.builtin.func(function (self, other) {
     var i, it, item;
 
-    Sk.builtin.pyCheckArgs("difference_update", arguments, 2);
+    Sk.builtin.pyCheckArgsLen("difference_update", arguments.length, 2);
     for (i = 1; i < arguments.length; i++) {
         if (!Sk.builtin.checkIterable(arguments[i])) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(arguments[i]) +
@@ -22345,7 +22390,7 @@ Sk.builtin.set.prototype["difference_update"] = new Sk.builtin.func(function (se
 });
 
 Sk.builtin.set.prototype["symmetric_difference_update"] = new Sk.builtin.func(function (self, other) {
-    Sk.builtin.pyCheckArgs("symmetric_difference_update", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("symmetric_difference_update", arguments.length, 2, 2);
 
     var sd = Sk.builtin.set.prototype["symmetric_difference"].func_code(self, other);
     self.set_reset_();
@@ -22355,14 +22400,14 @@ Sk.builtin.set.prototype["symmetric_difference_update"] = new Sk.builtin.func(fu
 
 
 Sk.builtin.set.prototype["add"] = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("add", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("add", arguments.length, 2, 2);
 
     self.v.mp$ass_subscript(item, true);
     return Sk.builtin.none.none$;
 });
 
 Sk.builtin.set.prototype["discard"] = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("discard", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("discard", arguments.length, 2, 2);
 
     Sk.builtin.dict.prototype["pop"].func_code(self.v, item,
         Sk.builtin.none.none$);
@@ -22372,7 +22417,7 @@ Sk.builtin.set.prototype["discard"] = new Sk.builtin.func(function (self, item) 
 Sk.builtin.set.prototype["pop"] = new Sk.builtin.func(function (self) {
     var it, item;
 
-    Sk.builtin.pyCheckArgs("pop", arguments, 1, 1);
+    Sk.builtin.pyCheckArgsLen("pop", arguments.length, 1, 1);
 
     if (self.sq$length() === 0) {
         throw new Sk.builtin.KeyError("pop from an empty set");
@@ -22385,7 +22430,7 @@ Sk.builtin.set.prototype["pop"] = new Sk.builtin.func(function (self) {
 });
 
 Sk.builtin.set.prototype["remove"] = new Sk.builtin.func(function (self, item) {
-    Sk.builtin.pyCheckArgs("remove", arguments, 2, 2);
+    Sk.builtin.pyCheckArgsLen("remove", arguments.length, 2, 2);
 
     self.v.mp$del_subscript(item);
     return Sk.builtin.none.none$;
@@ -22436,7 +22481,7 @@ Sk.abstr.setUpInheritance("setiterator", Sk.builtin.set_iter_, Sk.builtin.object
 Sk.builtin.set_iter_.prototype.__class__ = Sk.builtin.set_iter_;
 
 Sk.builtin.set_iter_.prototype.__iter__ = new Sk.builtin.func(function (self) {
-    Sk.builtin.pyCheckArgs("__iter__", arguments, 0, 0, true, false);
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 0, 0, true, false);
     return self;
 });
 
@@ -22454,7 +22499,7 @@ Sk.builtin.set_iter_.prototype.next$ = function (self) {
 
 */
 var print_f = function function_print(kwa) {
-    Sk.builtin.pyCheckArgs("print", arguments, 0, Infinity, true, false);
+    Sk.builtin.pyCheckArgsLen("print", arguments.length, 0, Infinity, true, false);
     var args = Array.prototype.slice.call(arguments, 1);
     var kwargs = new Sk.builtins.dict(kwa);
     var _kwargs = Sk.ffi.remapToJs(kwargs);
@@ -22557,7 +22602,7 @@ Sk.builtin.make_structseq = function (module, name, fields, doc) {
     }
 
     var cons = function structseq_constructor(arg) {
-        Sk.builtin.pyCheckArgs(nm, arguments, 1, 1);
+        Sk.builtin.pyCheckArgsLen(nm, arguments.length, 1, 1);
         var o;
         var it, i, v;
         if (!(this instanceof Sk.builtin.structseq_types[nm])) {
@@ -23313,7 +23358,7 @@ Sk.builtin.enumerate = function (iterable, start) {
     }
 
 
-    Sk.builtin.pyCheckArgs("enumerate", arguments, 1, 2);
+    Sk.builtin.pyCheckArgsLen("enumerate", arguments.length, 1, 2);
     if (!Sk.builtin.checkIterable(iterable)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iterable) + "' object is not iterable");
     }
@@ -32057,8 +32102,8 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         minargs = args ? args.args.length - defaults.length : 0;
         maxargs = vararg ? Infinity : (args ? args.args.length : 0);
         kw = kwarg ? true : false;
-        this.u.varDeclsCode += "Sk.builtin.pyCheckArgs(\"" + coname.v +
-            "\", arguments, " + minargs + ", " + maxargs + ", " + kw +
+        this.u.varDeclsCode += "Sk.builtin.pyCheckArgsLen(\"" + coname.v +
+            "\", arguments.length, " + minargs + ", " + maxargs + ", " + kw +
             ", " + hasFree + ");";
     }
 
@@ -32185,13 +32230,13 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     // The call to pyCheckArgs assumes they can't be true.
     {
         if (args && args.args.length > 0) {
-            return this._gr("gener", "new Sk.builtins['function']((function(){var $origargs=Array.prototype.slice.call(arguments);Sk.builtin.pyCheckArgs(\"",
-                coname.v, "\",arguments,", args.args.length - defaults.length, ",", args.args.length,
+            return this._gr("gener", "new Sk.builtins['function']((function(){var $origargs=Array.prototype.slice.call(arguments);Sk.builtin.pyCheckArgsLen(\"",
+                coname.v, "\",arguments.length,", args.args.length - defaults.length, ",", args.args.length,
                 ");return new Sk.builtins['generator'](", scopename, ",$gbl,$origargs", frees, ");}))");
         }
         else {
-            return this._gr("gener", "new Sk.builtins['function']((function(){Sk.builtin.pyCheckArgs(\"", coname.v,
-                "\",arguments,0,0);return new Sk.builtins['generator'](", scopename, ",$gbl,[]", frees, ");}))");
+            return this._gr("gener", "new Sk.builtins['function']((function(){Sk.builtin.pyCheckArgsLen(\"", coname.v,
+                "\",arguments.length,0,0);return new Sk.builtins['generator'](", scopename, ",$gbl,[]", frees, ");}))");
         }
     }
     else {
@@ -34322,7 +34367,7 @@ Sk.builtin.PyType_IsSubtype = function PyType_IsSubtype(a, b) {
  * Sk.builtin.super_
  */
 Sk.builtin.super_ = function super_ (a_type, self) {
-    Sk.builtin.pyCheckArgs("super", arguments, 1);
+    Sk.builtin.pyCheckArgsLen("super", arguments.length, 1);
 
     if (!(this instanceof Sk.builtin.super_)) {
         return new Sk.builtin.super_(a_type, self);
@@ -34428,7 +34473,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
     "Typical use to call a cooperative superclass method:\n" +
     "class C(B):\n" +
     "    def meth(self, arg):\n" +
-    "        super(C, self).meth(arg)");// Note: the hacky names on int, long, float have to correspond with the
+    "        super(C, self).meth(arg)");
+// Note: the hacky names on int, long, float have to correspond with the
 // uniquization that the compiler does for words that are reserved in
 // Javascript. This is a bit hokey.
 Sk.builtins = {
