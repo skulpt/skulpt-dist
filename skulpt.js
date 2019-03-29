@@ -5717,7 +5717,7 @@ Sk.builtin.type = function (name, bases, dict) {
         klass.prototype.tp$setattr = function(name, data, canSuspend) {
             var r, /** @type {(Object|undefined)} */ setf = Sk.builtin.object.prototype.GenericGetAttr.call(this, "__setattr__");
             if (setf !== undefined) {
-                r = Sk.misceval.callsimOrSuspend(/** @type {Object} */ (setf), new Sk.builtin.str(name), data);
+                r = Sk.misceval.callsimOrSuspendArray(/** @type {Object} */ (setf), [new Sk.builtin.str(name), data]);
                 return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
             }
 
@@ -5741,7 +5741,7 @@ Sk.builtin.type = function (name, bases, dict) {
             // Convert AttributeErrors back into 'undefined' returns to match the tp$getattr
             // convention
             r = Sk.misceval.tryCatch(function() {
-                return Sk.misceval.callsimOrSuspend(/** @type {Object} */ (getf), new Sk.builtin.str(name));
+                return Sk.misceval.callsimOrSuspendArray(/** @type {Object} */ (getf), [new Sk.builtin.str(name)]);
             }, function (e) {
                 if (e instanceof Sk.builtin.AttributeError) {
                     return undefined;
@@ -5785,7 +5785,7 @@ Sk.builtin.type = function (name, bases, dict) {
             if (iterf === undefined) {
                 throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object is not iterable");
             }
-            return Sk.misceval.callsim(iterf);
+            return Sk.misceval.callsimArray(iterf);
         };
         klass.prototype.tp$iternext = function (canSuspend) {
             var self = this;
@@ -5802,7 +5802,7 @@ Sk.builtin.type = function (name, bases, dict) {
                 }
 
                 return Sk.misceval.tryCatch(function() {
-                    return Sk.misceval.callsimOrSuspend(iternextf);
+                    return Sk.misceval.callsimOrSuspendArray(iternextf);
                 }, function(e) {
                     if (e instanceof Sk.builtin.StopIteration) {
                         return undefined;
@@ -5849,18 +5849,31 @@ Sk.builtin.type = function (name, bases, dict) {
 
         var shortcutDunder = function (skulpt_name, magic_name, magic_func, canSuspendIdx) {
             klass.prototype[skulpt_name] = function () {
-                var args = Array.prototype.slice.call(arguments), canSuspend;
-                args.unshift(magic_func, this);
+                var canSuspend = false;
+                var len = arguments.length;
+                var args, i, j;
+                if ((canSuspendIdx !== null) && (canSuspendIdx <= len)) {
+                    args = new Array(len);
+                } else {
+                    args = new Array(len+1);
+                }
 
-                if (canSuspendIdx !== null) {
-                    canSuspend = args[canSuspendIdx+1];
-                    args.splice(canSuspendIdx+1, 1);
-
-                    if (canSuspend) {
-                        return Sk.misceval.callsimOrSuspend.apply(undefined, args);
+                args[0] = this;
+                j = 1;
+                for (i = 0; i < len; i++) {
+                    if (i === (canSuspendIdx-1)) {
+                        canSuspend = arguments[i];
+                    } else {
+                        args[j] = arguments[i];
+                        j += 1;
                     }
                 }
-                return Sk.misceval.callsim.apply(undefined, args);
+
+                if (canSuspend) {
+                    return Sk.misceval.callsimOrSuspendArray(magic_func, args);
+                } else {
+                    return Sk.misceval.callsimArray(magic_func, args);
+                }
             };
         };
 
@@ -6329,7 +6342,7 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
             if (wop.call) {
                 ret = wop.call(w, v);
             } else {
-                ret = Sk.misceval.callsim(wop, w, v);
+                ret = Sk.misceval.callsimArray(wop, [w, v]);
             }
             if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 return ret;
@@ -6342,7 +6355,7 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
         if (vop.call) {
             ret = vop.call(v, w);
         } else {
-            ret = Sk.misceval.callsim(vop, v, w);
+            ret = Sk.misceval.callsimArray(vop, [v, w]);
         }
         if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
             return ret;
@@ -6355,7 +6368,7 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
             if (wop.call) {
                 ret = wop.call(w, v);
             } else {
-                ret = Sk.misceval.callsim(wop, w, v);
+                ret = Sk.misceval.callsimArray(wop, [w, v]);
             }
             if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
                 return ret;
@@ -6373,7 +6386,7 @@ Sk.abstr.binary_iop_ = function (v, w, opname) {
         if (vop.call) {
             ret = vop.call(v, w);
         } else {  // assume that vop is an __xxx__ type method
-            ret = Sk.misceval.callsim(vop, v, w);
+            ret = Sk.misceval.callsimArray(vop, [v, w]);
         }
         if (ret !== undefined && ret !== Sk.builtin.NotImplemented.NotImplemented$) {
             return ret;
@@ -6389,7 +6402,7 @@ Sk.abstr.unary_op_ = function (v, opname) {
         if (vop.call) {
             ret = vop.call(v);
         } else {  // assume that vop is an __xxx__ type method
-            ret = Sk.misceval.callsim(vop, v); //  added to be like not-in-place... is this okay?
+            ret = Sk.misceval.callsimArray(vop, [v]); //  added to be like not-in-place... is this okay?
         }
         if (ret !== undefined) {
             return ret;
@@ -6631,7 +6644,7 @@ Sk.abstr.sequenceContains = function (seq, ob, canSuspend) {
     special = Sk.abstr.lookupSpecial(seq, "__contains__");
     if (special != null) {
         // method on builtin, provide this arg
-        return Sk.misceval.isTrue(Sk.misceval.callsim(special, seq, ob));
+        return Sk.misceval.isTrue(Sk.misceval.callsimArray(special, [seq, ob]));
     }
 
     if (!Sk.builtin.checkIterable(seq)) {
@@ -6664,7 +6677,7 @@ Sk.abstr.sequenceGetIndexOf = function (seq, ob) {
     var i, it;
     var index;
     if (seq.index) {
-        return Sk.misceval.callsim(seq.index, seq, ob);
+        return Sk.misceval.callsimArray(seq.index, [seq, ob]);
     }
     if (Sk.builtin.checkIterable(seq)) {
         index = 0;
@@ -6687,7 +6700,7 @@ Sk.abstr.sequenceGetCountOf = function (seq, ob) {
     var i, it;
     var count;
     if (seq.count) {
-        return Sk.misceval.callsim(seq.count, seq, ob);
+        return Sk.misceval.callsimArray(seq.count, [seq, ob]);
     }
     if (Sk.builtin.checkIterable(seq)) {
         count = 0;
@@ -6831,7 +6844,7 @@ Sk.abstr.objectFormat = function (obj, format_spec) {
     }
 
     // And call it
-    result = Sk.misceval.callsim(meth, obj, format_spec);
+    result = Sk.misceval.callsimArray(meth, [obj, format_spec]);
     if (!Sk.builtin.checkString(result)) {
         throw new Sk.builtin.TypeError("__format__ must return a str, not " + Sk.abstr.typeName(result));
     }
@@ -7023,7 +7036,7 @@ Sk.abstr.iter = function(obj) {
         this.tp$iternext = function () {
             var ret;
             try {
-                ret = Sk.misceval.callsim(this.getitem, this.myobj, Sk.ffi.remapToPy(this.idx));
+                ret = Sk.misceval.callsimArray(this.getitem, [this.myobj, Sk.ffi.remapToPy(this.idx)]);
             } catch (e) {
                 if (e instanceof Sk.builtin.IndexError || e instanceof Sk.builtin.StopIteration) {
                     return undefined;
@@ -7039,7 +7052,7 @@ Sk.abstr.iter = function(obj) {
     if (obj.tp$getattr) {
         iter =  Sk.abstr.lookupSpecial(obj,"__iter__");
         if (iter) {
-            ret = Sk.misceval.callsim(iter, obj);
+            ret = Sk.misceval.callsimArray(iter, [obj]);
             if (ret.tp$iternext) {
                 return ret;
             }
@@ -7235,7 +7248,7 @@ Sk.builtin.object.prototype.GenericGetAttr = function (name, canSuspend) {
         }
 
         res = Sk.misceval.tryCatch(function() {
-            return Sk.misceval.callsimOrSuspend(getf, pyName);
+            return Sk.misceval.callsimOrSuspendArray(getf, [pyName]);
         }, function(e) {
             if (e instanceof Sk.builtin.AttributeError) {
                 return undefined;
@@ -8296,9 +8309,9 @@ Sk.builtin.round = function round (number, ndigits) {
     if (special != null) {
         // method on builtin, provide this arg
         if (!Sk.builtin.checkFunction(number)) {
-            return Sk.misceval.callsim(special, number, ndigits);
+            return Sk.misceval.callsimArray(special, [number, ndigits]);
         } else {
-            return Sk.misceval.callsim(special, number);
+            return Sk.misceval.callsimArray(special, [number]);
         }
     } else {
         throw new Sk.builtin.TypeError("a float is required");
@@ -8335,7 +8348,7 @@ Sk.builtin.len = function len (item) {
         if (Sk.builtin.checkFunction(item)) {
             special = Sk.abstr.lookupSpecial(item, "__len__");
             if (special != null) {
-                return Sk.misceval.callsim(special, item);
+                return Sk.misceval.callsimArray(special, [item]);
             } else {
                 if (Sk.__future__.exceptions) {
                     throw new Sk.builtin.TypeError("object of type '" + Sk.abstr.typeName(item) + "' has no len()");
@@ -8529,13 +8542,13 @@ Sk.builtin.abs = function abs (x) {
     if (Sk.builtin.checkNumber(x)) {
         return Sk.builtin.assk$(Math.abs(Sk.builtin.asnum$(x)));
     } else if (Sk.builtin.checkComplex(x)) {
-        return Sk.misceval.callsim(x.__abs__, x);
+        return Sk.misceval.callsimArray(x.__abs__, [x]);
     }
 
     // call custom __abs__ methods
     if (x.tp$getattr) {
         var f = x.tp$getattr("__abs__");
-        return Sk.misceval.callsim(f);
+        return Sk.misceval.callsimArray(f);
     }
 
     throw new TypeError("bad operand type for abs(): '" + Sk.abstr.typeName(x) + "'");
@@ -8684,7 +8697,7 @@ Sk.builtin.dir = function dir (x) {
     var special = Sk.abstr.lookupSpecial(x, "__dir__");
     if(special != null) {
         // method on builtin, provide this arg
-        _seq = Sk.misceval.callsim(special, x);
+        _seq = Sk.misceval.callsimArray(special, [x]);
 
         if (!Sk.builtin.checkSequence(_seq)) {
             throw new Sk.builtin.TypeError("__dir__ must return sequence.");
@@ -8920,12 +8933,12 @@ Sk.builtin.raw_input = function (prompt) {
 
     return Sk.misceval.chain(Sk.importModule("sys", false, true), function (sys) {
         if (Sk.inputfunTakesPrompt) {
-            return Sk.misceval.callsimOrSuspend(Sk.builtin.file.$readline, sys["$d"]["stdin"], null, lprompt);
+            return Sk.misceval.callsimOrSuspendArray(Sk.builtin.file.$readline, [sys["$d"]["stdin"], null, lprompt]);
         } else {
             return Sk.misceval.chain(undefined, function() {
-                return Sk.misceval.callsimOrSuspend(sys["$d"]["stdout"]["write"], sys["$d"]["stdout"], new Sk.builtin.str(lprompt));
+                return Sk.misceval.callsimOrSuspendArray(sys["$d"]["stdout"]["write"], [sys["$d"]["stdout"], new Sk.builtin.str(lprompt)]);
             }, function () {
-                return Sk.misceval.callsimOrSuspend(sys["$d"]["stdin"]["readline"], sys["$d"]["stdin"]);
+                return Sk.misceval.callsimOrSuspendArray(sys["$d"]["stdin"]["readline"], [sys["$d"]["stdin"]]);
             });
         }
     });
@@ -9050,7 +9063,7 @@ Sk.builtin.reduce = function reduce (fun, seq, initializer) {
     for (item = iter.tp$iternext();
          item !== undefined;
          item = iter.tp$iternext()) {
-        accum_value = Sk.misceval.callsim(fun, accum_value, item);
+        accum_value = Sk.misceval.callsimArray(fun, [accum_value, item]);
     }
 
     return accum_value;
@@ -9104,7 +9117,7 @@ Sk.builtin.filter = function filter (fun, iterable) {
         if (fun === Sk.builtin.none.none$) {
             result = new Sk.builtin.bool( item);
         } else {
-            result = Sk.misceval.callsim(fun, item);
+            result = Sk.misceval.callsimArray(fun, [item]);
         }
 
         if (Sk.misceval.isTrue(result)) {
@@ -9307,7 +9320,7 @@ Sk.builtin.reversed = function reversed (seq) {
 
     var special = Sk.abstr.lookupSpecial(seq, "__reversed__");
     if (special != null) {
-        return Sk.misceval.callsim(special, seq);
+        return Sk.misceval.callsimArray(special, [seq]);
     } else {
         if (!Sk.builtin.checkSequence(seq)) {
             throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not a sequence");
@@ -9333,7 +9346,7 @@ Sk.builtin.reversed = function reversed (seq) {
                 }
 
                 try {
-                    ret = Sk.misceval.callsim(this.getitem, this.myobj, Sk.ffi.remapToPy(this.idx));
+                    ret = Sk.misceval.callsimArray(this.getitem, [this.myobj, Sk.ffi.remapToPy(this.idx)]);
                 } catch (e) {
                     if (e instanceof Sk.builtin.IndexError) {
                         return undefined;
@@ -10313,7 +10326,7 @@ Sk.misceval.asIndex = function (o) {
     }
     idxfn = Sk.abstr.lookupSpecial(o, "__index__");
     if (idxfn) {
-        ret = Sk.misceval.callsim(idxfn, o);
+        ret = Sk.misceval.callsimArray(idxfn, [o]);
         if (!Sk.builtin.checkInt(ret)) {
             throw new Sk.builtin.TypeError("__index__ returned non-(int,long) (type " +
                                            Sk.abstr.typeName(ret) + ")");
@@ -10644,7 +10657,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     method = Sk.abstr.lookupSpecial(v, op2method[op]);
     if (method && !v_has_shortcut) {
-        ret = Sk.misceval.callsim(method, v, w);
+        ret = Sk.misceval.callsimArray(method, [v, w]);
         if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
         }
@@ -10652,7 +10665,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     swapped_method = Sk.abstr.lookupSpecial(w, op2method[Sk.misceval.swappedOp_[op]]);
     if (swapped_method && !w_has_shortcut) {
-        ret = Sk.misceval.callsim(swapped_method, w, v);
+        ret = Sk.misceval.callsimArray(swapped_method, [w, v]);
         if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
         }
@@ -10661,7 +10674,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
     vcmp = Sk.abstr.lookupSpecial(v, "__cmp__");
     if (vcmp) {
         try {
-            ret = Sk.misceval.callsim(vcmp, v, w);
+            ret = Sk.misceval.callsimArray(vcmp, [v, w]);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
                 if (op === "Eq") {
@@ -10691,7 +10704,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
     if (wcmp) {
         // note, flipped on return value and call
         try {
-            ret = Sk.misceval.callsim(wcmp, w, v);
+            ret = Sk.misceval.callsimArray(wcmp, [w, v]);
             if (Sk.builtin.checkNumber(ret)) {
                 ret = Sk.builtin.asnum$(ret);
                 if (op === "Eq") {
@@ -10844,14 +10857,14 @@ Sk.misceval.isTrue = function (x) {
         return x.v !== 0;
     }
     if (x["__nonzero__"]) {
-        ret = Sk.misceval.callsim(x["__nonzero__"], x);
+        ret = Sk.misceval.callsimArray(x["__nonzero__"], [x]);
         if (!Sk.builtin.checkInt(ret)) {
             throw new Sk.builtin.TypeError("__nonzero__ should return an int");
         }
         return Sk.builtin.asnum$(ret) !== 0;
     }
     if (x["__len__"]) {
-        ret = Sk.misceval.callsim(x["__len__"], x);
+        ret = Sk.misceval.callsimArray(x["__len__"], [x]);
         if (!Sk.builtin.checkInt(ret)) {
             throw new Sk.builtin.TypeError("__len__ should return an int");
         }
@@ -11027,13 +11040,16 @@ goog.exportSymbol("Sk.misceval.callOrSuspend", Sk.misceval.callOrSuspend);
 
 /**
  * @param {Object} func the thing to call
- * @param {...*} args stuff to pass it
+ * @param {Array=} args an array of arguments to pass to the func
+ *
+ * Does the same thing as callsim without expensive call to Array.slice.
+ * Requires args to be a Javascript array.
  */
-Sk.misceval.callsim = function (func, args) {
-    args = Array.prototype.slice.call(arguments, 1);
-    return Sk.misceval.apply(func, undefined, undefined, undefined, args);
+Sk.misceval.callsimArray = function(func, args) {
+    var argarray = args ? args : [];
+    return Sk.misceval.apply(func, undefined, undefined, undefined, argarray);
 };
-goog.exportSymbol("Sk.misceval.callsim", Sk.misceval.callsim);
+goog.exportSymbol("Sk.misceval.callsimArray", Sk.misceval.callsimArray);
 
 /**
  * @param {?Object} suspensionHandlers any custom suspension handlers
@@ -11046,16 +11062,18 @@ Sk.misceval.callsimAsync = function (suspensionHandlers, func, args) {
 };
 goog.exportSymbol("Sk.misceval.callsimAsync", Sk.misceval.callsimAsync);
 
-
 /**
  * @param {Object} func the thing to call
- * @param {...*} args stuff to pass it
+ * @param {Array=} args an array of arguments to pass to the func
+ *
+ * Does the same thing as callsimOrSuspend without expensive call to
+ * Array.slice.  Requires args to be a Javascript array.
  */
-Sk.misceval.callsimOrSuspend = function (func, args) {
-    args = Array.prototype.slice.call(arguments, 1);
-    return Sk.misceval.applyOrSuspend(func, undefined, undefined, undefined, args);
+Sk.misceval.callsimOrSuspendArray = function (func, args) {
+    var argarray = args ? args : [];
+    return Sk.misceval.applyOrSuspend(func, undefined, undefined, undefined, argarray);
 };
-goog.exportSymbol("Sk.misceval.callsimOrSuspend", Sk.misceval.callsimOrSuspend);
+goog.exportSymbol("Sk.misceval.callsimOrSuspendArray", Sk.misceval.callsimOrSuspendArray);
 
 /**
  * Wrap Sk.misceval.applyOrSuspend, but throw an error if we suspend
@@ -11475,7 +11493,7 @@ Sk.misceval.buildClass = function (globals, func, name, bases, cell) {
     }
     _locals = new Sk.builtin.dict(_locals);
 
-    klass = Sk.misceval.callsim(meta, _name, _bases, _locals);
+    klass = Sk.misceval.callsimArray(meta, [_name, _bases, _locals]);
 
     return klass;
 };
@@ -12066,7 +12084,7 @@ Sk.builtin.list.prototype.list_sort_ = function sort(self, cmp, key, reverse) {
     if (has_key) {
         if (has_cmp) {
             timsort.lt = function (a, b) {
-                var res = Sk.misceval.callsim(cmp, a[0], b[0]);
+                var res = Sk.misceval.callsimArray(cmp, [a[0], b[0]]);
                 return Sk.misceval.richCompareBool(res, zero, "Lt");
             };
         } else {
@@ -12076,12 +12094,12 @@ Sk.builtin.list.prototype.list_sort_ = function sort(self, cmp, key, reverse) {
         }
         for (i = 0; i < timsort.listlength; i++) {
             item = timsort.list.v[i];
-            keyvalue = Sk.misceval.callsim(key, item);
+            keyvalue = Sk.misceval.callsimArray(key, [item]);
             timsort.list.v[i] = [keyvalue, item];
         }
     } else if (has_cmp) {
         timsort.lt = function (a, b) {
-            var res = Sk.misceval.callsim(cmp, a, b);
+            var res = Sk.misceval.callsimArray(cmp, [a, b]);
             return Sk.misceval.richCompareBool(res, zero, "Lt");
         };
     }
@@ -12891,7 +12909,7 @@ Sk.builtin.str.prototype["find"] = new Sk.builtin.func(function (self, tgt, star
 Sk.builtin.str.prototype["index"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
     Sk.builtin.pyCheckArgsLen("index", arguments.length, 2, 4);
-    idx = Sk.misceval.callsim(self["find"], self, tgt, start, end);
+    idx = Sk.misceval.callsimArray(self["find"], [self, tgt, start, end]);
     if (Sk.builtin.asnum$(idx) === -1) {
         throw new Sk.builtin.ValueError("substring not found");
     }
@@ -12935,7 +12953,7 @@ Sk.builtin.str.prototype["rfind"] = new Sk.builtin.func(function (self, tgt, sta
 Sk.builtin.str.prototype["rindex"] = new Sk.builtin.func(function (self, tgt, start, end) {
     var idx;
     Sk.builtin.pyCheckArgsLen("rindex", arguments.length, 2, 4);
-    idx = Sk.misceval.callsim(self["rfind"], self, tgt, start, end);
+    idx = Sk.misceval.callsimArray(self["rfind"], [self, tgt, start, end]);
     if (Sk.builtin.asnum$(idx) === -1) {
         throw new Sk.builtin.ValueError("substring not found");
     }
@@ -13535,7 +13553,7 @@ var format = function (kwa) {
 
     if(kwargs.size !== 0){
 
-        var kwItems = Sk.misceval.callsim(Sk.builtin.dict.prototype["items"], kwargs);
+        var kwItems = Sk.misceval.callsimArray(Sk.builtin.dict.prototype["items"], [kwargs]);
 
         for (var n in kwItems.v){
 
@@ -14487,7 +14505,7 @@ Sk.builtin.dict.prototype.dict_merge = function(b) {
         }
     } else {
         // generic slower way
-        var keys = Sk.misceval.callsim(b["keys"], b);
+        var keys = Sk.misceval.callsimArray(b["keys"], [b]);
         for (iter = Sk.abstr.iter(keys), k = iter.tp$iternext(); k !== undefined; k = iter.tp$iternext()) {
             v = b.tp$getitem(k); // get value
             if (v === undefined) {
@@ -17364,9 +17382,9 @@ Sk.builtin.int_ = function (x, base) {
         if (Sk.builtin.checkFloat(base)) {
             throw new Sk.builtin.TypeError("integer argument expected, got " + Sk.abstr.typeName(base));
         } else if (base.__index__) {
-            base = Sk.misceval.callsim(base.__index__, base);
+            base = Sk.misceval.callsimArray(base.__index__, [base]);
         } else if(base.__int__) {
-            base = Sk.misceval.callsim(base.__int__, base);
+            base = Sk.misceval.callsimArray(base.__int__, [base]);
         } else {
             throw new Sk.builtin.AttributeError(Sk.abstr.typeName(base) + " instance has no attribute '__index__' or '__int__'");
         }
@@ -17407,18 +17425,18 @@ Sk.builtin.int_ = function (x, base) {
     if(x !== undefined && (x.tp$getattr && x.tp$getattr("__int__"))) {
         // calling a method which contains im_self and im_func
         // causes skulpt to automatically map the im_self as first argument
-        ret = Sk.misceval.callsim(x.tp$getattr("__int__"));
+        ret = Sk.misceval.callsimArray(x.tp$getattr("__int__"));
         magicName = "__int__";
     } else if(x !== undefined && x.__int__) {
         // required for internal types
         // __int__ method is on prototype
-        ret = Sk.misceval.callsim(x.__int__, x);
+        ret = Sk.misceval.callsimArray(x.__int__, [x]);
         magicName = "__int__";
     } else if(x !== undefined && (x.tp$getattr && x.tp$getattr("__trunc__"))) {
-        ret = Sk.misceval.callsim(x.tp$getattr("__trunc__"));
+        ret = Sk.misceval.callsimArray(x.tp$getattr("__trunc__"));
         magicName = "__trunc__";
     } else if(x !== undefined && x.__trunc__) {
-        ret = Sk.misceval.callsim(x.__trunc__, x);
+        ret = Sk.misceval.callsimArray(x.__trunc__, [x]);
         magicName = "__trunc__";
     }
 
@@ -18605,7 +18623,7 @@ Sk.builtin.float_ = function (x) {
     var special = Sk.abstr.lookupSpecial(x, "__float__");
     if (special != null) {
         // method on builtin, provide this arg
-        return Sk.misceval.callsim(special, x);
+        return Sk.misceval.callsimArray(special, [x]);
     }
 
     throw new Sk.builtin.TypeError("float() argument must be a string or a number");
@@ -18715,7 +18733,7 @@ Sk.builtin.float_.PyFloat_AsDouble = function (op) {
     }
 
     // call internal float method
-    fo = Sk.misceval.callsim(f, op);
+    fo = Sk.misceval.callsimArray(f, [op]);
 
     // return value of __float__ must be a python float
     if (!Sk.builtin.float_.PyFloat_Check(fo)) {
@@ -20840,7 +20858,7 @@ Sk.builtin.complex.try_complex_special_method = function (op) {
 
     if (f != null) {
         // method on builtin, provide this arg
-        res = Sk.misceval.callsim(f, op);
+        res = Sk.misceval.callsimArray(f, [op]);
 
         return res;
     }
@@ -22564,7 +22582,7 @@ var print_f = function function_print(kwa) {
 
     if(kw_list.file !== null) {
         // currently not tested, though it seems that we need to see how we should access the write function in a correct manner
-        Sk.misceval.callsim(kw_list.file.write, kw_list.file, new Sk.builtin.str(s)); // callsim to write function
+        Sk.misceval.callsimArray(kw_list.file.write, [kw_list.file, new Sk.builtin.str(s)]); // callsim to write function
     } else {
         return Sk.misceval.chain(Sk.importModule("sys", false, true), function(sys) {
             return Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
@@ -22893,7 +22911,7 @@ Sk.builtin.file.prototype["__enter__"] = new Sk.builtin.func(function __enter__(
 });
 
 Sk.builtin.file.prototype["__exit__"] = new Sk.builtin.func(function __exit__(self) {
-    return Sk.misceval.callsim(Sk.builtin.file.prototype["close"], self);
+    return Sk.misceval.callsimArray(Sk.builtin.file.prototype["close"], [self]);
 });
 
 Sk.builtin.file.prototype.tp$iter = function () {
@@ -23263,7 +23281,7 @@ Sk.builtin.iterator = function (obj, sentinel) {
     }
     objit = Sk.abstr.lookupSpecial(obj, "__iter__");
     if (objit) {
-        return Sk.misceval.callsim(objit, obj);
+        return Sk.misceval.callsimArray(objit, [obj]);
     }
     this.sentinel = sentinel;
     this.flag = false;
@@ -23306,7 +23324,7 @@ Sk.builtin.iterator.prototype.tp$iternext = function (canSuspend) {
 
     if (this.getitem) {
         r = Sk.misceval.tryCatch(function() {
-            return Sk.misceval.callsimOrSuspend(self.getitem, self.obj, Sk.ffi.remapToPy(self.idx++));
+            return Sk.misceval.callsimOrSuspendArray(self.getitem, [self.obj, Sk.ffi.remapToPy(self.idx++)]);
         }, function(e) {
             if (e instanceof Sk.builtin.StopIteration || e instanceof Sk.builtin.IndexError) {
                 return undefined;
@@ -23327,10 +23345,10 @@ Sk.builtin.iterator.prototype.tp$iternext = function (canSuspend) {
     };
 
     if (this.call) {
-        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspend(this.call, this.obj), checkSentinel);
+        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspendArray(this.call, [this.obj]), checkSentinel);
     } else {
         var obj = /** @type {Object} */ (this.obj);
-        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspend(obj), checkSentinel);
+        r = Sk.misceval.chain(Sk.misceval.callsimOrSuspendArray(obj), checkSentinel);
     }
 
     return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
@@ -30881,7 +30899,11 @@ Compiler.prototype.ccall = function (e) {
             args.push("$gbl.__class__");
             args.push("self");
         }
-        out ("$ret = Sk.misceval.callsimOrSuspend(", func, args.length > 0 ? "," : "", args, ");");
+        if (args.length > 0) {
+            out ("$ret = Sk.misceval.callsimOrSuspendArray(", func, ", [", args, "]);");
+        } else {
+            out ("$ret = Sk.misceval.callsimOrSuspendArray(", func, ");");
+        }
     }
 
     this._checkSuspension(e);
@@ -31577,7 +31599,7 @@ Compiler.prototype.craise = function (s) {
             // handles: raise Error OR raise someinstance
             exc = this._gr("err", this.vexpr(s.type));
             out("if(",exc," instanceof Sk.builtin.type) {",
-                "throw Sk.misceval.callsim(", exc, ");",
+                "throw Sk.misceval.callsimArray(", exc, ");",
                 "} else if(typeof(",exc,") === 'function') {",
                 "throw ",exc,"();",
                 "} else {",
@@ -31630,7 +31652,7 @@ Compiler.prototype.ctryexcept = function (s) {
             next = (i == n - 1) ? unhandled : handlers[i + 1];
 
             // var isinstance = this.nameop(new Sk.builtin.str("isinstance"), Load));
-            // var check = this._gr('call', "Sk.misceval.callsim(", isinstance, ", $err, ", handlertype, ")");
+            // var check = this._gr('call', "Sk.misceval.callsimArray(", isinstance, ", [$err, ", handlertype, "])");
 
             check = this._gr("instance", "Sk.misceval.isTrue(Sk.builtin.isinstance($err, ", handlertype, "))");
             this._jumpfalse(check, next);
@@ -31758,7 +31780,7 @@ Compiler.prototype.cwith = function (s) {
     // value = mgr.__enter__()
     out("$ret = Sk.abstr.gattr(",mgr,",'__enter__', true);");
     this._checkSuspension(s);
-    out("$ret = Sk.misceval.callsimOrSuspend($ret);");
+    out("$ret = Sk.misceval.callsimOrSuspendArray($ret);");
     this._checkSuspension(s);
     value = this._gr("value", "$ret");
 
@@ -31793,7 +31815,7 @@ Compiler.prototype.cwith = function (s) {
     this.popFinallyBlock();
 
     //   exit(None, None, None)
-    out("$ret = Sk.misceval.callsimOrSuspend(",exit,",Sk.builtin.none.none$,Sk.builtin.none.none$,Sk.builtin.none.none$);");
+    out("$ret = Sk.misceval.callsimOrSuspendArray(",exit,",[Sk.builtin.none.none$,Sk.builtin.none.none$,Sk.builtin.none.none$]);");
     this._checkSuspension(s);
     // Ignore $ret.
 
@@ -32242,7 +32264,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     else {
         var res;
         if (decos.length > 0) {
-            out("$ret = Sk.misceval.callsimOrSuspend(", scopename, ".$decorators[0], new Sk.builtins['function'](", scopename, ",$gbl", frees, "));");
+            out("$ret = Sk.misceval.callsimOrSuspendArray(", scopename, ".$decorators[0], [new Sk.builtins['function'](", scopename, ",$gbl", frees, ")]);");
             this._checkSuspension();
             return this._gr("funcobj", "$ret");
         }
@@ -32369,7 +32391,7 @@ Compiler.prototype.cgenexp = function (e) {
     // but the code builder builds a wrapper that makes generators for normal
     // function generators, so we just do it outside (even just new'ing it
     // inline would be fine).
-    var gener = this._gr("gener", "Sk.misceval.callsim(", gen, ");");
+    var gener = this._gr("gener", "Sk.misceval.callsimArray(", gen, ");");
     // stuff the outermost iterator into the generator after evaluating it
     // outside of the function. it's retrieved by the fixed name above.
     out(gener, ".gi$locals.$iter0=Sk.abstr.iter(", this.vexpr(e.generators[0].iter), ");");
@@ -34290,14 +34312,14 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
             };
         } else {
             compare_func = function (a, b) {
-                return Sk.misceval.callsim(cmp, a[0], b[0]);
+                return Sk.misceval.callsimArray(cmp, [a[0], b[0]]);
             };
         }
         iter = iterable.tp$iter();
         next = iter.tp$iternext();
         arr = [];
         while (next !== undefined) {
-            arr.push([Sk.misceval.callsim(key, next), next]);
+            arr.push([Sk.misceval.callsimArray(key, [next]), next]);
             next = iter.tp$iternext();
         }
         list = new Sk.builtin.list(arr);
@@ -34373,7 +34395,7 @@ Sk.builtin.super_ = function super_ (a_type, self) {
         return new Sk.builtin.super_(a_type, self);
     }
 
-    Sk.misceval.callsim(Sk.builtin.super_.__init__, this, a_type, self);
+    Sk.misceval.callsimArray(Sk.builtin.super_.__init__, [this, a_type, self]);
 
     return this;
 };
