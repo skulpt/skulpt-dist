@@ -10789,6 +10789,8 @@ Sk.misceval.objectRepr = function (v) {
         return new Sk.builtin.str("False");
     } else if (typeof v === "number") {
         return new Sk.builtin.str("" + v);
+    } else if (typeof v === "string") {
+        return new Sk.builtin.str(v);
     } else if (!v["$r"]) {
         if (v.tp$name) {
             return new Sk.builtin.str("<" + v.tp$name + " object>");
@@ -13518,7 +13520,6 @@ var format = function (kwa) {
 
     Sk.builtin.pyCheckArgsLen("format", arguments.length, 0, Infinity, true, true);
 
-
     args = new Sk.builtins["tuple"](Array.prototype.slice.call(arguments, 1)); /*vararg*/
     kwargs = new Sk.builtins["dict"](kwa);
 
@@ -13556,13 +13557,12 @@ var format = function (kwa) {
         var kwItems = Sk.misceval.callsimArray(Sk.builtin.dict.prototype["items"], [kwargs]);
 
         for (var n in kwItems.v){
-
-            arg_dict[kwItems.v[n].v[0].v] = kwItems.v[n].v[1].v;
+            arg_dict[kwItems.v[n].v[0].v] = kwItems.v[n].v[1];
         }
     }
     for(var i in args.v){
         if(i !== "0") {
-            arg_dict[i-1] = args.v[i].v;
+            arg_dict[i-1] = args.v[i];
         }
     }
 
@@ -13584,14 +13584,24 @@ var format = function (kwa) {
         var convName;
         var convValue;
         var percent;
+        var container;
         fieldWidth = Sk.builtin.asnum$(fieldWidth);
         precision = Sk.builtin.asnum$(precision);
 
         if(element_index !== undefined && element_index !== ""){
-            value = arg_dict[arg_name][element_index].v;
+            container = arg_dict[arg_name];
+            if (container.constructor === Array) {
+                value = container[element_index];
+            } else {
+                if (container instanceof Sk.builtin.dict) {
+                    value = Sk.abstr.objectGetItem(container, new Sk.builtin.str(element_index), false);
+                } else {
+                    value = Sk.abstr.objectGetItem(container, new Sk.builtin.int_(parseInt(element_index, 10)), false);
+                }
+            }
             index++;
         } else if(attribute_name !== undefined && attribute_name !== ""){
-            value = arg_dict[arg_name][attribute_name].v;
+            value = arg_dict[arg_name][attribute_name];
             index++;
         } else if(arg_name !== undefined && arg_name !== ""){
             value = arg_dict[arg_name];
@@ -13650,14 +13660,11 @@ var format = function (kwa) {
         formatFormat = function(value){
             var r;
             var s;
-            if(conversion === undefined || conversion === ""){
-                return value;
-            } else if( conversion == "r"){
+            if(conversion === undefined || conversion === "" || conversion == "s"){
                 s = new Sk.builtin.str(value);
-                r = Sk.builtin.repr(s);
-                return r.v;
-            } else if(conversion == "s"){
-                r = new Sk.builtin.str(value);
+                return s.v;
+            } else if(conversion == "r"){
+                r = Sk.builtin.repr(value);
                 return r.v;
             }
 
@@ -13666,6 +13673,7 @@ var format = function (kwa) {
         handleWidth = function (prefix, r) {
             // print(prefix);
             var totLen;
+            r = Sk.ffi.remapToJs(r);
 
             var j;
             if(percent){
@@ -13720,19 +13728,12 @@ var format = function (kwa) {
                 return formatFormat(value);
             }
 
-            if (typeof n === "number" && !(precision)) {
+            if (typeof n === "number") {
                 if (n < 0) {
                     n = -n;
                     neg = true;
                 }
                 r = n.toString(base);
-            } else if (precision) {
-                if (n < 0) {
-                    n = -n;
-                    neg = true;
-                }
-                n = Number(n.toString(base));
-                r = n.toFixed(precision);
             } else if (n instanceof Sk.builtin.float_) {
                 r = n.str$(base, false);
                 if (r.length > 2 && r.substr(-2) === ".0") {
@@ -13747,6 +13748,15 @@ var format = function (kwa) {
                 neg = n.nb$isnegative();    //  neg = n.size$ < 0;  RNL long.js change
             } else{
                 r = n;
+            }
+
+            if (precision) {
+                n = Number(r);
+                if (n < 0) {
+                    n = -n;
+                    neg = true;
+                }
+                r = n.toFixed(precision);
             }
 
             precZeroPadded = false;
@@ -13837,7 +13847,7 @@ var format = function (kwa) {
             }
         } else if (percent) {
             if(precision === undefined){precision = parseInt(7,10);}
-            return formatNumber(value*100, 10);
+            return formatNumber(value.nb$multiply(new Sk.builtin.int_(100)), 10);
         }
 
     };
@@ -23195,7 +23205,7 @@ Sk.ffi.remapToJs = function (obj) {
         return Sk.builtin.asnum$(obj);
     } else if (obj instanceof Sk.builtin.lng) {
         return Sk.builtin.asnum$(obj);
-    } else if (typeof obj === "number" || typeof obj === "boolean") {
+    } else if (typeof obj === "number" || typeof obj === "boolean" || typeof obj === "string") {
         return obj;
     } else if (obj === undefined) {
         return undefined;
