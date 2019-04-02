@@ -22947,6 +22947,7 @@ Sk.builtin.file.prototype["__exit__"] = new Sk.builtin.func(function __exit__(se
 
 Sk.builtin.file.prototype.tp$iter = function () {
     var allLines = this.lineList;
+    var currentLine = this.currentLine;
 
     var ret =
     {
@@ -22954,7 +22955,7 @@ Sk.builtin.file.prototype.tp$iter = function () {
             return ret;
         },
         $obj       : this,
-        $index     : 0,
+        $index     : currentLine,
         $lines     : allLines,
         tp$iternext: function () {
             if (ret.$index >= ret.$lines.length) {
