@@ -7989,14 +7989,14 @@ function parsestr (c, s) {
                 else if (c === "x") {
                     d0 = s.charAt(++i);
                     d1 = s.charAt(++i);
-                    ret += String.fromCharCode(parseInt(d0 + d1, 16));
+                    ret += encodeUtf8(String.fromCharCode(parseInt(d0 + d1, 16)));
                 }
                 else if (c === "u" || c === "U") {
                     d0 = s.charAt(++i);
                     d1 = s.charAt(++i);
                     d2 = s.charAt(++i);
                     d3 = s.charAt(++i);
-                    ret += String.fromCharCode(parseInt(d0 + d1, 16), parseInt(d2 + d3, 16));
+                    ret += encodeUtf8(String.fromCharCode(parseInt(d0 + d1, 16), parseInt(d2 + d3, 16)));
                 }
                 else {
                     // Leave it alone
@@ -8008,7 +8008,7 @@ function parsestr (c, s) {
                 ret += c;
             }
         }
-        return ret;
+        return decodeUtf8(ret);
     };
 
     //print("parsestr", s);
@@ -33656,8 +33656,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "54b91da0b09b643019162e196f5812274f63257a",
-    date: "2019-07-05T08:02:43.614Z"
+    githash: "06a1130a47dbcfbcb13b281d4d6e30bd9f9f7780",
+    date: "2019-07-10T10:06:34.604Z"
 };
 
 /**
