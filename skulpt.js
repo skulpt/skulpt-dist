@@ -32200,14 +32200,7 @@ function rstrip (input, what) {
     return input.substring(0, i);
 }
 
-/**
- * test if string is an identifier
- *
- * @param {str} string
- * @returns {boolean}
- */
-function isidentifier(str) {
-    var normalized = str.normalize('NFKC');
+const IS_IDENTIFIER_REGEX = (function() {
     var the_underscore = '_';
     var Lu = '[A-Z]';
     var Ll = '[a-z]';
@@ -32223,16 +32216,26 @@ function isidentifier(str) {
     var Other_ID_Continue = '[\\u00B7\\u0387\\u1369-\\u1371\\u19DA]';
     var id_start = group(Lu, Ll,Lt, Lm, Lo, Nl, the_underscore, Other_ID_Start);
     var id_continue = group(id_start, Mn, Mc, Nd, Pc, Other_ID_Continue);
-    var r;
+
     // Fall back if we don't support unicode
     if (RegExp().unicode === false) {
-        r = new RegExp('^' + id_start + '+' + id_continue + '*$', 'u');
+        return new RegExp('^' + id_start + '+' + id_continue + '*$', 'u');
     } else {
         id_start = group(Lu, Ll, the_underscore);
         id_continue = group(id_start, '[0-9]');
-        r = new RegExp('^' + id_start + '+' + id_continue + '*$');
+        return new RegExp('^' + id_start + '+' + id_continue + '*$');
     }
-    return r.test(normalized);
+})();
+
+/**
+ * test if string is an identifier
+ *
+ * @param {str} string
+ * @returns {boolean}
+ */
+function isidentifier(str) {
+    var normalized = str.normalize('NFKC');
+    return IS_IDENTIFIER_REGEX.test(normalized);
 }
 
 /* we have to use string and ctor to be able to build patterns up. + on /.../
@@ -32347,6 +32350,8 @@ function _tokenize(readline, encoding, yield_) {
                           (Sk.__future__.silent_octal_literal ? SilentOctnumber : Octnumber), Decnumber);
     var Number_ = group(Imagnumber, Floatnumber, Intnumber);
     var PseudoToken = Whitespace + group(PseudoExtras, Number_, Funny, ContStr, Name);
+
+    const PseudoTokenRegexp = new RegExp(PseudoToken);
 
     var lnum = 0,
         parenlev = 0,
@@ -32483,7 +32488,7 @@ function _tokenize(readline, encoding, yield_) {
                 capos = line.charAt(pos);
             }
 
-            pseudomatch = RegExp(PseudoToken).exec(line.substring(pos))
+            pseudomatch = PseudoTokenRegexp.exec(line.substring(pos))
             if (pseudomatch) {                                // scan for tokens
                 var start = pos;
                 var end = start + pseudomatch[1].length;
@@ -33802,8 +33807,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "722cad72b41e1344c1541e8cdb9fd1fbabb1d824",
-    date: "2019-07-15T06:27:45.550Z"
+    githash: "ac2d8cd0ba141f7c7588fe6eecd15c779bf8f5fa",
+    date: "2019-07-28T08:47:30.633Z"
 };
 
 /**
