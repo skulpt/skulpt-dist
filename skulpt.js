@@ -11466,10 +11466,9 @@ Sk.builtin.int2str_ = function helper_ (x, radix, prefix) {
     var str = "";
     if (x instanceof Sk.builtin.lng) {
         suffix = "";
-        if (radix !== 2) {
+        if (radix !== 2 && (!(Sk.__future__.python3))) {
             suffix = "L";
         }
-
         str = x.str$(radix, false);
         if (x.nb$isnegative()) {
             return new Sk.builtin.str("-" + prefix + str + suffix);
@@ -11937,11 +11936,9 @@ Sk.builtin.filter = function filter (fun, iterable) {
     var add;
     var ctor;
     Sk.builtin.pyCheckArgsLen("filter", arguments.length, 2, 2);
-
     if (!Sk.builtin.checkIterable(iterable)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(iterable) + "' object is not iterable");
     }
-
     ctor = function () {
         return [];
     };
@@ -12383,7 +12380,6 @@ Sk.builtins = {
     "min"       : new Sk.builtin.func(Sk.builtin.min),
     "max"       : new Sk.builtin.func(Sk.builtin.max),
     "sum"       : new Sk.builtin.func(Sk.builtin.sum),
-    "zip"       : new Sk.builtin.func(Sk.builtin.zip),
     "abs"       : new Sk.builtin.func(Sk.builtin.abs),
     "fabs"      : new Sk.builtin.func(Sk.builtin.fabs),
     "ord"       : new Sk.builtin.func(Sk.builtin.ord),
@@ -12400,8 +12396,6 @@ Sk.builtins = {
     "hasattr"   : new Sk.builtin.func(Sk.builtin.hasattr),
     "id"        : new Sk.builtin.func(Sk.builtin.id),
 
-    "map"       : new Sk.builtin.func(Sk.builtin.map),
-    "filter"    : new Sk.builtin.func(Sk.builtin.filter),
     "reduce"    : new Sk.builtin.func(Sk.builtin.reduce),
     "sorted"    : new Sk.builtin.func(Sk.builtin.sorted),
     "any"       : new Sk.builtin.func(Sk.builtin.any),
@@ -12485,8 +12479,20 @@ Sk.builtins = {
     "coerce"    : Sk.builtin.coerce,
     "intern"    : Sk.builtin.intern
 };
-Sk.exportSymbol("Sk.builtins", Sk.builtins);
 
+Sk.setupObjects = function (py3) {
+    if (py3) {
+        Sk.builtins["filter"] = Sk.builtin.filter_;
+        Sk.builtins["map"] = Sk.builtin.map_;
+        Sk.builtins["zip"] = Sk.builtin.zip_;
+    } else {
+        Sk.builtins["filter"] = new Sk.builtin.func(Sk.builtin.filter);
+        Sk.builtins["map"] = new Sk.builtin.func(Sk.builtin.map);
+        Sk.builtins["zip"] = new Sk.builtin.func(Sk.builtin.zip);
+    }
+};
+Sk.exportSymbol("Sk.setupObjects", Sk.setupObjects);
+Sk.exportSymbol("Sk.builtins", Sk.builtins);
 
 /***/ }),
 
@@ -17491,7 +17497,6 @@ Sk.python2 = {
     exceptions: false,
     no_long_type: false,
     ceil_floor_int: false,
-    l_suffix: true,
     silent_octal_literal: true
 };
 
@@ -17515,7 +17520,6 @@ Sk.python3 = {
     exceptions: true,
     no_long_type: true,
     ceil_floor_int: true,
-    l_suffix: false,
     silent_octal_literal: false
 };
 
@@ -17568,7 +17572,6 @@ Sk.configure = function (options) {
     Sk.bool_check(Sk.__future__.no_long_type, "Sk.__future__.no_long_type");
     Sk.bool_check(Sk.__future__.ceil_floor_int, "Sk.__future__.ceil_floor_int");
     Sk.bool_check(Sk.__future__.silent_octal_literal, "Sk.__future__.silent_octal_literal");
-    Sk.bool_check(Sk.__future__.l_suffix, "Sk.__future__.l_suffix");
 
     // in __future__ add checks for absolute_import
 
@@ -17657,6 +17660,7 @@ Sk.configure = function (options) {
 
     Sk.setupOperators(Sk.__future__.python3);
     Sk.setupDunderMethods(Sk.__future__.python3);
+    Sk.setupObjects(Sk.__future__.python3);
 };
 
 Sk.exportSymbol("Sk.configure", Sk.configure);
@@ -17792,6 +17796,9 @@ Sk.setup_method_mappings = function () {
                         Sk.builtin.tuple_iter_,
                         Sk.builtin.generator,
                         Sk.builtin.enumerate,
+                        Sk.builtin.filter_,
+                        Sk.builtin.zip_,
+                        Sk.builtin.map_,
                         Sk.builtin.iterator],
             2: "next",
             3: "__next__"
@@ -18856,6 +18863,84 @@ Sk.exportSymbol("Sk.builtin.file", Sk.builtin.file);
 
 /***/ }),
 
+/***/ "./src/filter.js":
+/*!***********************!*\
+  !*** ./src/filter.js ***!
+  \***********************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * @constructor
+ * @param {Object} iterable
+ * @extends Sk.builtin.object
+ */
+
+Sk.builtin.filter_ = function filter_ (fun, iterable) {
+    var it;
+    var getitem;
+    var result;
+    var item;
+    Sk.builtin.pyCheckArgsLen("filter_", arguments.length, 2, 2);
+
+    if (!(this instanceof Sk.builtin.filter_)) {
+        return new Sk.builtin.filter_(fun, iterable);
+    }
+    //don't need to check if iterable is an iterable because Sk.abstr.iter will throw the right error msg
+    it = Sk.abstr.iter(iterable);
+    getitem = function (item) {
+        if (fun === Sk.builtin.none.none$) {
+            result = item;
+        } else {
+            result = Sk.misceval.callsimArray(fun, [item]);
+        }
+
+        if (Sk.misceval.isTrue(result)) {
+            return result;
+        }
+        return undefined;
+    };
+    this.tp$iter = function () {
+        return this;
+    };
+    this.tp$iternext = function () {
+        item = it.tp$iternext();
+        if (item === undefined) {
+            return undefined;
+        }
+        result = getitem(item);
+        while (result === undefined) {
+            item = it.tp$iternext();
+            if (item === undefined) {
+                return undefined;
+            }
+            result = getitem(item);
+        }
+        return item;
+    };
+    this.__class__ = Sk.builtin.filter_;
+    return this;
+};
+
+Sk.abstr.setUpInheritance("filter", Sk.builtin.filter_, Sk.builtin.object);
+
+Sk.builtin.filter_.prototype["__iter__"] = new Sk.builtin.func(function (self) {
+    return self.tp$iter();
+});
+
+Sk.builtin.filter_.prototype.next$ = function (self) {
+    return self.tp$iternext();
+};
+
+Sk.builtin.filter_.prototype["$r"] = function () {
+    return new Sk.builtin.str("<filter object>");
+};
+
+Sk.exportSymbol("Sk.builtin.filter_", Sk.builtin.filter_);
+
+
+/***/ }),
+
 /***/ "./src/float.js":
 /*!**********************!*\
   !*** ./src/float.js ***!
@@ -19748,7 +19833,12 @@ Sk.builtin.float_.prototype.str$ = function (base, sign) {
 
 
     if (base === undefined || base === 10) {
-        tmp = work.toPrecision(12);
+        if (Sk.__future__.python3) {
+            tmp = work.toPrecision(16);
+        } else {
+            tmp = work.toPrecision(12);
+        }
+        
 
         // transform fractions with 4 or more leading zeroes into exponents
         idx = tmp.indexOf(".");
@@ -23390,6 +23480,23 @@ Sk.builtin.list.prototype["count"] = new Sk.builtin.func(function (self, item) {
     return new Sk.builtin.int_(count);
 });
 
+Sk.builtin.list.prototype["copy"] = new Sk.builtin.func(function (self) {
+    var it;
+    var k;
+    var items;
+    Sk.builtin.pyCheckArgsLen("copy", arguments.length - 1, 0, 0);
+
+    items = [];
+    for (it = Sk.abstr.iter(self), k = it.tp$iternext();
+        k !== undefined;
+        k = it.tp$iternext()) {
+        items.push(k);
+    
+    }
+    return new Sk.builtin.list(items);
+    
+});
+
 Sk.builtin.list.prototype["reverse"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_reverse_);
 Sk.builtin.list.prototype["sort"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_sort_);
 
@@ -24261,7 +24368,13 @@ Sk.builtin.lng.prototype.ob$ge = function (other) {
 };
 
 Sk.builtin.lng.prototype.$r = function () {
-    return new Sk.builtin.str(this.str$(10, true) + "L");
+    var suffix;
+    if (Sk.__future__.python3) {
+        suffix = "";
+    } else {
+        suffix = "L";
+    }
+    return new Sk.builtin.str(this.str$(10, true) + suffix);
 };
 
 Sk.builtin.lng.prototype.tp$str = function () {
@@ -24343,6 +24456,9 @@ __webpack_require__(/*! ./file.js */ "./src/file.js");
 __webpack_require__(/*! ./ffi.js */ "./src/ffi.js");
 __webpack_require__(/*! ./iterator.js */ "./src/iterator.js");
 __webpack_require__(/*! ./enumerate.js */ "./src/enumerate.js");
+__webpack_require__(/*! ./filter.js */ "./src/filter.js");
+__webpack_require__(/*! ./zip.js */ "./src/zip.js");
+__webpack_require__(/*! ./map.js */ "./src/map.js");
 __webpack_require__(/*! ./token.js */ "./src/token.js");
 __webpack_require__(/*! ./tokenize.js */ "./src/tokenize.js");
 __webpack_require__(/*! ../gen/parse_tables.js */ "./gen/parse_tables.js");
@@ -24361,6 +24477,101 @@ __webpack_require__(/*! ./internalpython.js */ "./src/internalpython.js");
 
 /* jshint ignore:end */
 
+
+/***/ }),
+
+/***/ "./src/map.js":
+/*!********************!*\
+  !*** ./src/map.js ***!
+  \********************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * @constructor
+ * @param {Object} iterable
+ * @extends Sk.builtin.object
+ */
+Sk.builtin.map_ = function map_ (fun, seq) {
+    var next;
+    var args;
+    var getnext;
+    var i;
+    var item;
+    var iterables;
+    var combined;
+    var args;
+    Sk.builtin.pyCheckArgsLen("map_", arguments.length, 2);
+
+    if (!(this instanceof Sk.builtin.map_)) {
+        args = Array.prototype.slice.apply(arguments).slice(1);
+        return new Sk.builtin.map_(fun, ...args);
+    }
+    if (arguments.length > 2) {
+        // Pack sequences into one list of Javascript Arrays
+        iterables = Array.prototype.slice.apply(arguments).slice(1);
+        for (i = 0; i < iterables.length; i++) {
+            //don't need to check if iterables[i] is an iterable bc Sk.abstr.iter will check and throw the correct error msg
+            iterables[i] = Sk.abstr.iter(iterables[i]);
+        }
+        getnext = function () {
+            combined = [];
+            for (i = 0; i < iterables.length; i++) {
+                next = iterables[i].tp$iternext();
+                if (next === undefined) {
+                    return undefined;
+                } else {
+                    combined.push(next);
+                }
+            }
+            return combined;
+        };
+    } else {
+        //don't need to check if seq is iterable bc Sk.abstr.iter will throw the right error msg
+        seq = Sk.abstr.iter(seq);
+        getnext = function () {
+            return seq.tp$iternext();
+        };
+    }
+    this.tp$iternext = function () {
+        item = getnext();
+        if (item === undefined) {
+            return undefined;
+        }
+        if (fun === Sk.builtin.none.none$) {
+            if (item instanceof Array) {
+                item = new Sk.builtin.tuple(item);
+                return item;
+            }
+            return item;
+        }
+        if (!(item instanceof Array)) {
+            item = [item];
+        }
+        return Sk.misceval.applyOrSuspend(fun, undefined, undefined, undefined, item);
+    };
+    this.tp$iter = function () {
+        return this;
+    };
+    this.__class__ = Sk.builtin.map_;
+    return this;
+};
+
+Sk.abstr.setUpInheritance("map", Sk.builtin.map_, Sk.builtin.object);
+
+Sk.builtin.map_.prototype["__iter__"] = new Sk.builtin.func(function (self) {
+    return self.tp$iter();
+});
+
+Sk.builtin.map_.prototype.next$ = function (self) {
+    return self.tp$iternext();
+};
+
+Sk.builtin.map_.prototype["$r"] = function () {
+    return new Sk.builtin.str("<map object>");
+};
+
+Sk.exportSymbol("Sk.builtin.map_", Sk.builtin.map_);
 
 /***/ }),
 
@@ -24780,9 +24991,12 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
                          Sk.builtin.bool.prototype.ob$type];
         sequence_types = [Sk.builtin.dict.prototype.ob$type,
                           Sk.builtin.enumerate.prototype.ob$type,
+                          Sk.builtin.filter_.prototype.ob$type,
                           Sk.builtin.list.prototype.ob$type,
+                          Sk.builtin.map_.prototype.ob$type,
                           Sk.builtin.str.prototype.ob$type,
-                          Sk.builtin.tuple.prototype.ob$type];
+                          Sk.builtin.tuple.prototype.ob$type,
+                          Sk.builtin.zip_.prototype.ob$type];
 
         v_num_type = numeric_types.indexOf(v_type);
         v_seq_type = sequence_types.indexOf(v_type);
@@ -24957,66 +25171,69 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
             return Sk.misceval.isTrue(ret);
         }
     }
-
-    vcmp = Sk.abstr.lookupSpecial(v, Sk.builtin.str.$cmp);
-    if (vcmp) {
-        try {
-            ret = Sk.misceval.callsimArray(vcmp, [v, w]);
-            if (Sk.builtin.checkNumber(ret)) {
-                ret = Sk.builtin.asnum$(ret);
-                if (op === "Eq") {
-                    return ret === 0;
-                } else if (op === "NotEq") {
-                    return ret !== 0;
-                } else if (op === "Lt") {
-                    return ret < 0;
-                } else if (op === "Gt") {
-                    return ret > 0;
-                } else if (op === "LtE") {
-                    return ret <= 0;
-                } else if (op === "GtE") {
-                    return ret >= 0;
+    if (!Sk.__future__.python3) {
+        vcmp = Sk.abstr.lookupSpecial(v, Sk.builtin.str.$cmp);
+        if (vcmp) {
+            try {
+                ret = Sk.misceval.callsimArray(vcmp, [v, w]);
+                if (Sk.builtin.checkNumber(ret)) {
+                    ret = Sk.builtin.asnum$(ret);
+                    if (op === "Eq") {
+                        return ret === 0;
+                    } else if (op === "NotEq") {
+                        return ret !== 0;
+                    } else if (op === "Lt") {
+                        return ret < 0;
+                    } else if (op === "Gt") {
+                        return ret > 0;
+                    } else if (op === "LtE") {
+                        return ret <= 0;
+                    } else if (op === "GtE") {
+                        return ret >= 0;
+                    }
                 }
-            }
-
-            if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+    
+                if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+                    throw new Sk.builtin.TypeError("comparison did not return an int");
+                }
+            } catch (e) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        } catch (e) {
-            throw new Sk.builtin.TypeError("comparison did not return an int");
         }
-    }
-
-    wcmp = Sk.abstr.lookupSpecial(w, Sk.builtin.str.$cmp);
-    if (wcmp) {
-        // note, flipped on return value and call
-        try {
-            ret = Sk.misceval.callsimArray(wcmp, [w, v]);
-            if (Sk.builtin.checkNumber(ret)) {
-                ret = Sk.builtin.asnum$(ret);
-                if (op === "Eq") {
-                    return ret === 0;
-                } else if (op === "NotEq") {
-                    return ret !== 0;
-                } else if (op === "Lt") {
-                    return ret > 0;
-                } else if (op === "Gt") {
-                    return ret < 0;
-                } else if (op === "LtE") {
-                    return ret >= 0;
-                } else if (op === "GtE") {
-                    return ret <= 0;
+        wcmp = Sk.abstr.lookupSpecial(w, Sk.builtin.str.$cmp);
+        if (wcmp) {
+            // note, flipped on return value and call
+            try {
+                ret = Sk.misceval.callsimArray(wcmp, [w, v]);
+                if (Sk.builtin.checkNumber(ret)) {
+                    ret = Sk.builtin.asnum$(ret);
+                    if (op === "Eq") {
+                        return ret === 0;
+                    } else if (op === "NotEq") {
+                        return ret !== 0;
+                    } else if (op === "Lt") {
+                        return ret > 0;
+                    } else if (op === "Gt") {
+                        return ret < 0;
+                    } else if (op === "LtE") {
+                        return ret >= 0;
+                    } else if (op === "GtE") {
+                        return ret <= 0;
+                    }
                 }
-            }
 
-            if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+                if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
+                    throw new Sk.builtin.TypeError("comparison did not return an int");
+                }
+            } catch (e) {
                 throw new Sk.builtin.TypeError("comparison did not return an int");
             }
-        } catch (e) {
-            throw new Sk.builtin.TypeError("comparison did not return an int");
         }
-    }
 
+    }
+    
+
+    
     // handle special cases for comparing None with None or Bool with Bool
     if (((v instanceof Sk.builtin.none) && (w instanceof Sk.builtin.none)) ||
         ((v instanceof Sk.builtin.bool) && (w instanceof Sk.builtin.bool))) {
@@ -25061,7 +25278,8 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     vname = Sk.abstr.typeName(v);
     wname = Sk.abstr.typeName(w);
-    throw new Sk.builtin.ValueError("don't know how to compare '" + vname + "' and '" + wname + "'");
+    throw new Sk.builtin.TypeError("'" + "OPERATION SYMBOL" + "' not supported between instances of '" + vname + "' and '" + wname + "'");
+    //throw new Sk.builtin.ValueError("don't know how to compare '" + vname + "' and '" + wname + "'");
 };
 Sk.exportSymbol("Sk.misceval.richCompareBool", Sk.misceval.richCompareBool);
 
@@ -25145,15 +25363,25 @@ Sk.misceval.isTrue = function (x) {
     if (x.constructor === Sk.builtin.float_) {
         return x.v !== 0;
     }
-    if (x["__nonzero__"]) {
-        ret = Sk.misceval.callsimArray(x["__nonzero__"], [x]);
-        if (!Sk.builtin.checkInt(ret)) {
-            throw new Sk.builtin.TypeError("__nonzero__ should return an int");
+    if (Sk.__future__.python3) {
+        if (x.__bool__) {
+            ret = Sk.misceval.callsimArray(x.__bool__, [x]);
+            if (!(ret instanceof Sk.builtin.bool)) {
+                throw new Sk.builtin.TypeError("__bool__ should return bool, returned " + Sk.abstr.typeName(ret));
+            }
+            return ret.v;
         }
-        return Sk.builtin.asnum$(ret) !== 0;
+    } else {
+        if (x.__nonzero__) {
+            ret = Sk.misceval.callsimArray(x.__nonzero__, [x]);
+            if (!Sk.builtin.checkInt(ret)) {
+                throw new Sk.builtin.TypeError("__nonzero__ should return an int");
+            }
+            return Sk.builtin.asnum$(ret) !== 0;
+        }
     }
-    if (x["__len__"]) {
-        ret = Sk.misceval.callsimArray(x["__len__"], [x]);
+    if (x.__len__) {
+        ret = Sk.misceval.callsimArray(x.__len__, [x]);
         if (!Sk.builtin.checkInt(ret)) {
             throw new Sk.builtin.TypeError("__len__ should return an int");
         }
@@ -29670,10 +29898,11 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
     var replFunc;
     var index;
     var regex;
+    var val;
+
     if (rhs.constructor !== Sk.builtin.tuple && (rhs.mp$subscript === undefined || rhs.constructor === Sk.builtin.str)) {
         rhs = new Sk.builtin.tuple([rhs]);
     }
-
     // general approach is to use a regex that matches the format above, and
     // do an re.sub with a function as replacement to make the subs.
 
@@ -29800,6 +30029,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             var prefix = args[0];
             var r = args[1];
             var j;
+
             if (fieldWidth) {
                 fieldWidth = parseInt(fieldWidth, 10);
                 totLen = r.length + prefix.length;
@@ -29858,10 +30088,15 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             }
             convName = ["toExponential", "toFixed", "toPrecision"]["efg".indexOf(conversionType.toLowerCase())];
             if (precision === undefined || precision === "") {
+                
                 if (conversionType === "e" || conversionType === "E") {
                     precision = 6;
                 } else if (conversionType === "f" || conversionType === "F") {
-                    precision = 7;
+                    if (Sk.__future__.python3) {
+                        precision = 6;
+                    } else {
+                        precision = 7;
+                    }
                 }
             }
             result = (convValue)[convName](precision); // possible loose of negative zero sign
@@ -29872,7 +30107,16 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                     result = "-" + result; // add sign for zero
                 }
             }
+            if (Sk.__future__.python3) {
+                if ((result.length >= 7) && (result.slice(0, 6) == "0.0000")) {
 
+                    val = parseFloat(result);
+                    result = val.toExponential(); 
+                }
+                if (result.charAt(result.length -2) == "-") {
+                    result = result.slice(0, result.length - 1) + "0" + result.charAt(result.length - 1);
+                }
+            }
             if ("EFG".indexOf(conversionType) !== -1) {
                 result = result.toUpperCase();
             }
@@ -29911,7 +30155,6 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             return "%";
         }
     };
-
     ret = this.v.replace(regex, replFunc);
     return new Sk.builtin.str(ret);
 };
@@ -32340,7 +32583,7 @@ var tabsize = 8
 function _tokenize(readline, encoding, yield_) {
     // we make these regexes here because they can
     // be changed by the configuration.
-    var LSuffix = Sk.__future__.l_suffix ? '(?:L?)' : '';
+    var LSuffix = !Sk.__future__.python3 ? '(?:L?)' : '';
     var Hexnumber = '0[xX](?:_?[0-9a-fA-F])+' + LSuffix;
     var Binnumber = '0[bB](?:_?[01])+' + LSuffix;
     var Octnumber = '0([oO])(?:_?[0-7])+' + LSuffix;
@@ -32593,6 +32836,7 @@ function _tokenize(readline, encoding, yield_) {
 Sk._tokenize = _tokenize;
 
 Sk.exportSymbol("Sk._tokenize", Sk._tokenize);
+
 
 /***/ }),
 
@@ -33807,8 +34051,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "ac2d8cd0ba141f7c7588fe6eecd15c779bf8f5fa",
-    date: "2019-07-28T08:47:30.633Z"
+    githash: "92e7e13fb8819a67eb9fc06af40f3a579b4bbcd0",
+    date: "2019-08-20T12:46:03.193Z"
 };
 
 /**
@@ -33866,6 +34110,79 @@ Sk.exportSymbol("Sk.isArrayLike", Sk.isArrayLike);
 Sk.exportSymbol("Sk.js_beautify", Sk.js_beautify);
 
 /* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../node_modules/webpack/buildin/global.js */ "./node_modules/webpack/buildin/global.js")))
+
+/***/ }),
+
+/***/ "./src/zip.js":
+/*!********************!*\
+  !*** ./src/zip.js ***!
+  \********************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * @constructor
+ * @param {Object} iterable
+ * @extends Sk.builtin.object
+ */
+Sk.builtin.zip_ = function zip_ () {
+    var i;
+    var iters;
+    var next;
+    if (!(this instanceof Sk.builtin.zip_)) {
+        return new Sk.builtin.zip_(...arguments);
+    }
+    if (arguments.length === 0) {
+        return new Sk.builtin.zip_(new Sk.builtin.list([]));
+    }
+    iters = [];
+    for (i = 0; i < arguments.length; i++) {
+        try {
+            iters.push(Sk.abstr.iter(arguments[i]));
+        } catch (e) {
+            if (e instanceof Sk.builtin.TypeError) {
+                throw new Sk.builtin.TypeError("zip argument #" + (i + 1) + " must support iteration");         
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    this.tp$iter = function () {
+        return this;
+    };
+
+    this.tp$iternext = function () {
+        var tup = [];
+        for (i = 0; i < iters.length; i++) {
+            next = iters[i].tp$iternext();
+            if (next === undefined) {
+                return undefined;
+            }
+            tup.push(next);
+        }
+        return new Sk.builtin.tuple(tup);
+    };
+    this.__class__ = Sk.builtin.zip_;
+
+    return this;
+};
+
+Sk.abstr.setUpInheritance("zip", Sk.builtin.zip_, Sk.builtin.object);
+
+Sk.builtin.zip_.prototype["__iter__"] = new Sk.builtin.func(function (self) {
+    return self.tp$iter();
+});
+
+Sk.builtin.zip_.prototype.next$ = function (self) {
+    return self.tp$iternext();
+};
+
+Sk.builtin.zip_.prototype["$r"] = function () {
+    return new Sk.builtin.str("<zip object>");
+};
+
+Sk.exportSymbol("Sk.builtin.zip_", Sk.builtin.zip_);
 
 /***/ }),
 
