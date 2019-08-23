@@ -29928,7 +29928,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
         fieldWidth = Sk.builtin.asnum$(fieldWidth);
         precision = Sk.builtin.asnum$(precision);
 
-        if (mappingKey === undefined || mappingKey === "") {
+        if ((mappingKey === undefined || mappingKey === "") && conversionType != "%") {
             i = index++;
         } // ff passes '' not undef for some reason
 
@@ -34051,8 +34051,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "92e7e13fb8819a67eb9fc06af40f3a579b4bbcd0",
-    date: "2019-08-20T12:46:03.193Z"
+    githash: "8e37cf7b0b29150ed513337e5bcf48b1b343f064",
+    date: "2019-08-23T15:06:15.012Z"
 };
 
 /**
