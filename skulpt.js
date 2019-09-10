@@ -17433,6 +17433,10 @@ Sk.builtin.enumerate.prototype["__iter__"] = new Sk.builtin.func(function (self)
 Sk.builtin.enumerate.prototype.next$ = function (self) {
     return self.tp$iternext();
 };
+Sk.builtin.enumerate.co_varnames = ["iterable", "start"];
+Sk.builtin.enumerate.co_argcount = 2;
+Sk.builtin.enumerate.$defaults = [Sk.builtin.none.none$,0];
+Sk.builtin.enumerate.co_name = Sk.builtin.str("enumerate");
 
 Sk.builtin.enumerate.prototype["$r"] = function () {
     return new Sk.builtin.str("<enumerate object>");
@@ -34051,8 +34055,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "8e37cf7b0b29150ed513337e5bcf48b1b343f064",
-    date: "2019-08-23T15:06:15.012Z"
+    githash: "1ebd69d1ddc66417461315465ed0c87f218947d6",
+    date: "2019-09-10T09:53:07.161Z"
 };
 
 /**
