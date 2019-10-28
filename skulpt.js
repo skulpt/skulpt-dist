@@ -21495,7 +21495,7 @@ Sk.importStar = function (module, loc, global) {
     } else {
         let props = Object["getOwnPropertyNames"](module["$d"]);
         for (let i in props) {
-            if (props[i].substr(0,2) != "_") {
+            if (props[i].charAt(0) != "_") {
                 loc[props[i]] = module["$d"][props[i]];
             }
         }
@@ -34066,8 +34066,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "1296b1269acb7d7e94567bb1c03cbcc817632873",
-    date: "2019-10-28T14:59:06.336Z"
+    githash: "a609c13d28d06fca12a15e4fc33e48065895b411",
+    date: "2019-10-28T15:02:42.285Z"
 };
 
 /**
