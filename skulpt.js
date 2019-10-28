@@ -27934,7 +27934,7 @@ Sk.parse = function parse (filename, input) {
         };
     }
 
-    Sk._tokenize(readline(input), "utf-8", function (tokenInfo) {
+    Sk._tokenize(filename, readline(input), "utf-8", function (tokenInfo) {
         var s_lineno = tokenInfo.start[0];
         var s_column = tokenInfo.start[1];
         var type = null;
@@ -32379,8 +32379,8 @@ Sk.exportSymbol("Sk.token.ISEOF", Sk.token.ISEOF);
 
 var tokens = Sk.token.tokens
 
-const TokenError = Error;
-const IndentationError = Error;
+const TokenError = Sk.builtin.SyntaxError;
+const IndentationError = Sk.builtin.SyntaxError;
 
 /**
  *
@@ -32595,7 +32595,7 @@ var tabsize = 8
  * @param {string} encoding
  * @param {function(TokenInfo): void} yield_
  */
-function _tokenize(readline, encoding, yield_) {
+function _tokenize(filename, readline, encoding, yield_) {
     // we make these regexes here because they can
     // be changed by the configuration.
     var LSuffix = !Sk.__future__.python3 ? '(?:L?)' : '';
@@ -32657,7 +32657,7 @@ function _tokenize(readline, encoding, yield_) {
 
         if (contstr) {                       // continued string
             if (!line) {
-                throw new TokenError("EOF in multi-line string", strstart);
+                throw new TokenError("EOF in multi-line string", filename, strstart[0], strstart[1]);
             }
             endprog.lastIndex = 0;
             var endmatch = endprog.exec(line);
@@ -32721,7 +32721,7 @@ function _tokenize(readline, encoding, yield_) {
                 if (!contains(indents, column)) {
                     throw new IndentationError(
                         "unindent does not match any outer indentation level",
-                        ["<tokenize>", lnum, pos, line]);
+                        filename, lnum, pos);
                 }
 
                 indents = indents.slice(0, -1);
@@ -32730,7 +32730,7 @@ function _tokenize(readline, encoding, yield_) {
             }
         } else {                                  // continued statement
             if (!line) {
-                throw new TokenError("EOF in multi-line statement", [lnum, 0]);
+                throw new TokenError("EOF in multi-line statement", filename, lnum, 0);
             }
             continued = 0;
         }
@@ -34066,8 +34066,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "8d6fe9e3adac54640757e71bc42bb93f9a93f7db",
-    date: "2019-10-25T14:15:46.192Z"
+    githash: "1296b1269acb7d7e94567bb1c03cbcc817632873",
+    date: "2019-10-28T14:59:06.336Z"
 };
 
 /**
