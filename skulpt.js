@@ -14541,10 +14541,6 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         out(scopename, ".$kwdefs=[", kw_defaults.join(","), "];");
     }
 
-    if (decos.length > 0) {
-        out(scopename, ".$decorators=[", decos.join(","), "];");
-    }
-
     //
     // attach co_varnames (only the argument names) for keyword argument
     // binding.
@@ -14606,8 +14602,11 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     else {
         var res;
         if (decos.length > 0) {
-            out("$ret = Sk.misceval.callsimOrSuspendArray(", scopename, ".$decorators[0], [new Sk.builtins['function'](", scopename, ",$gbl", frees, ")]);");
-            this._checkSuspension();
+            out("$ret = new Sk.builtins['function'](", scopename, ",$gbl", frees, ");");
+            for (let decorator of decos) {
+                out("$ret = Sk.misceval.callsimOrSuspendArray(", decorator, ",[$ret]);");
+                this._checkSuspension();
+            }
             return this._gr("funcobj", "$ret");
         }
 
@@ -14748,10 +14747,8 @@ Compiler.prototype.cclass = function (s) {
     var bases;
     var decos;
     Sk.asserts.assert(s instanceof Sk.astnodes.ClassDef);
-    decos = s.decorator_list;
 
-    // decorators and bases need to be eval'd out here
-    //this.vseqexpr(decos);
+    decos = this.vseqexpr(s.decorator_list);
 
     bases = this.vseqexpr(s.bases);
 
@@ -14782,15 +14779,20 @@ Compiler.prototype.cclass = function (s) {
 
     // build class
 
-    // apply decorators
-
     this.exitScope();
 
     // todo; metaclass
-    wrapped = this._gr("built", "Sk.misceval.buildClass($gbl,", scopename, ",", s.name["$r"]().v, ",[", bases, "], $cell)");
+    out("$ret = Sk.misceval.buildClass($gbl,", scopename, ",", s.name["$r"]().v, ",[", bases, "], $cell);")
+
+    // apply decorators
+
+    for (let decorator of decos) {
+        out("$ret = Sk.misceval.callsimOrSuspendArray(", decorator, ", [$ret]);");
+        this._checkSuspension();
+    }
 
     // store our new class under the right name
-    this.nameop(s.name, Sk.astnodes.Store, wrapped);
+    this.nameop(s.name, Sk.astnodes.Store, "$ret");
 };
 
 Compiler.prototype.ccontinue = function (s) {
@@ -31230,7 +31232,8 @@ SymbolTable.prototype.analyzeBlock = function (ste, bound, free, global) {
     if (ste.blockType === FunctionBlock) {
         this.analyzeCells(scope, newfree);
     }
-    this.updateSymbols(ste.symFlags, scope, bound, newfree, ste.blockType === ClassBlock);
+    let discoveredFree = this.updateSymbols(ste.symFlags, scope, bound, newfree, ste.blockType === ClassBlock);
+    ste.hasFree = ste.hasFree || discoveredFree;
 
     _dictUpdate(free, newfree);
 };
@@ -31277,6 +31280,7 @@ SymbolTable.prototype.updateSymbols = function (symbols, scope, bound, free, cla
     var w;
     var flags;
     var name;
+    var discoveredFree = false;
     for (name in symbols) {
         flags = symbols[name];
         w = scope[name];
@@ -31302,7 +31306,9 @@ SymbolTable.prototype.updateSymbols = function (symbols, scope, bound, free, cla
             continue;
         }
         symbols[name] = freeValue;
+        discoveredFree = true;
     }
+    return discoveredFree;
 };
 
 SymbolTable.prototype.analyzeName = function (ste, dict, name, flags, bound, local, free, global) {
@@ -34066,8 +34072,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "a609c13d28d06fca12a15e4fc33e48065895b411",
-    date: "2019-10-28T15:02:42.285Z"
+    githash: "2a459e615614a60d65818e77a900d29a14803111",
+    date: "2019-12-09T14:36:50.352Z"
 };
 
 /**
