@@ -6192,6 +6192,10 @@ function astForExceptClause (c, exc, body) {
         return new Sk.astnodes.ExceptHandler(ast_for_expr(c, CHILD(exc, 1)), null, astForSuite(c, body), exc.lineno, exc.col_offset);
     }
     else if (NCH(exc) === 4) {
+        if (Sk.__future__.python3 && CHILD(exc, 2).value == ",") {
+            ast_error(c, exc, "Old-style 'except' clauses are not supported in Python 3");
+        }
+
         var expression = ast_for_expr(c, CHILD(exc, 1));
         e = ast_for_expr(c, CHILD(exc, 3));
         setContext(c, e, Sk.astnodes.Store, CHILD(exc, 3));
@@ -12491,10 +12495,16 @@ Sk.setupObjects = function (py3) {
         Sk.builtins["filter"] = Sk.builtin.filter_;
         Sk.builtins["map"] = Sk.builtin.map_;
         Sk.builtins["zip"] = Sk.builtin.zip_;
+        Sk.builtins["range"] = new Sk.builtin.func(Sk.builtin.xrange);
+        delete Sk.builtins["xrange"];
+        delete Sk.builtins["StandardError"];
     } else {
         Sk.builtins["filter"] = new Sk.builtin.func(Sk.builtin.filter);
         Sk.builtins["map"] = new Sk.builtin.func(Sk.builtin.map);
         Sk.builtins["zip"] = new Sk.builtin.func(Sk.builtin.zip);
+        Sk.builtins["range"] = new Sk.builtin.func(Sk.builtin.range);
+        Sk.builtins["xrange"] = new Sk.builtin.func(Sk.builtin.xrange);
+        Sk.builtins["StandardError"] = Sk.builtin.StandardError;
     }
 };
 Sk.exportSymbol("Sk.setupObjects", Sk.setupObjects);
@@ -23030,6 +23040,9 @@ Sk.builtin.list.prototype.tp$richcompare = function (w, op) {
             return true;
         }
 
+        if (Sk.__future__.python3) {
+            return Sk.builtin.NotImplemented.NotImplemented$;
+        }
         // todo; other types should have an arbitrary order
         return false;
     }
@@ -24966,6 +24979,19 @@ Sk.misceval.swappedOp_ = {
     "NotIn": "In_"
 };
 
+Sk.misceval.opSymbols = {
+    "Eq"   : "==",
+    "NotEq": "!=",
+    "Lt"   : "<",
+    "LtE"  : "<=",
+    "Gt"   : ">",
+    "GtE"  : ">=",
+    "Is"   : "is",
+    "IsNot": "is not",
+    "In_"  : "in",
+    "NotIn": "not in"
+};
+
 /**
 * @param{*} v
 * @param{*} w
@@ -25002,10 +25028,11 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
     v_type = new Sk.builtin.type(v);
     w_type = new Sk.builtin.type(w);
 
-    // Python has specific rules when comparing two different builtin types
+    // Python 2 has specific rules when comparing two different builtin types
     // currently, this code will execute even if the objects are not builtin types
     // but will fall through and not return anything in this section
-    if ((v_type !== w_type) &&
+    if (!Sk.__future__.python3 &&
+        (v_type !== w_type) &&
         (op === "GtE" || op === "Gt" || op === "LtE" || op === "Lt")) {
         // note: sets are omitted here because they can only be compared to other sets
         numeric_types = [Sk.builtin.float_.prototype.ob$type,
@@ -25301,7 +25328,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     vname = Sk.abstr.typeName(v);
     wname = Sk.abstr.typeName(w);
-    throw new Sk.builtin.TypeError("'" + "OPERATION SYMBOL" + "' not supported between instances of '" + vname + "' and '" + wname + "'");
+    throw new Sk.builtin.TypeError("'" + Sk.misceval.opSymbols[op] + "' not supported between instances of '" + vname + "' and '" + wname + "'");
     //throw new Sk.builtin.ValueError("don't know how to compare '" + vname + "' and '" + wname + "'");
 };
 Sk.exportSymbol("Sk.misceval.richCompareBool", Sk.misceval.richCompareBool);
@@ -28807,6 +28834,9 @@ Sk.builtin.slice.prototype.tp$richcompare = function (w, op) {
             return true;
         }
 
+        if (Sk.__future__.python3) {
+            return Sk.builtin.NotImplemented.NotImplemented$;
+        }
         // todo; other types should have an arbitrary order
         return false;
     }
@@ -29176,7 +29206,11 @@ Sk.builtin.str.prototype.tp$iter = function () {
 
 Sk.builtin.str.prototype.tp$richcompare = function (other, op) {
     if (!(other instanceof Sk.builtin.str)) {
-        return undefined;
+        if (Sk.__future__.python3) {
+            return Sk.builtin.NotImplemented.NotImplemented$;
+        } else {
+            return false;
+        }
     }
 
     switch (op) {
@@ -33032,6 +33066,9 @@ Sk.builtin.tuple.prototype.tp$richcompare = function (w, op) {
             return true;
         }
 
+        if (Sk.__future__.python3) {
+            return Sk.builtin.NotImplemented.NotImplemented$;
+        }
         // todo; other types should have an arbitrary order
         return false;
     }
@@ -34086,8 +34123,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "8c2af2f989cd8f61e1118f26e75c936393cd0e49",
-    date: "2019-12-09T14:46:43.604Z"
+    githash: "22c38cb03d37af6ec01c07e2e4e17c4acdc3e01f",
+    date: "2019-12-12T20:49:27.309Z"
 };
 
 /**
