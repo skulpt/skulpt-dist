@@ -29206,11 +29206,7 @@ Sk.builtin.str.prototype.tp$iter = function () {
 
 Sk.builtin.str.prototype.tp$richcompare = function (other, op) {
     if (!(other instanceof Sk.builtin.str)) {
-        if (Sk.__future__.python3) {
-            return Sk.builtin.NotImplemented.NotImplemented$;
-        } else {
-            return false;
-        }
+        return Sk.builtin.NotImplemented.NotImplemented$;
     }
 
     switch (op) {
@@ -34123,8 +34119,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "501be45e8d69d02d9c567271e3683dec60196e83",
-    date: "2020-01-06T10:07:14.559Z"
+    githash: "7bfe963a29af478f23a17c8e48cf80ec334be743",
+    date: "2020-01-06T17:44:15.659Z"
 };
 
 /**
