@@ -5515,26 +5515,30 @@ Sk.exportSymbol("Sk.abstr.objectSetItem", Sk.abstr.objectSetItem);
 
 
 Sk.abstr.gattr = function (obj, pyName, canSuspend) {
-    var ret, f;
-    var objname = Sk.abstr.typeName(obj);
-    var jsName = pyName.$jsstr();
-
-    if (obj === null) {
+    // TODO is it even valid to pass something this shape in here?
+    // Should this be an assert?
+    if (obj === null || !obj.tp$getattr) {
+        let objname = Sk.abstr.typeName(obj);
+        let jsName = pyName.$jsstr();
         throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
     }
 
-    if (obj.tp$getattr !== undefined) {
-        ret = obj.tp$getattr(pyName, canSuspend);
+    // This function is so hot that we do our own inline suspension checks
+
+    let ret = obj.tp$getattr(pyName, canSuspend);
+
+    if (ret === undefined) {
+        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+    } else if (ret.$isSuspension) {
+        return Sk.misceval.chain(ret, function(r) {
+            if (r === undefined) {
+                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+            }
+            return r;
+        });
+    } else {
+        return ret;
     }
-
-    ret = Sk.misceval.chain(ret, function(r) {
-        if (r === undefined) {
-            throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
-        }
-        return r;
-    });
-
-    return canSuspend ? ret : Sk.misceval.retryOptionalSuspensionOrThrow(ret);
 };
 Sk.exportSymbol("Sk.abstr.gattr", Sk.abstr.gattr);
 
@@ -13339,13 +13343,7 @@ Compiler.prototype.ccall = function (e) {
         out("if (typeof self === \"undefined\" || self.toString().indexOf(\"Window\") > 0) { throw new Sk.builtin.RuntimeError(\"super(): no arguments\") };")
         positionalArgs = "[$gbl.__class__,self]";
     }
-    if (keywordArgs !== "undefined") {
-        out("$ret = Sk.misceval.applyOrSuspend(",func,",undefined,undefined,",keywordArgs,",",positionalArgs,");");
-    } else if (positionalArgs != "[]") {
-        out ("$ret = Sk.misceval.callsimOrSuspendArray(", func, ", ", positionalArgs, ");");
-    } else {
-        out ("$ret = Sk.misceval.callsimOrSuspendArray(", func, ");");
-    }
+    out ("$ret = (",func,".tp$call)?",func,".tp$call(",positionalArgs,",",keywordArgs,") : Sk.misceval.applyOrSuspend(",func,",undefined,undefined,",keywordArgs,",",positionalArgs,");");
 
     this._checkSuspension(e);
 
@@ -16998,6 +16996,18 @@ Sk.builtin.dict.prototype.key$lookup = function (bucket, key) {
     var item;
     var eq;
     var i;
+
+    // Fast path: We spend a *lot* of time looking up strings
+    // in dictionaries. (Every attribute access, for starters.)
+    if (key.ob$type === Sk.builtin.str) {
+        for (i = 0; i < bucket.items.length; i++) {
+            item = bucket.items[i];
+            if (item.lhs.ob$type === Sk.builtin.str && item.lhs.v === key.v) {
+                return item;
+            }
+        }
+        return null;
+    }
 
     for (i = 0; i < bucket.items.length; i++) {
         item = bucket.items[i];
@@ -20836,8 +20846,9 @@ Sk.builtin.func.prototype.tp$getname = function () {
 };
 
 Sk.builtin.func.prototype.tp$call = function (posargs, kw) {
-    // This function is a logical Javascript port of
-    // _PyEval_EvalCodeWithName, and follows its logic.
+    // The rest of this function is a logical Javascript port of
+    // _PyEval_EvalCodeWithName, and follows its logic,
+    // plus fast-paths imported from _PyFunction_FastCall* as marked
 
     let co_argcount = this.func_code.co_argcount;
 
@@ -20847,6 +20858,29 @@ Sk.builtin.func.prototype.tp$call = function (posargs, kw) {
     let varnames = this.func_code.co_varnames || [];
     let co_kwonlyargcount = this.func_code.co_kwonlyargcount || 0;
     let totalArgs = co_argcount + co_kwonlyargcount;
+
+    // Fast path from _PyFunction_FastCallDict
+    if (co_kwonlyargcount === 0 && !this.func_code.co_kwargs && (!kw || kw.length === 0) && !this.func_code.co_varargs) {
+        if (posargs.length == co_argcount) {
+            if (this.func_closure) {
+                posargs.push(this.func_closure);
+            }
+            return this.func_code.apply(this.func_globals, posargs);
+        } else if(posargs.length === 0 && this.func_code.$defaults &&
+                    this.func_code.$defaults.length === co_argcount) {
+            for (let i=0; i!=this.func_code.$defaults.length; i++) {
+                posargs[i] = this.func_code.$defaults[i];
+            }
+            if (this.func_closure) {
+                posargs.push(this.func_closure);
+            }
+            return this.func_code.apply(this.func_globals, posargs);
+        }
+    }
+    // end fast path from _PyFunction_FastCallDict
+    
+
+
     let kwargs;
 
     /* Create a NOT-a-dictionary for keyword parameters (**kwags) */
@@ -25184,8 +25218,8 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
     Sk.asserts.assert((v !== null) && (v !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
     Sk.asserts.assert((w !== null) && (w !== undefined), "passed null or undefined parameter to Sk.misceval.richCompareBool");
 
-    v_type = new Sk.builtin.type(v);
-    w_type = new Sk.builtin.type(w);
+    v_type = v.ob$type;
+    w_type = w.ob$type;
 
     // Python 2 has specific rules when comparing two different builtin types
     // currently, this code will execute even if the objects are not builtin types
@@ -25350,13 +25384,13 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     // use comparison methods if they are given for either object
     if (v.tp$richcompare && (ret = v.tp$richcompare(w, op)) !== undefined) {
-        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+        if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
         }
     }
 
     if (w.tp$richcompare && (ret = w.tp$richcompare(v, Sk.misceval.swappedOp_[op])) !== undefined) {
-        if (ret != Sk.builtin.NotImplemented.NotImplemented$) {
+        if (ret !== Sk.builtin.NotImplemented.NotImplemented$) {
             return Sk.misceval.isTrue(ret);
         }
     }
@@ -25781,9 +25815,9 @@ Sk.exportSymbol("Sk.misceval.callsim", Sk.misceval.callsim);
  * Does the same thing as callsim without expensive call to Array.slice.
  * Requires args to be a Javascript array.
  */
-Sk.misceval.callsimArray = function(func, args) {
+Sk.misceval.callsimArray = function(func, args, kws) {
     var argarray = args ? args : [];
-    return Sk.misceval.apply(func, undefined, undefined, undefined, argarray);
+    return Sk.misceval.apply(func, undefined, undefined, kws, argarray);
 };
 Sk.exportSymbol("Sk.misceval.callsimArray", Sk.misceval.callsimArray);
 
@@ -25811,14 +25845,24 @@ Sk.exportSymbol("Sk.misceval.callsimOrSuspend", Sk.misceval.callsimOrSuspend);
 
 /**
  * @param {Object} func the thing to call
- * @param {Array=} args an array of arguments to pass to the func
+ * @param {Array} args an array of arguments to pass to the func
+ * @param {Array=} kws an array of keyword arguments to pass to the func
  *
  * Does the same thing as callsimOrSuspend without expensive call to
- * Array.slice.  Requires args to be a Javascript array.
+ * Array.slice.  Requires args+kws to be Javascript arrays.
  */
-Sk.misceval.callsimOrSuspendArray = function (func, args) {
-    var argarray = args ? args : [];
-    return Sk.misceval.applyOrSuspend(func, undefined, undefined, undefined, argarray);
+Sk.misceval.callsimOrSuspendArray = function (func, args, kws) {
+    if (!args) {
+        args = [];
+    }
+    if (func.tp$call) {
+        return func.tp$call(args, kws);
+    } else {
+        // Slow path handles things like calling native JS fns
+        // (perhaps we should stop supporting that), and weird
+        // detection of the __call__ method (everything should use tp$call)
+        return Sk.misceval.applyOrSuspend(func, undefined, undefined, kws, args);
+    }
 };
 Sk.exportSymbol("Sk.misceval.callsimOrSuspendArray", Sk.misceval.callsimOrSuspendArray);
 
@@ -33672,33 +33716,13 @@ Sk.builtin.type = function (name, bases, dict) {
             return Sk.builtin.object.prototype.GenericSetAttr.call(this, pyName, data, canSuspend);
         };
 
-        klass.prototype.tp$getattr = function(pyName, canSuspend) {
-            var r, descr, /** @type {(Object|undefined)} */ getf;
-            // Find __getattribute__ on this type if we can
-            descr = Sk.builtin.type.typeLookup(klass, Sk.builtin.str.$getattribute);
-
-            if (descr !== undefined && descr !== null && descr.tp$descr_get !== undefined) {
-                getf = descr.tp$descr_get.call(descr, this, klass);
-            }
-
-            if (getf === undefined) {
-                getf = Sk.builtin.object.prototype.GenericPythonGetAttr.bind(null, this);
-            }
-
-            // Convert AttributeErrors back into 'undefined' returns to match the tp$getattr
-            // convention
-            r = Sk.misceval.tryCatch(function() {
-                return Sk.misceval.callsimOrSuspendArray(/** @type {Object} */ (getf), [pyName]);
-            }, function (e) {
-                if (e instanceof Sk.builtin.AttributeError) {
-                    return undefined;
-                } else {
-                    throw e;
-                }
-            });
-
-            return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
-        };
+        // We do not define tp$getattr here. We usually inherit it from object,
+        // unless we (or one of our parents) overrode it by defining
+        // __getattribute__. It's handled down with the other dunder-funcs.
+        // We could migrate other tp$/dunder-functions that way, but
+        // tp$getattr() is the performance hot-spot, and doing it this way
+        // allows us to work out *once* whether this class has a
+        // __getattribute__, rather than checking on every tp$getattr() call
 
         klass.prototype.tp$str = function () {
             var strf = this.tp$getattr(Sk.builtin.str.$str);
@@ -33825,7 +33849,7 @@ Sk.builtin.type = function (name, bases, dict) {
         };
 
         // Register skulpt shortcuts to magic methods defined by this class.
-        // Dynamically deflined methods (eg those returned by __getattr__())
+        // Dynamically defined methods (eg those returned by __getattr__())
         // cannot be used by these magic functions; this is consistent with
         // how CPython handles "new-style" classes:
         // https://docs.python.org/2/reference/datamodel.html#special-method-lookup-for-old-style-classes
@@ -33843,6 +33867,30 @@ Sk.builtin.type = function (name, bases, dict) {
                 // scope workaround
                 shortcutDunder(skulpt_name, dunder, klass[dunder], canSuspendIdx);
             }
+        }
+
+        // tp$getattr is a special case; we need to catch AttributeErrors and
+        // return undefined instead.
+        let getattributeFn = Sk.builtin.type.typeLookup(klass, Sk.builtin.str.$getattribute);
+        if (getattributeFn !== undefined && getattributeFn !== Sk.builtin.object.prototype.__getattribute__) {
+            klass.prototype.tp$getattr = function (pyName, canSuspend) {
+                let r = Sk.misceval.tryCatch(
+                    () => Sk.misceval.callsimOrSuspendArray(getattributeFn, [this, pyName]),
+                    function (e) {
+                        if (e instanceof Sk.builtin.AttributeError) {
+                            return undefined;
+                        } else {
+                            throw e;
+                        }
+                    }
+                );
+                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+            };
+        } else if (!klass.prototype.tp$getattr) {
+            // This is only relevant in Python 2, where
+            // it's possible not to inherit from object
+            // (or perhaps when inheriting from builtins? Unclear)
+            klass.prototype.tp$getattr = Sk.builtin.object.prototype.GenericGetAttr;
         }
 
         return klass;
@@ -34277,8 +34325,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "4ea61938fad1ff1b2ccaa8dd0727b0d76254bdab",
-    date: "2020-01-22T15:25:06.107Z"
+    githash: "7db24c4f428e07fa4196e170d6078cddb3bccb39",
+    date: "2020-02-03T18:25:08.230Z"
 };
 
 /**
