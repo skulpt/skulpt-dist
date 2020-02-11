@@ -20321,9 +20321,14 @@ let formatNumber = function(num, formatSpec, isFractional) {
             if (isNaN(convValue)) {
                 return handleWidth(m, "nan%", "", true);
             }
+            let neg = false;
+            if (convValue < 0) {
+                convValue = -convValue;
+                neg = true;
+            }
             let precision = m[FMT.PRECISION] ? parseInt(m[FMT.PRECISION], 10) : 6;
             let result = (convValue*100.0).toFixed(precision) + "%";
-            return handleWidth(m, result, signForNeg(m, convValue < 0), true);
+            return handleWidth(m, result, signForNeg(m, neg), true);
         };
 
         default:
@@ -34326,8 +34331,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "8885a20ca79f619f22ef65e7eae41de6464e4409",
-    date: "2020-02-04T08:43:20.995Z"
+    githash: "1ee80f17dd7416d163aceebd8c33e21a2f0072e7",
+    date: "2020-02-11T08:06:55.539Z"
 };
 
 /**
