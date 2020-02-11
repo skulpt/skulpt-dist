@@ -17722,8 +17722,7 @@ Sk.python2 = {
     bankers_rounding: false,
     python_version: false,
     dunder_next: false,
-    dunder_round: false,    
-    list_clear: false,
+    dunder_round: false,   
     exceptions: false,
     no_long_type: false,
     ceil_floor_int: false,
@@ -17746,7 +17745,6 @@ Sk.python3 = {
     python_version: true,
     dunder_next: true,
     dunder_round: true,
-    list_clear: true,
     exceptions: true,
     no_long_type: true,
     ceil_floor_int: true,
@@ -17797,7 +17795,6 @@ Sk.configure = function (options) {
     Sk.bool_check(Sk.__future__.python_version, "Sk.__future__.python_version");
     Sk.bool_check(Sk.__future__.dunder_next, "Sk.__future__.dunder_next");
     Sk.bool_check(Sk.__future__.dunder_round, "Sk.__future__.dunder_round");
-    Sk.bool_check(Sk.__future__.list_clear, "Sk.__future__.list_clear");
     Sk.bool_check(Sk.__future__.exceptions, "Sk.__future__.exceptions");
     Sk.bool_check(Sk.__future__.no_long_type, "Sk.__future__.no_long_type");
     Sk.bool_check(Sk.__future__.ceil_floor_int, "Sk.__future__.ceil_floor_int");
@@ -17884,7 +17881,8 @@ Sk.configure = function (options) {
 
     Sk.switch_version("round$", Sk.__future__.dunder_round);
     Sk.switch_version("next$", Sk.__future__.dunder_next);
-    Sk.switch_version("clear$", Sk.__future__.list_clear);
+    Sk.switch_version("clear$", Sk.__future__.python3);
+    Sk.switch_version("copy$", Sk.__future__.python3);
 
     Sk.builtin.lng.tp$name = Sk.__future__.no_long_type ? "int" : "long";
 
@@ -18017,6 +18015,11 @@ Sk.setup_method_mappings = function () {
             "classes": [Sk.builtin.list],
             2: null,
             3: "clear"
+        },        
+        "copy$": {
+            "classes": [Sk.builtin.list],
+            2: null,
+            3: "copy"
         },
         "next$": {
             "classes": [Sk.builtin.dict_iter_,
@@ -18066,7 +18069,6 @@ Sk.switch_version = function (method_to_map, python3) {
 
 Sk.exportSymbol("Sk.__future__", Sk.__future__);
 Sk.exportSymbol("Sk.inputfun", Sk.inputfun);
-
 
 
 /***/ }),
@@ -23680,6 +23682,13 @@ Sk.builtin.list.prototype.clear$ = function (self) {
     Sk.builtin.pyCheckArgsLen("clear", arguments.length, 1, 1);
     self.v = [];
     return Sk.builtin.none.none$;
+};
+
+Sk.builtin.list.prototype.copy$ = function (self) {
+    Sk.builtin.pyCheckArgsLen("copy", arguments.length, 1, 1);   
+    // via array concat() function to simulate shallow copy 
+    var tmpArray = [];
+    return new Sk.builtin.list(self.v.concat(tmpArray));
 };
 
 Sk.builtin.list.prototype["index"] = new Sk.builtin.func(function (self, item, start, stop) {
@@ -34331,8 +34340,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "1ee80f17dd7416d163aceebd8c33e21a2f0072e7",
-    date: "2020-02-11T08:06:55.539Z"
+    githash: "1ab668850c5ccaffbe8ae15562d795ca096e2636",
+    date: "2020-02-11T16:26:25.747Z"
 };
 
 /**
