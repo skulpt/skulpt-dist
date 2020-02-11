@@ -16400,7 +16400,7 @@ Sk.builtin.complex.complex_format = function (v, precision, format_code){
 };
 
 Sk.builtin.complex.prototype["$r"] = function () {
-    return Sk.builtin.complex.complex_format(this, 0, "r");
+    return Sk.builtin.complex.complex_format(this, null, "g");
 };
 
 Sk.builtin.complex.prototype.tp$str = function () {
@@ -34340,8 +34340,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "1ab668850c5ccaffbe8ae15562d795ca096e2636",
-    date: "2020-02-11T16:26:25.747Z"
+    githash: "ab9f26546341c93da0a82ac75efdd98f69195a7d",
+    date: "2020-02-11T16:41:17.918Z"
 };
 
 /**
