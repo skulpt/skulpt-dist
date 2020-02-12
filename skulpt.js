@@ -19235,6 +19235,9 @@ Sk.builtin.float_ = function (x) {
 
     if (typeof x === "string") {
         this.v = parseFloat(x);
+        if (this.v == Infinity || this.v == -Infinity){ //trying to convert a large js string to a float
+            throw new Sk.builtin.OverflowError("int too large to convert to float");
+        }
         return this;
     }
 
@@ -19261,6 +19264,9 @@ Sk.builtin._str_to_float = function (str) {
         tmp = NaN;
     } else if (!isNaN(str)) {
         tmp = parseFloat(str);
+        if (tmp === Infinity || tmp === -Infinity) {
+            throw new Sk.builtin.OverflowError("int too large to convert to float");
+        }
     } else {
         throw new Sk.builtin.ValueError("float: Argument: " + str + " is not number");
     }
@@ -34340,8 +34346,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "ab9f26546341c93da0a82ac75efdd98f69195a7d",
-    date: "2020-02-11T16:41:17.918Z"
+    githash: "c1a569ab965295f739abc303c407a1c41faaff48",
+    date: "2020-02-12T22:17:09.554Z"
 };
 
 /**
