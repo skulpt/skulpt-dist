@@ -11102,20 +11102,20 @@ Sk.exportSymbol("Sk.builtin.bool", Sk.builtin.bool);
 
 Sk.builtin.range = function range (start, stop, step) {
     var ret = [];
+    var lst;
     var i;
 
     Sk.builtin.pyCheckArgsLen("range", arguments.length, 1, 3);
-    Sk.builtin.pyCheckType("start", "integer", Sk.builtin.checkInt(start));
+    Sk.builtin.pyCheckType("start", "integer", Sk.misceval.isIndex(start));
+    start = Sk.misceval.asIndex(start);
     if (stop !== undefined) {
-        Sk.builtin.pyCheckType("stop", "integer", Sk.builtin.checkInt(stop));
+        Sk.builtin.pyCheckType("stop", "integer", Sk.misceval.isIndex(stop));
+        stop = Sk.misceval.asIndex(stop);
     }
     if (step !== undefined) {
-        Sk.builtin.pyCheckType("step", "integer", Sk.builtin.checkInt(step));
+        Sk.builtin.pyCheckType("step", "integer", Sk.misceval.isIndex(step));
+        step = Sk.misceval.asIndex(step);
     }
-
-    start = Sk.builtin.asnum$(start);
-    stop = Sk.builtin.asnum$(stop);
-    step = Sk.builtin.asnum$(step);
 
     if ((stop === undefined) && (step === undefined)) {
         stop = start;
@@ -11129,17 +11129,46 @@ Sk.builtin.range = function range (start, stop, step) {
         throw new Sk.builtin.ValueError("range() step argument must not be zero");
     }
 
-    if (step > 0) {
-        for (i = start; i < stop; i += step) {
-            ret.push(new Sk.builtin.int_(i));
+    if ((typeof start === "number")
+	&& (typeof stop === "number")
+	&& (typeof step === "number")) {
+        if (step > 0) {
+            for (i = start; i < stop; i += step) {
+                ret.push(new Sk.builtin.int_(i));
+            }
+        } else {
+            for (i = start; i > stop; i += step) {
+                ret.push(new Sk.builtin.int_(i));
+            }
         }
     } else {
-        for (i = start; i > stop; i += step) {
-            ret.push(new Sk.builtin.int_(i));
+        // This is going to be slow, really needs to be a generator!
+        var startlng = new Sk.builtin.lng(start);
+        var stoplng = new Sk.builtin.lng(stop);
+        var steplng = new Sk.builtin.lng(step);
+
+        if (steplng.nb$ispositive()) {
+            i = startlng;
+            while (Sk.misceval.isTrue(i.ob$lt(stoplng))) {
+                ret.push(i);
+                i = i.nb$add(steplng);
+            }
+        } else {
+            i = startlng;
+            while (Sk.misceval.isTrue(i.ob$gt(stoplng))) {
+                ret.push(i);
+                i = i.nb$add(steplng);
+            }
         }
     }
 
-    return new Sk.builtin.list(ret);
+    lst = new Sk.builtin.list(ret);
+
+    if (Sk.__future__.python3) {
+        return new Sk.builtin.range_(start, stop, step, lst);
+    }
+
+    return lst;
 };
 
 Sk.builtin.asnum$ = function (a) {
@@ -23342,6 +23371,9 @@ Sk.builtin.list.prototype.sq$repeat = function (n) {
     }
 
     n = Sk.misceval.asIndex(n);
+    if (typeof n !== "number") {
+        throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
+    }
     ret = [];
     for (i = 0; i < n; ++i) {
         for (j = 0; j < this.v.length; ++j) {
@@ -23361,6 +23393,9 @@ Sk.builtin.list.prototype.nb$inplace_multiply = function(n) {
 
     // works on list itself --> inplace
     n = Sk.misceval.asIndex(n);
+    if (typeof n !== "number") {
+        throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
+    }
     len = this.v.length;
     for (i = 1; i < n; ++i) {
         for (j = 0; j < len; ++j) {
@@ -23406,6 +23441,9 @@ Sk.builtin.list.prototype.list_subscript_ = function (index) {
     var i;
     if (Sk.misceval.isIndex(index)) {
         i = Sk.misceval.asIndex(index);
+        if (typeof i !== "number") {
+            throw new Sk.builtin.IndexError("cannot fit '" + Sk.abstr.typeName(index) + "' into an index-sized integer");
+        }
         if (i !== undefined) {
             if (i < 0) {
                 i = this.v.length + i;
@@ -23433,6 +23471,9 @@ Sk.builtin.list.prototype.list_ass_subscript_ = function (index, value) {
     var indices;
     if (Sk.misceval.isIndex(index)) {
         i = Sk.misceval.asIndex(index);
+        if (typeof i !== "number") {
+            throw new Sk.builtin.IndexError("cannot fit '" + Sk.abstr.typeName(index) + "' into an index-sized integer");
+        }
         if (i !== undefined) {
             if (i < 0) {
                 i = this.v.length + i;
@@ -24705,6 +24746,7 @@ __webpack_require__(/*! ./generator.js */ "./src/generator.js");
 __webpack_require__(/*! ./file.js */ "./src/file.js");
 __webpack_require__(/*! ./ffi.js */ "./src/ffi.js");
 __webpack_require__(/*! ./iterator.js */ "./src/iterator.js");
+__webpack_require__(/*! ./range.js */ "./src/range.js");
 __webpack_require__(/*! ./enumerate.js */ "./src/enumerate.js");
 __webpack_require__(/*! ./filter.js */ "./src/filter.js");
 __webpack_require__(/*! ./zip.js */ "./src/zip.js");
@@ -25075,7 +25117,10 @@ Sk.misceval.asIndex = function (o) {
         return o.v;
     }
     if (o.constructor === Sk.builtin.lng) {
-        return o.tp$index();
+        if (o.cantBeInt()) {
+            return o.str$(10, true);
+        }
+        return o.toInt$();
     }
     if (o.constructor === Sk.builtin.bool) {
         return Sk.builtin.asnum$(o);
@@ -28372,6 +28417,133 @@ print_f.co_kwargs = true;
 Sk.builtin.print = new Sk.builtin.func(print_f);
 
 Sk.builtin.print.__doc__ = new Sk.builtin.str("print(value, ..., sep=' ', end='\\n', file=sys.stdout, flush=False)\n\nPrints the values to a stream, or to sys.stdout by default.\nOptional keyword arguments:\nfile:  a file-like object (stream); defaults to the current sys.stdout.\nsep:   string inserted between values, default a space.\nend:   string appended after the last value, default a newline.\nflush: whether to forcibly flush the stream.");
+
+
+/***/ }),
+
+/***/ "./src/range.js":
+/*!**********************!*\
+  !*** ./src/range.js ***!
+  \**********************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * @constructor
+ * @param {number} start
+ * @param {number} stop
+ * @param {number} step
+ * @param {Object} lst
+ */
+Sk.builtin.range_ = function (start, stop, step, lst) {
+    if (!(this instanceof Sk.builtin.range_)) {
+        return new Sk.builtin.range_(start, stop, step, lst);
+    }
+
+    this.v = lst;
+    this.$start = start;
+    this.$stop = stop;
+    this.$step = step;
+
+    this.$r = function () {
+        var name = "range(" + this.$start + ", " + this.$stop;
+        if (this.$step != 1) {
+            name += ", " + this.$step;
+        }
+        name += ")";
+        return new Sk.builtin.str(name);
+    };
+
+    return this;
+};
+
+Sk.abstr.setUpInheritance("range", Sk.builtin.range_, Sk.builtin.object);
+
+Sk.builtin.range_.prototype.__class__ = Sk.builtin.range_;
+
+Sk.builtin.range_.prototype.mp$subscript = function (index) {
+    var sub, start, stop, step;
+    sub = this.v.mp$subscript(index);
+    if (sub instanceof Sk.builtin.list) {
+        if (Sk.builtin.checkNone(index.start)) {
+            start = this.v.mp$subscript(0).v;
+        } else {
+            try {
+                start = this.v.mp$subscript(index.start).v;
+            } catch (exc) {
+                // start is before beginning of current range
+                start = this.$start;
+            }
+        }
+
+        try {
+            stop = this.v.mp$subscript(index.stop).v;
+        } catch (exc) {
+            // stop is past end of current range
+            stop = this.$stop;
+        }
+
+        if (Sk.builtin.checkNone(index.step)) {
+            // Implied 1
+            step = 1;
+        } else {
+            step = Sk.misceval.asIndex(index.step);
+        }
+        // Scale by range's current step
+        step = step * this.$step;
+
+        return new Sk.builtin.range_(start, stop, step, sub);
+    }
+    return sub;
+};
+
+Sk.builtin.range_.prototype.__getitem__ = new Sk.builtin.func(function (self, index) {
+    return Sk.builtin.range_.prototype.mp$subscript.call(self, index);
+});
+
+Sk.builtin.range_.prototype.sq$contains = function (item) {
+    return this.v.sq$contains(item);
+};
+
+Sk.builtin.range_.prototype.sq$length = function () {
+    return this.v.sq$length();
+};
+
+Sk.builtin.range_.prototype.tp$richcompare = function (w, op) {
+    if (w.__class__ == Sk.builtin.range_) {
+        w = w.v;
+    }
+    return this.v.tp$richcompare(w, op);
+};
+
+Sk.builtin.range_.prototype.tp$iter = function () {
+    // Hijack the list iterator
+    var iter = this.v.tp$iter();
+    iter.$r = function () {
+        return new Sk.builtin.str("<rangeiterator>");
+    };
+    return iter;
+};
+
+Sk.builtin.range_.prototype.__iter__ = new Sk.builtin.func(function (self) {
+    Sk.builtin.pyCheckArgsLen("__iter__", arguments.length, 1, 1);
+    return self.tp$iter();
+});
+
+Sk.builtin.range_.prototype.__contains__ = new Sk.builtin.func(function (self, item) {
+    Sk.builtin.pyCheckArgsLen("__contains__", arguments.length, 2, 2);
+    return new Sk.builtin.bool(self.sq$contains(item));
+});
+
+Sk.builtin.range_.prototype["index"] = new Sk.builtin.func(function (self, item, start, stop) {
+    Sk.builtin.pyCheckArgsLen("index", arguments.length, 2, 4);
+    return Sk.misceval.callsimArray(self.v.index, [self.v, item, start, stop]);
+});
+
+Sk.builtin.range_.prototype["count"] = new Sk.builtin.func(function (self, item) {
+    Sk.builtin.pyCheckArgsLen("count", arguments.length, 2, 2);
+    return Sk.misceval.callsimArray(self.v.count, [self.v, item]);
+});
 
 
 /***/ }),
@@ -33195,6 +33367,9 @@ Sk.builtin.tuple.prototype.mp$subscript = function (index) {
     var i;
     if (Sk.misceval.isIndex(index)) {
         i = Sk.misceval.asIndex(index);
+        if (typeof i !== "number") {
+            throw new Sk.builtin.IndexError("cannot fit '" + Sk.abstr.typeName(index) + "' into an index-sized integer");
+        }
         if (i !== undefined) {
             if (i < 0) {
                 i = this.v.length + i;
@@ -33246,6 +33421,9 @@ Sk.builtin.tuple.prototype.sq$repeat = function (n) {
     var ret;
 
     n = Sk.misceval.asIndex(n);
+    if (typeof n !== "number") {
+        throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
+    }
     ret = [];
     for (i = 0; i < n; ++i) {
         for (j = 0; j < this.v.length; ++j) {
@@ -34346,8 +34524,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "c1a569ab965295f739abc303c407a1c41faaff48",
-    date: "2020-02-12T22:17:09.554Z"
+    githash: "85352096fb83b66997bda091acb68854d146ba67",
+    date: "2020-02-13T06:52:07.175Z"
 };
 
 /**
