@@ -27465,6 +27465,8 @@ Sk.builtin.object.prototype.GenericGetAttr = function (pyName, canSuspend) {
         }
         if (res !== undefined) {
             return res;
+        } else if (jsName == "__dict__" && dict instanceof Sk.builtin.dict) {
+            return dict;
         }
     }
 
@@ -33771,7 +33773,6 @@ Sk.builtin.type = function (name, bases, dict) {
             }
 
             this["$d"] = new Sk.builtin.dict([]);
-            this["$d"].mp$ass_subscript(new Sk.builtin.str("__dict__"), this["$d"]);
         };
 
         var _name = Sk.ffi.remapToJs(name); // unwrap name string to js for latter use
@@ -34524,8 +34525,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "51bf1a386de5a7590143b19a3f8aca7ce1fd79a5",
-    date: "2020-02-19T22:37:22.884Z"
+    githash: "c788f102e1986be1efd5d573c1c886adbf8363cd",
+    date: "2020-02-23T11:21:12.147Z"
 };
 
 /**
