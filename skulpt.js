@@ -12595,6 +12595,7 @@ Sk.builtins = {
     "any"       : new Sk.builtin.func(Sk.builtin.any),
     "all"       : new Sk.builtin.func(Sk.builtin.all),
 
+    "BaseException"      : Sk.builtin.BaseException, 
     "AttributeError"     : Sk.builtin.AttributeError,
     "ValueError"         : Sk.builtin.ValueError,
     "Exception"          : Sk.builtin.Exception,
@@ -21270,12 +21271,14 @@ Sk.doOneTimeInitialization = function (canSuspend) {
     // Register a Python class with an internal dictionary, which allows it to
     // be subclassed
     var setUpClass = function (child) {
-        var parent = child.tp$base;
+        var parent = child.prototype.tp$base;
         var bases = [];
         var base;
 
-        for (base = parent; base !== undefined; base = base.tp$base) {
-            bases.push(base);
+        for (base = parent; base !== undefined; base = base.prototype.tp$base) {
+            if (!base.sk$abstract) {
+                bases.push(base);
+            }
         }
 
         child.tp$mro = new Sk.builtin.tuple([child]);
@@ -21284,7 +21287,8 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         }
         child["$d"] = new Sk.builtin.dict([]);
         child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
-        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, child.tp$mro);
+        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([child].concat(bases)));
+        child["$d"].mp$ass_subscript(new Sk.builtin.str("__name__"), new Sk.builtin.str(child.prototype.tp$name));
     };
 
     for (x in Sk.builtin) {
@@ -34525,8 +34529,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "c788f102e1986be1efd5d573c1c886adbf8363cd",
-    date: "2020-02-23T11:21:12.147Z"
+    githash: "f315f5ffd68583bbf6fd20f2303a91d3ab64a76e",
+    date: "2020-02-26T18:25:20.479Z"
 };
 
 /**
