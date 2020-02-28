@@ -21872,7 +21872,8 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         var base;
 
         for (base = parent; base !== undefined; base = base.prototype.tp$base) {
-            if (!base.sk$abstract) {
+            if (!base.sk$abstract && Sk.builtins[base.tp$name]) {
+                // check the base is not an abstract class and that it is in the builtins dict
                 bases.push(base);
             }
         }
@@ -35134,8 +35135,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "de9fcdb51e35383744e0faf003dc57d3acbfae26",
-    date: "2020-02-28T15:55:58.051Z"
+    githash: "2135af30e202503d7ecb8066b33fa65dd3236990",
+    date: "2020-02-28T16:19:51.599Z"
 };
 
 /**
