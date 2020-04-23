@@ -16672,6 +16672,14 @@ Sk.builtin.complex.prototype.int$nonzero = function __nonzero__(self){
 Sk.builtin.complex.prototype.int$nonzero.co_name = new Sk.builtin.str("__nonzero__");
 Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$nonzero);
 
+Sk.builtin.complex.prototype.nb$bool = function () {
+    return new Sk.builtin.bool(this.tp$getattr(Sk.builtin.str.$real).v || this.tp$getattr(Sk.builtin.str.$real).v);
+};
+
+Sk.builtin.complex.prototype.nb$nonzero = function () {
+    return new Sk.builtin.bool(this.tp$getattr(Sk.builtin.str.$real).v || this.tp$getattr(Sk.builtin.str.$real).v);
+};
+
 
 // ToDo: think about inplace methods too
 Sk.exportSymbol("Sk.builtin.complex", Sk.builtin.complex);
@@ -26277,24 +26285,24 @@ Sk.misceval.isTrue = function (x) {
         return x.v !== 0;
     }
     if (Sk.__future__.python3) {
-        if (x.__bool__) {
-            ret = Sk.misceval.callsimArray(x.__bool__, [x]);
+        if (x.nb$bool) {
+            ret = x.nb$bool();
             if (!(ret instanceof Sk.builtin.bool)) {
                 throw new Sk.builtin.TypeError("__bool__ should return bool, returned " + Sk.abstr.typeName(ret));
             }
             return ret.v;
         }
     } else {
-        if (x.__nonzero__) {
-            ret = Sk.misceval.callsimArray(x.__nonzero__, [x]);
+        if (x.nb$nonzero) {
+            ret = x.nb$nonzero();
             if (!Sk.builtin.checkInt(ret)) {
                 throw new Sk.builtin.TypeError("__nonzero__ should return an int");
             }
             return Sk.builtin.asnum$(ret) !== 0;
         }
     }
-    if (x.__len__) {
-        ret = Sk.misceval.callsimArray(x.__len__, [x]);
+    if (x.sq$length) {
+        ret = x.sq$length();
         if (!Sk.builtin.checkInt(ret)) {
             throw new Sk.builtin.TypeError("__len__ should return an int");
         }
@@ -34286,6 +34294,7 @@ Sk.dunderToSkulpt = {
     "__rdiv__": "nb$reflected_divide",
     "__floordiv__": "nb$floor_divide",
     "__rfloordiv__": "nb$reflected_floor_divide",
+    "__invert__": "nb$invert",
     "__mod__": "nb$remainder",
     "__rmod__": "nb$reflected_remainder",
     "__divmod__": "nb$divmod",
@@ -34293,6 +34302,8 @@ Sk.dunderToSkulpt = {
     "__pow__": "nb$power",
     "__rpow__": "nb$reflected_power",
     "__contains__": "sq$contains",
+    "__bool__": ["nb$bool", 1],
+    "__nonzero__": ["nb$nonzero", 1],
     "__len__": ["sq$length", 1],
     "__get__": ["tp$descr_get", 3],
     "__set__": ["tp$descr_set", 3]
@@ -35137,8 +35148,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "180bb5bdad56d6bdfd54280feb5f4ed253fa0568",
-    date: "2020-04-07T11:55:46.683Z"
+    githash: "ad0c9f3a6922376ca2276ac0a47767cd85b1332e",
+    date: "2020-04-23T14:49:54.110Z"
 };
 
 /**
