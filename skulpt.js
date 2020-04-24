@@ -11965,20 +11965,16 @@ Sk.builtin.setattr = function setattr (obj, pyName, value) {
     var jsName;
     Sk.builtin.pyCheckArgsLen("setattr", arguments.length, 3, 3);
     // cannot set or del attr from builtin type
-    if (obj === undefined || obj["$r"] === undefined || obj["$r"]().v.slice(1,5) !== "type") {
-        if (!Sk.builtin.checkString(pyName)) {
-            throw new Sk.builtin.TypeError("attribute name must be string");
-        }
-        jsName = pyName.$jsstr();
-        if (obj.tp$setattr) {
-            obj.tp$setattr(new Sk.builtin.str(Sk.fixReservedWords(jsName)), value);
-        } else {
-            throw new Sk.builtin.AttributeError("object has no attribute " + jsName);
-        }
-        return Sk.builtin.none.none$;
+    if (!Sk.builtin.checkString(pyName)) {
+        throw new Sk.builtin.TypeError("attribute name must be string");
     }
-
-    throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + obj.tp$name + "'");
+    jsName = pyName.$jsstr();
+    if (obj.tp$setattr) {
+        obj.tp$setattr(new Sk.builtin.str(Sk.fixReservedWords(jsName)), value);
+    } else {
+        throw new Sk.builtin.AttributeError("object has no attribute " + jsName);
+    }
+    return Sk.builtin.none.none$;
 };
 
 Sk.builtin.raw_input = function (prompt) {
@@ -21896,6 +21892,9 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
         child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([child].concat(bases)));
         child["$d"].mp$ass_subscript(new Sk.builtin.str("__name__"), new Sk.builtin.str(child.prototype.tp$name));
+        child.tp$setattr = function(pyName, value, canSuspend) {
+            throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
+        };
     };
 
     for (x in Sk.builtin) {
@@ -34766,6 +34765,9 @@ Sk.builtin.type["$r"] = function () {
         return new Sk.builtin.str("<type 'type'>");
     }
 };
+Sk.builtin.type.tp$setattr = function(pyName, value, canSuspend) {
+    throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
+};
 
 //Sk.builtin.type.prototype.tp$descr_get = function() { print("in type descr_get"); };
 
@@ -35148,8 +35150,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "ad0c9f3a6922376ca2276ac0a47767cd85b1332e",
-    date: "2020-04-23T14:49:54.110Z"
+    githash: "ecc5d54b99951a0f2a9ac05f0dca9d84b9b1dee0",
+    date: "2020-04-24T15:03:03.166Z"
 };
 
 /**
