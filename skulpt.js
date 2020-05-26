@@ -35150,8 +35150,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "05bfcfee12aa6bd6346ba8df51cce76460159d21",
-    date: "2020-05-26T15:43:54.135Z"
+    githash: "2f68efcbb58a0d94799e4c35ba4ff0fe281421ba",
+    date: "2020-05-26T15:50:20.417Z"
 };
 
 /**
