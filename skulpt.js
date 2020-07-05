@@ -21443,9 +21443,7 @@ Sk.builtin.checkComplex = function (arg) {
 Sk.exportSymbol("Sk.builtin.checkComplex", Sk.builtin.checkComplex);
 
 Sk.builtin.checkInt = function (arg) {
-    return (arg !== null) && ((typeof arg === "number" && arg === (arg | 0)) ||
-        arg instanceof Sk.builtin.int_ ||
-        arg instanceof Sk.builtin.lng);
+    return arg instanceof Sk.builtin.int_ || arg instanceof Sk.builtin.lng || (typeof arg === "number" && Number.isInteger(arg));
 };
 Sk.exportSymbol("Sk.builtin.checkInt", Sk.builtin.checkInt);
 
@@ -35219,8 +35217,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "a4a580187137e1e5e83d16d640404b971f785991",
-    date: "2020-06-16T14:44:14.082Z"
+    githash: "b157738b60816a442820d7efcfefac51e9824478",
+    date: "2020-07-05T12:50:01.877Z"
 };
 
 /**
