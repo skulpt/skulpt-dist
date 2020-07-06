@@ -19358,6 +19358,7 @@ Sk.builtin.file.prototype["write"] = new Sk.builtin.func(function write(self, st
     } else {
         throw new Sk.builtin.IOError("File not open for writing");
     }
+    return Sk.builtin.none.none$;
 });
 
 
@@ -35217,8 +35218,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "b157738b60816a442820d7efcfefac51e9824478",
-    date: "2020-07-05T12:50:01.877Z"
+    githash: "82717c38448fab74ed3d13389a10f8ad1cb7ab74",
+    date: "2020-07-06T14:44:44.657Z"
 };
 
 /**
