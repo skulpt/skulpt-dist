@@ -22002,6 +22002,8 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         mod = Sk.misceval.retryOptionalSuspensionOrThrow(mod);
         Sk.asserts.assert(mod["$d"][fileWithoutExtension] !== undefined, "Should have imported name " + fileWithoutExtension);
         Sk.builtins[fileWithoutExtension] = mod["$d"][fileWithoutExtension];
+        delete Sk.builtins[fileWithoutExtension].__module__;
+        delete Sk.globals[fileWithoutExtension];
     }
 };
 
@@ -35218,8 +35220,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "82717c38448fab74ed3d13389a10f8ad1cb7ab74",
-    date: "2020-07-06T14:44:44.657Z"
+    githash: "66512e2ab61fff345f61a78aa3ecfbddb18906f5",
+    date: "2020-07-08T09:32:50.860Z"
 };
 
 /**
