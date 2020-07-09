@@ -20846,30 +20846,40 @@ if (!String.fromCodePoint) {
  */
 Sk.builtin.frozenset = function (S) {
     var it, i;
-    var S_list;
+    var obj, len;
+
     if (!(this instanceof Sk.builtin.frozenset)) {
         Sk.builtin.pyCheckArgsLen("frozenset", arguments.length, 0, 1);
         return new Sk.builtin.frozenset(S);
     }
 
-
-    if (typeof(S) === "undefined") {
-        S = [];
-    }
-
     this.frozenset_reset_();
-    S_list = new Sk.builtin.list(S);
 
-    for (it = Sk.abstr.iter(S_list), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-        this.v.mp$ass_subscript(i, true);
+    if (S !== undefined) {
+        obj = S;
+        if (obj.sk$asarray) {
+            obj = obj.sk$asarray();
+        }
+
+        if (Object.prototype.toString.apply(obj) === "[object Array]") {
+            len = obj.length;
+            for (i = 0; i < len; i++) {
+                this.v.mp$ass_subscript(obj[i], true);
+            }
+        } else if (Sk.builtin.checkIterable(obj)) {
+            for (it = Sk.abstr.iter(obj), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+                this.v.mp$ass_subscript(i, true);
+            }
+        } else {
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(S) + "' " + "object is not iterable");
+        }
     }
 
-    this.__class__ = Sk.builtin.frozenset;
-
-    this["v"] = this.v;
     return this;
 };
 Sk.abstr.setUpInheritance("frozenset", Sk.builtin.frozenset, Sk.builtin.object);
+
+Sk.builtin.frozenset.prototype.__class__ = Sk.builtin.frozenset;
 
 Sk.builtin.frozenset.prototype.frozenset_reset_ = function () {
     this.v = new Sk.builtin.dict([]);
@@ -23809,20 +23819,22 @@ Sk.exportSymbol("Sk.builtin.iterator", Sk.builtin.iterator);
  */
 Sk.builtin.list = function (L, canSuspend) {
     var v, it, thisList;
+    var canSusp;
 
     if (this instanceof Sk.builtin.list) {
-        canSuspend = canSuspend || false;
+        canSusp = canSuspend || false;
     } else {
-        // Default to true in this case, because 'list' gets called directly from Python
-        return new Sk.builtin.list(L, canSuspend || true);
+        // Called from Python
+        Sk.builtin.pyCheckArgsLen("list", arguments.length, 0, 1);
+        return new Sk.builtin.list(L, true);
     }
-
-    this.__class__ = Sk.builtin.list;
 
     if (L === undefined) {
         v = [];
     } else if (Object.prototype.toString.apply(L) === "[object Array]") {
         v = L;
+    } else if (L.sk$asarray) {
+        v = L.sk$asarray();
     } else if (Sk.builtin.checkIterable(L)) {
         v = [];
         it = Sk.abstr.iter(L);
@@ -23839,57 +23851,52 @@ Sk.builtin.list = function (L, canSuspend) {
                     return thisList;
                 } else {
                     v.push(i);
-                    i = it.tp$iternext(canSuspend);
+                    i = it.tp$iternext(canSusp);
                 }
             }
-        })(it.tp$iternext(canSuspend));
+        })(it.tp$iternext(canSusp));
     } else {
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L)+ "' " +"object is not iterable");
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L) + "' " + "object is not iterable");
     }
 
-    this["v"] = this.v = v;
+    this.v = v;
     return this;
 };
 
 Sk.abstr.setUpInheritance("list", Sk.builtin.list, Sk.builtin.seqtype);
 Sk.abstr.markUnhashable(Sk.builtin.list);
 
+Sk.builtin.list.prototype.__class__ = Sk.builtin.list;
+
+/* Return copy of internal array */
+Sk.builtin.list.prototype.sk$asarray = function () {
+    return this.v.slice(0);
+};
+
 Sk.builtin.list.prototype.list_concat_ = function (other) {
-    // other not a list
-    var i;
-    var ret;
     if (!other.__class__ || other.__class__ != Sk.builtin.list) {
         throw new Sk.builtin.TypeError("can only concatenate list to list");
     }
 
-    ret = this.v.slice();
-    for (i = 0; i < other.v.length; ++i) {
-        ret.push(other.v[i]);
-    }
-    return new Sk.builtin.list(ret, false);
+    // other guaranteed to be a list
+    return new Sk.builtin.list(this.v.concat(other.v), false);
 };
 
 Sk.builtin.list.prototype.list_extend_ = function (other) {
     var it, i;
-    var newb;
+
+    if (other.sk$asarray) {
+        this.v.push.apply(this.v, other.sk$asarray());
+        return this;
+    }
+
     if (!Sk.builtin.checkIterable(other)) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(other) +
             "' object is not iterable");
     }
 
-    if (this == other) {
-        // Handle extending list with itself
-        newb = [];
-        for (it = Sk.abstr.iter(other), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-            newb.push(i);
-        }
-
-        // Concatenate
-        this.v.push.apply(this.v, newb);
-    } else {
-        for (it = Sk.abstr.iter(other), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-            this.v.push(i);
-        }
+    for (it = Sk.abstr.iter(other), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+        this.v.push(i);
     }
 
     return this;
@@ -24043,44 +24050,37 @@ Sk.builtin.list.prototype.sq$concat = Sk.builtin.list.prototype.list_concat_;
 Sk.builtin.list.prototype.nb$add = Sk.builtin.list.prototype.list_concat_;
 Sk.builtin.list.prototype.nb$inplace_add = Sk.builtin.list.prototype.list_extend_;
 Sk.builtin.list.prototype.sq$repeat = function (n) {
-    var j;
-    var i;
+    var i, cnt;
     var ret;
     if (!Sk.misceval.isIndex(n)) {
         throw new Sk.builtin.TypeError("can't multiply sequence by non-int of type '" + Sk.abstr.typeName(n) + "'");
     }
 
-    n = Sk.misceval.asIndex(n);
-    if (typeof n !== "number") {
+    cnt = Sk.misceval.asIndex(n);
+    if (typeof cnt !== "number") {
         throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
     }
     ret = [];
-    for (i = 0; i < n; ++i) {
-        for (j = 0; j < this.v.length; ++j) {
-            ret.push(this.v[j]);
-        }
+    for (i = 0; i < cnt; ++i) {
+        ret.push.apply(ret, this.v);
     }
     return new Sk.builtin.list(ret, false);
 };
 Sk.builtin.list.prototype.nb$multiply = Sk.builtin.list.prototype.sq$repeat;
 Sk.builtin.list.prototype.nb$inplace_multiply = function(n) {
-    var j;
-    var i;
-    var len;
+    var i, cnt;
+
     if (!Sk.misceval.isIndex(n)) {
         throw new Sk.builtin.TypeError("can't multiply sequence by non-int of type '" + Sk.abstr.typeName(n) + "'");
     }
 
     // works on list itself --> inplace
-    n = Sk.misceval.asIndex(n);
-    if (typeof n !== "number") {
+    cnt = Sk.misceval.asIndex(n);
+    if (typeof cnt !== "number") {
         throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
     }
-    len = this.v.length;
-    for (i = 1; i < n; ++i) {
-        for (j = 0; j < len; ++j) {
-            this.v.push(this.v[j]);
-        }
+    for (i = 1; i < cnt; ++i) {
+        this.v.push.apply(this.v, this.v);
     }
 
     return this;
@@ -24096,10 +24096,11 @@ Sk.builtin.list.prototype.sq$ass_slice = Sk.builtin.list.prototype.list_ass_slic
 Sk.builtin.list.prototype.sq$del_slice = Sk.builtin.list.prototype.list_del_slice_;
 
 Sk.builtin.list.prototype.sq$contains = function (item) {
-    var it, i;
+    var i;
+    var obj = this.v;
 
-    for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-        if (Sk.misceval.richCompareBool(i, item, "Eq")) {
+    for (i = 0; i < obj.length; i++) {
+        if (Sk.misceval.richCompareBool(obj[i], item, "Eq")) {
             return true;
         }
     }
@@ -24412,10 +24413,8 @@ Sk.builtin.list.prototype.clear$ = function (self) {
 };
 
 Sk.builtin.list.prototype.copy$ = function (self) {
-    Sk.builtin.pyCheckArgsLen("copy", arguments.length, 1, 1);   
-    // via array concat() function to simulate shallow copy 
-    var tmpArray = [];
-    return new Sk.builtin.list(self.v.concat(tmpArray));
+    Sk.builtin.pyCheckArgsLen("copy", arguments.length, 1, 1);
+    return new Sk.builtin.list(self);
 };
 
 Sk.builtin.list.prototype["index"] = new Sk.builtin.func(function (self, item, start, stop) {
@@ -24469,23 +24468,6 @@ Sk.builtin.list.prototype["count"] = new Sk.builtin.func(function (self, item) {
     return new Sk.builtin.int_(count);
 });
 
-Sk.builtin.list.prototype["copy"] = new Sk.builtin.func(function (self) {
-    var it;
-    var k;
-    var items;
-    Sk.builtin.pyCheckArgsLen("copy", arguments.length - 1, 0, 0);
-
-    items = [];
-    for (it = Sk.abstr.iter(self), k = it.tp$iternext();
-        k !== undefined;
-        k = it.tp$iternext()) {
-        items.push(k);
-    
-    }
-    return new Sk.builtin.list(items);
-    
-});
-
 Sk.builtin.list.prototype["reverse"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_reverse_);
 Sk.builtin.list.prototype["sort"] = new Sk.builtin.func(Sk.builtin.list.prototype.list_sort_);
 
@@ -24500,17 +24482,18 @@ Sk.builtin.list_iter_ = function (lst) {
         return new Sk.builtin.list_iter_(lst);
     }
     this.$index = 0;
-    this.lst = lst.v.slice();
-    this.sq$length = this.lst.length;
+    this.lst = lst.v;
+    this.$done = false;
     this.tp$iter = this;
     this.tp$iternext = function () {
-        if (this.$index >= this.sq$length) {
+        if (this.$done || (this.$index >= this.lst.length)) {
+            this.$done = true;
             return undefined;
         }
         return this.lst[this.$index++];
     };
     this.$r = function () {
-        return new Sk.builtin.str("listiterator");
+        return new Sk.builtin.str("<listiterator>");
     };
     return this;
 };
@@ -29388,8 +29371,8 @@ Sk.builtin.seqtype.prototype["__rmul__"] = new Sk.builtin.func(function (self, n
  */
 Sk.builtin.set = function (S) {
     var it, i;
-    var len;
-    
+    var obj, len;
+
     if (!(this instanceof Sk.builtin.set)) {
         // Called directly from Python
         Sk.builtin.pyCheckArgsLen("set", arguments.length, 0, 1);
@@ -29399,17 +29382,22 @@ Sk.builtin.set = function (S) {
     this.set_reset_();
 
     if (S !== undefined) {
-        if (Sk.builtin.checkIterable(S)) {
-            for (it = Sk.abstr.iter(S), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+        obj = S;
+        if (obj.sk$asarray) {
+            obj = obj.sk$asarray();
+        }
+
+        if (Object.prototype.toString.apply(obj) === "[object Array]") {
+            len = obj.length;
+            for (i = 0; i < len; i++) {
+                Sk.builtin.set.prototype["add"].func_code(this, obj[i]);
+            }
+        } else if (Sk.builtin.checkIterable(obj)) {
+            for (it = Sk.abstr.iter(obj), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
                 Sk.builtin.set.prototype["add"].func_code(this, i);
             }
-        } else if (Object.prototype.toString.apply(S) === "[object Array]") {
-            len = S.length;
-            for (i = 0; i < len; i++) {
-                Sk.builtin.set.prototype["add"].func_code(this, S[i]);
-            }
         } else {
-            throw new Sk.builtin.TypeError("expecting Array or iterable");
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(S) + "' " + "object is not iterable");
         }
     }
 
@@ -34003,37 +33991,39 @@ Sk.exportSymbol("Sk._tokenize", Sk._tokenize);
  * @param {Array.<Object>|Object} L
  */
 Sk.builtin.tuple = function (L) {
-    var it, i;
+    var v, it, i;
     if (!(this instanceof Sk.builtin.tuple)) {
         Sk.builtin.pyCheckArgsLen("tuple", arguments.length, 0, 1);
         return new Sk.builtin.tuple(L);
     }
 
-
     if (L === undefined) {
-        L = [];
-    }
-
-    if (Object.prototype.toString.apply(L) === "[object Array]") {
-        this.v = L;
-    } else {
-        if (Sk.builtin.checkIterable(L)) {
-            this.v = [];
-            for (it = Sk.abstr.iter(L), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-                this.v.push(i);
-            }
-        } else {
-            throw new Sk.builtin.TypeError("expecting Array or iterable");
+        v = [];
+    } else if (Object.prototype.toString.apply(L) === "[object Array]") {
+        v = L;
+    } else if (L.sk$asarray) {
+        v = L.sk$asarray();
+    } else if (Sk.builtin.checkIterable(L)) {
+        v = [];
+        for (it = Sk.abstr.iter(L), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
+            v.push(i);
         }
+    } else {
+        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L) + "' " + "object is not iterable");
     }
 
-    this.__class__ = Sk.builtin.tuple;
-
-    this["v"] = this.v;
+    this.v = v;
     return this;
 };
 
 Sk.abstr.setUpInheritance("tuple", Sk.builtin.tuple, Sk.builtin.seqtype);
+
+Sk.builtin.tuple.prototype.__class__ = Sk.builtin.tuple;
+
+/* Return copy of internal array */
+Sk.builtin.tuple.prototype.sk$asarray = function () {
+    return this.v.slice(0);
+};
 
 Sk.builtin.tuple.prototype["$r"] = function () {
     var ret;
@@ -34107,19 +34097,19 @@ Sk.builtin.tuple.prototype.tp$hash = function () {
 };
 
 Sk.builtin.tuple.prototype.sq$repeat = function (n) {
-    var j;
-    var i;
+    var i, cnt;
     var ret;
+    if (!Sk.misceval.isIndex(n)) {
+        throw new Sk.builtin.TypeError("can't multiply sequence by non-int of type '" + Sk.abstr.typeName(n) + "'");
+    }
 
-    n = Sk.misceval.asIndex(n);
-    if (typeof n !== "number") {
+    cnt = Sk.misceval.asIndex(n);
+    if (typeof cnt !== "number") {
         throw new Sk.builtin.OverflowError("cannot fit '" + Sk.abstr.typeName(n) + "' into an index-sized integer");
     }
     ret = [];
-    for (i = 0; i < n; ++i) {
-        for (j = 0; j < this.v.length; ++j) {
-            ret.push(this.v[j]);
-        }
+    for (i = 0; i < cnt; ++i) {
+        ret.push.apply(ret, this.v);
     }
     return new Sk.builtin.tuple(ret);
 };
@@ -34219,15 +34209,15 @@ Sk.builtin.tuple.prototype.sq$concat = function (other) {
     return new Sk.builtin.tuple(this.v.concat(other.v));
 };
 
-Sk.builtin.tuple.prototype.sq$contains = function (ob) {
-    var it, i;
+Sk.builtin.tuple.prototype.sq$contains = function (item) {
+    var i;
+    var obj = this.v;
 
-    for (it = this.tp$iter(), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-        if (Sk.misceval.richCompareBool(i, ob, "Eq")) {
+    for (i = 0; i < obj.length; i++) {
+        if (Sk.misceval.richCompareBool(obj[i], item, "Eq")) {
             return true;
         }
     }
-
     return false;
 };
 
@@ -35220,8 +35210,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "66512e2ab61fff345f61a78aa3ecfbddb18906f5",
-    date: "2020-07-08T09:32:50.860Z"
+    githash: "c1f85d83dce00cf0bf4136d4198a4e4c3a5d0ef5",
+    date: "2020-07-09T09:31:01.828Z"
 };
 
 /**
