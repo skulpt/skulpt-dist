@@ -24682,7 +24682,7 @@ Sk.longFromStr = function (s, base) {
 Sk.exportSymbol("Sk.longFromStr", Sk.longFromStr);
 
 Sk.builtin.lng.prototype.toInt$ = function () {
-    return this.biginteger.intValue();
+    return parseInt(this.biginteger.toString(), 10);
 };
 
 Sk.builtin.lng.prototype.clone = function () {
@@ -35210,8 +35210,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "c1f85d83dce00cf0bf4136d4198a4e4c3a5d0ef5",
-    date: "2020-07-09T09:31:01.828Z"
+    githash: "0af6c5020b353fd26239d355240eaa0bbe424983",
+    date: "2020-07-09T19:33:15.809Z"
 };
 
 /**
