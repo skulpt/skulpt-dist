@@ -22123,7 +22123,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
             // - run module and set the module locals returned to the module __dict__
             module = new Sk.builtin.module();
 
-            if (suppliedPyBody) {
+            if (typeof suppliedPyBody === "string") {
                 filename = name + ".py";
                 co = Sk.compile(suppliedPyBody, filename, "exec", canSuspend);
             } else {
@@ -35210,8 +35210,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "0af6c5020b353fd26239d355240eaa0bbe424983",
-    date: "2020-07-09T19:33:15.809Z"
+    githash: "62c7c0c7e21f457d49ecaaf2bcbf9586c1f10c9a",
+    date: "2020-07-10T07:45:16.138Z"
 };
 
 /**
