@@ -30131,7 +30131,15 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-Sk.builtin.interned = {};
+Sk.builtin.interned = Object.create(null);
+
+function getInterned (x) {
+    return Sk.builtin.interned[x];
+}
+
+function setInterned (x, pyStr) {
+    Sk.builtin.interned[x] = pyStr;
+}
 
 /**
  * @constructor
@@ -30187,14 +30195,15 @@ Sk.builtin.str = function (x) {
     }
 
     // interning required for strings in py
-    if (Sk.builtin.interned["1" + ret]) {
-        return Sk.builtin.interned["1" + ret];
+    const interned = getInterned(ret);
+    if (interned !== undefined) {
+        return interned;
     }
 
     this.__class__ = Sk.builtin.str;
     this.v = ret;
     this["v"] = this.v;
-    Sk.builtin.interned["1" + ret] = this;
+    setInterned(ret, this);
     return this;
 
 };
@@ -35210,8 +35219,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "62c7c0c7e21f457d49ecaaf2bcbf9586c1f10c9a",
-    date: "2020-07-10T07:45:16.138Z"
+    githash: "8ca1ed87512fcd165a7d744ecbf09327b455eedd",
+    date: "2020-07-10T07:54:33.453Z"
 };
 
 /**
