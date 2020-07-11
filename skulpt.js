@@ -5519,7 +5519,7 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     // Should this be an assert?
     if (obj === null || !obj.tp$getattr) {
         let objname = Sk.abstr.typeName(obj);
-        let jsName = pyName.$jsstr();
+        let jsName = Sk.unfixReserved(pyName.$jsstr());
         throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
     }
 
@@ -5528,11 +5528,13 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     let ret = obj.tp$getattr(pyName, canSuspend);
 
     if (ret === undefined) {
-        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+        let jsName = Sk.unfixReserved(pyName.$jsstr());
+        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + jsName + "'");
     } else if (ret.$isSuspension) {
         return Sk.misceval.chain(ret, function(r) {
             if (r === undefined) {
-                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+                let jsName = Sk.unfixReserved(pyName.$jsstr());
+                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + jsName + "'");
             }
             return r;
         });
@@ -5545,15 +5547,16 @@ Sk.exportSymbol("Sk.abstr.gattr", Sk.abstr.gattr);
 
 Sk.abstr.sattr = function (obj, pyName, data, canSuspend) {
     var objname = Sk.abstr.typeName(obj), r, setf;
-    var jsName = pyName.$jsstr();
 
     if (obj === null) {
+        let jsName = Sk.unfixReserved(pyName.$jsstr());
         throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
     }
 
     if (obj.tp$setattr !== undefined) {
         return obj.tp$setattr(pyName, data, canSuspend);
     } else {
+        let jsName = Sk.unfixReserved(pyName.$jsstr());
         throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
     }
 };
@@ -11800,6 +11803,7 @@ Sk.builtin.dir = function dir (x) {
         if (internal.indexOf(k) !== -1) {
             return null;
         }
+        k = Sk.unfixReserved(k);
         if (k.indexOf("$") !== -1) {
             s = Sk.builtin.dir.slotNameToRichName(k);
         } else if (k.charAt(k.length - 1) !== "_") {
@@ -12020,7 +12024,7 @@ Sk.builtin.getattr = function getattr (obj, pyName, default_) {
     }
 
     jsName = pyName.$jsstr();
-    mangledName = new Sk.builtin.str(Sk.fixReservedWords(jsName));
+    mangledName = new Sk.builtin.str(Sk.fixReserved(jsName));
     ret = obj.tp$getattr(mangledName);
     if (ret === undefined) {
         if (default_ !== undefined) {
@@ -12041,7 +12045,7 @@ Sk.builtin.setattr = function setattr (obj, pyName, value) {
     }
     jsName = pyName.$jsstr();
     if (obj.tp$setattr) {
-        obj.tp$setattr(new Sk.builtin.str(Sk.fixReservedWords(jsName)), value);
+        obj.tp$setattr(new Sk.builtin.str(Sk.fixReserved(jsName)), value);
     } else {
         throw new Sk.builtin.AttributeError("object has no attribute " + jsName);
     }
@@ -12980,7 +12984,9 @@ var reservedNames_ = {
     "__defineGetter__": true,
     "__defineSetter__": true,
     "apply": true,
+    "arguments": true,
     "call": true,
+    "caller": true, 
     "eval": true,
     "hasOwnProperty": true,
     "isPrototypeOf": true,
@@ -12988,6 +12994,7 @@ var reservedNames_ = {
     "__lookupSetter__": true,
     "__noSuchMethod__": true,
     "propertyIsEnumerable": true,
+    "prototype": true,
     "toSource": true,
     "toLocaleString": true,
     "toString": true,
@@ -13002,6 +13009,11 @@ function fixReservedNames (name) {
     if (reservedNames_[name]) {
         return name + "_$rn$";
     }
+    return name;
+}
+
+function fixReserved (name) {
+    name = fixReservedNames(fixReservedWords(name));
     return name;
 }
 
@@ -13674,8 +13686,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             mangled = e.attr["$r"]().v;
             mangled = mangled.substring(1, mangled.length - 1);
             mangled = mangleName(this.u.private_, new Sk.builtin.str(mangled)).v;
-            mangled = fixReservedWords(mangled);
-            mangled = fixReservedNames(mangled);
+            mangled = fixReserved(mangled);
             mname = this.makeConstant("new Sk.builtin.str('" + mangled + "')");
             switch (e.ctx) {
                 case Sk.astnodes.AugLoad:
@@ -15447,8 +15458,7 @@ Compiler.prototype.exitScope = function () {
     if (prev.name.v !== "<module>") {// todo; hacky
         mangled = prev.name["$r"]().v;
         mangled = mangled.substring(1, mangled.length - 1);
-        mangled = fixReservedWords(mangled);
-        mangled = fixReservedNames(mangled);
+        mangled = fixReserved(mangled);
         out(prev.scopename, ".co_name=new Sk.builtins['str']('", mangled, "');");
     }
     for (var constant in prev.consts) {
@@ -15611,6 +15621,9 @@ Sk.exportSymbol("Sk.fixReservedWords", Sk.fixReservedWords);
 
 Sk.fixReservedNames = fixReservedNames;
 Sk.exportSymbol("Sk.fixReservedNames", Sk.fixReservedNames);
+
+Sk.fixReserved = fixReserved;
+Sk.exportSymbol("Sk.fixReserved", Sk.fixReserved);
 
 Sk.unfixReserved = unfixReserved;
 Sk.exportSymbol("Sk.unfixReserved", Sk.unfixReserved);
@@ -35347,8 +35360,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "71f9a5e9a6c2ddf5d267bfe5c9015d8b0b05870d",
-    date: "2020-07-11T12:34:08.693Z"
+    githash: "3b6091cb7d4d7fd89c2ed009c2eedb19f7dbabdf",
+    date: "2020-07-11T13:37:47.317Z"
 };
 
 /**
