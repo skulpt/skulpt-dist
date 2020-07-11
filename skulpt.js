@@ -31058,6 +31058,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
         var leftAdjust;
         var zeroPad;
         var i;
+
         fieldWidth = Sk.builtin.asnum$(fieldWidth);
         precision = Sk.builtin.asnum$(precision);
 
@@ -31174,6 +31175,10 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                     for (j = totLen; j < fieldWidth; ++j) {
                         r = r + " ";
                     }
+                    if (Sk.__future__.python3) {
+                        r += prefix;
+                        prefix = "";
+                    }
                 } else {
                     for (j = totLen; j < fieldWidth; ++j) {
                         prefix = " " + prefix;
@@ -31182,7 +31187,6 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             }
             return prefix + r;
         };
-
         //print("Rhs:",rhs, "ctor", rhs.constructor);
         if (rhs.constructor === Sk.builtin.tuple) {
             value = rhs.v[i];
@@ -31198,7 +31202,13 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
         }
         base = 10;
         if (conversionType === "d" || conversionType === "i") {
-            return handleWidth(formatNumber(value, 10));
+            let tmpData = formatNumber(value, base);
+            if (tmpData[1] === undefined){
+                throw new Sk.builtin.TypeError("%"+ conversionType+" format: a number is required, not "+ Sk.abstr.typeName(value));
+            }
+            let r = tmpData[1];
+            tmpData[1] = r.indexOf(".") !== -1 ? parseInt(r, 10).toString() : r;
+            return handleWidth(tmpData);
         } else if (conversionType === "o") {
             return handleWidth(formatNumber(value, 8));
         } else if (conversionType === "x") {
@@ -31221,7 +31231,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
             }
             convName = ["toExponential", "toFixed", "toPrecision"]["efg".indexOf(conversionType.toLowerCase())];
             if (precision === undefined || precision === "") {
-                
+
                 if (conversionType === "e" || conversionType === "E") {
                     precision = 6;
                 } else if (conversionType === "f" || conversionType === "F") {
@@ -31244,7 +31254,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                 if ((result.length >= 7) && (result.slice(0, 6) == "0.0000")) {
 
                     val = parseFloat(result);
-                    result = val.toExponential(); 
+                    result = val.toExponential();
                 }
                 if (result.charAt(result.length -2) == "-") {
                     result = result.slice(0, result.length - 1) + "0" + result.charAt(result.length - 1);
@@ -35219,8 +35229,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "8ca1ed87512fcd165a7d744ecbf09327b455eedd",
-    date: "2020-07-10T07:54:33.453Z"
+    githash: "20834af5bb036dc3f9724b416527f182f2e1c661",
+    date: "2020-07-11T12:12:11.604Z"
 };
 
 /**
