@@ -34935,54 +34935,17 @@ Sk.builtin.type = function (name, bases, dict) {
         // fix for class attributes
         klass.tp$setattr = Sk.builtin.type.prototype.tp$setattr;
 
-        var shortcutDunder = function (skulpt_name, magic_name, magic_func, canSuspendIdx) {
-            klass.prototype[skulpt_name] = function () {
-                var canSuspend = false;
-                var len = arguments.length;
-                var args, i, j;
-                if ((canSuspendIdx !== null) && (canSuspendIdx <= len)) {
-                    args = new Array(len);
-                } else {
-                    args = new Array(len+1);
-                }
 
-                args[0] = this;
-                j = 1;
-                for (i = 0; i < len; i++) {
-                    if (i === (canSuspendIdx-1)) {
-                        canSuspend = arguments[i];
-                    } else {
-                        args[j] = arguments[i];
-                        j += 1;
-                    }
-                }
-
-                if (canSuspend) {
-                    return Sk.misceval.callsimOrSuspendArray(magic_func, args);
-                } else {
-                    return Sk.misceval.callsimArray(magic_func, args);
-                }
-            };
-        };
 
         // Register skulpt shortcuts to magic methods defined by this class.
         // Dynamically defined methods (eg those returned by __getattr__())
         // cannot be used by these magic functions; this is consistent with
         // how CPython handles "new-style" classes:
         // https://docs.python.org/2/reference/datamodel.html#special-method-lookup-for-old-style-classes
-        var dunder, skulpt_name, canSuspendIdx;
+        var dunder;
         for (dunder in Sk.dunderToSkulpt) {
-            skulpt_name = Sk.dunderToSkulpt[dunder];
-            if (typeof(skulpt_name) === "string") {
-                canSuspendIdx = null;
-            } else {
-                canSuspendIdx = skulpt_name[1];
-                skulpt_name = skulpt_name[0];
-            }
-
             if (klass[dunder]) {
-                // scope workaround
-                shortcutDunder(skulpt_name, dunder, klass[dunder], canSuspendIdx);
+                Sk.builtin.type.$allocateSlot(klass, dunder);
             }
         }
 
@@ -35105,8 +35068,12 @@ Sk.builtin.type.prototype.tp$getattr = function (pyName, canSuspend) {
 
 Sk.builtin.type.prototype.tp$setattr = function (pyName, value) {
     // class attributes are direct properties of the object
-    var jsName = pyName.$jsstr();
+    var jsName = Sk.fixReserved(pyName.$jsstr());
     this[jsName] = value;
+    this.prototype[jsName] = value;
+    if (jsName in Sk.dunderToSkulpt) {
+        Sk.builtin.type.$allocateSlot(this, jsName);
+    }
 };
 
 Sk.builtin.type.typeLookup = function (type, pyName) {
@@ -35280,6 +35247,55 @@ Sk.builtin.type.prototype["__format__"] = function(self, format_spec) {
 
 Sk.builtin.type.pythonFunctions = ["__format__"];
 
+Sk.builtin.type.$allocateSlot = function (klass, dunder) {
+    // allocate a dunder method to a skulpt slot
+    const magic_func = klass[dunder];
+    let skulpt_name = Sk.dunderToSkulpt[dunder];
+
+    if (typeof (skulpt_name) === "string") {
+        // can't suspend so just use calsimArray
+        klass.prototype[skulpt_name] = function () {
+            let len, args, i;
+            len = arguments.length;
+            args = new Array(len + 1);
+            args[0] = this;
+            for (i = 0; i < len; i++) {
+                args[i + 1] = arguments[i];
+            }
+            return Sk.misceval.callsimArray(magic_func, args);
+        };
+    } else {
+        // can suspend
+        let canSuspendIdx = skulpt_name[1];
+        skulpt_name = skulpt_name[0];
+        klass.prototype[skulpt_name] = function () {
+            let len, args, i, j;
+            let canSuspend = false;
+            len = arguments.length;
+            if (canSuspendIdx <= len) {
+                args = new Array(len);
+            } else {
+                args = new Array(len + 1);
+            }
+            args[0] = this;
+            j = 1;
+            for (i = 0; i < len; i++) {
+                if (i === (canSuspendIdx - 1)) {
+                    canSuspend = arguments[i];
+                } else {
+                    args[j] = arguments[i];
+                    j += 1;
+                }
+            }
+            if (canSuspend) {
+                return Sk.misceval.callsimOrSuspendArray(magic_func, args);
+            } else {
+                return Sk.misceval.callsimArray(magic_func, args);
+            }
+        };
+    }
+};
+
 
 /***/ }),
 
@@ -35445,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "51d93b7ecd9fb8be8ddd07ba28eeb4996c3866dc",
-    date: "2020-07-11T18:08:26.720Z"
+    githash: "264eb91d7f2696cc3060af78e82a42312ff2d3c3",
+    date: "2020-07-12T07:20:39.191Z"
 };
 
 /**
