@@ -29165,12 +29165,12 @@ var print_f = function function_print(kwa) {
 
     s += kw_list.end;
 
-    if(kw_list.file !== null) {
+    if (kw_list.file !== null) {
         // currently not tested, though it seems that we need to see how we should access the write function in a correct manner
         Sk.misceval.callsimArray(kw_list.file.write, [kw_list.file, new Sk.builtin.str(s)]); // callsim to write function
     } else {
-        return Sk.misceval.chain(Sk.importModule("sys", false, true), function(sys) {
-            return Sk.misceval.apply(sys["$d"]["stdout"]["write"], undefined, undefined, undefined, [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
+        return Sk.misceval.chain(Sk.importModule("sys", false, true), function (sys) {
+            return Sk.misceval.callsimOrSuspendArray(sys["$d"]["stdout"]["write"], [sys["$d"]["stdout"], new Sk.builtin.str(s)]);
         });
     }
     // ToDo:
@@ -35461,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "264eb91d7f2696cc3060af78e82a42312ff2d3c3",
-    date: "2020-07-12T07:20:39.191Z"
+    githash: "0f92e7355aca42626f629d399a1be9b745e70ed7",
+    date: "2020-07-13T08:30:50.188Z"
 };
 
 /**
