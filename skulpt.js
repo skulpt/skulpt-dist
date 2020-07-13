@@ -6058,10 +6058,10 @@ function getOperator (n) {
 
 function new_identifier(n, c) {
     if (n.value) {
-        return Sk.builtin.str(n.value);
+        return new Sk.builtin.str(n.value);
     }
 
-    return Sk.builtin.str(n);
+    return new Sk.builtin.str(n);
 }
 
 function astForCompOp (c, n) {
@@ -13587,7 +13587,7 @@ Compiler.prototype.cformattedvalue = function(e) {
     let value = this.vexpr(e.value);
     switch (e.conversion) {
         case 's':
-            value = this._gr("value", "Sk.builtin.str(",value,")");
+            value = this._gr("value", "new Sk.builtin.str(",value,")");
             break;
         case 'a':
             // TODO when repr() becomes more unicode-aware,
@@ -13723,7 +13723,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             switch (e.ctx) {
                 case Sk.astnodes.AugLoad:
                     out("$ret = Sk.abstr.objectGetItem(",augvar,",",augsubs,", true);");
-                    this._checkSuspension(e)
+                    this._checkSuspension(e);
                     return this._gr("gitem", "$ret");
                 case Sk.astnodes.Load:
                 case Sk.astnodes.Store:
@@ -17634,7 +17634,7 @@ var update_f = function (kwargs, self, other) {
 
     // apply all key/value pairs of kwargs
     // create here kwargs_dict, there could be exceptions in other cases before
-    var kwargs_dict = new Sk.builtins.dict(kwargs);
+    var kwargs_dict = new Sk.builtin.dict(kwargs);
     self.dict_merge(kwargs_dict);
 
     // returns none, when successful or throws exception
@@ -17972,7 +17972,7 @@ Sk.builtin.enumerate.prototype.next$ = function (self) {
 Sk.builtin.enumerate.co_varnames = ["iterable", "start"];
 Sk.builtin.enumerate.co_argcount = 2;
 Sk.builtin.enumerate.$defaults = [Sk.builtin.none.none$,0];
-Sk.builtin.enumerate.co_name = Sk.builtin.str("enumerate");
+Sk.builtin.enumerate.co_name = new Sk.builtin.str("enumerate");
 
 Sk.builtin.enumerate.prototype["$r"] = function () {
     return new Sk.builtin.str("<enumerate object>");
@@ -29104,7 +29104,7 @@ Sk.exportSymbol("Sk.parseTreeDump", Sk.parseTreeDump);
 var print_f = function function_print(kwa) {
     Sk.builtin.pyCheckArgsLen("print", arguments.length, 0, Infinity, true, false);
     var args = Array.prototype.slice.call(arguments, 1);
-    var kwargs = new Sk.builtins.dict(kwa);
+    var kwargs = new Sk.builtin.dict(kwa);
     var _kwargs = Sk.ffi.remapToJs(kwargs);
 
     // defaults, null for None
@@ -35461,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "df56de01f6dc84499ad4c642af637ba0583142c5",
-    date: "2020-07-13T11:12:33.167Z"
+    githash: "097c47b9a96cf83cb39da9e2fd77fb2d3e739b14",
+    date: "2020-07-13T11:17:18.781Z"
 };
 
 /**
