@@ -22062,13 +22062,13 @@ Sk.doOneTimeInitialization = function (canSuspend) {
             }
         }
 
-        child.tp$mro = new Sk.builtin.tuple([child]);
+        child.tp$mro = new Sk.builtin.tuple([child].concat(bases));
         if (!child.tp$base){
             child.tp$base = bases[0];
         }
         child["$d"] = new Sk.builtin.dict([]);
-        child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
-        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, new Sk.builtin.tuple([child].concat(bases)));
+        child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, child.tp$base ? new Sk.builtin.tuple([child.tp$base]) : new Sk.builtin.tuple([]));
+        child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, child.tp$mro);
         child["$d"].mp$ass_subscript(new Sk.builtin.str("__name__"), new Sk.builtin.str(child.prototype.tp$name));
         child.tp$setattr = function(pyName, value, canSuspend) {
             throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
@@ -35461,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "adab71be7af0d16f89959f642a67ff06b96e40bb",
-    date: "2020-07-15T10:15:53.410Z"
+    githash: "ec57888b7ffd63533c873be8eaabf9997052823e",
+    date: "2020-07-15T10:26:55.578Z"
 };
 
 /**
