@@ -29230,7 +29230,7 @@ Sk.builtin.range_.prototype.mp$subscript = function (index) {
     sub = this.v.mp$subscript(index);
     if (sub instanceof Sk.builtin.list) {
         if (Sk.builtin.checkNone(index.start)) {
-            start = this.v.mp$subscript(0).v;
+            start = this.v.mp$subscript(new Sk.builtin.int_(0)).v;
         } else {
             try {
                 start = this.v.mp$subscript(index.start).v;
@@ -35461,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "c012709d0d3b2635c125c5bd6c34536289d4e3c9",
-    date: "2020-07-13T11:30:02.008Z"
+    githash: "adab71be7af0d16f89959f642a67ff06b96e40bb",
+    date: "2020-07-15T10:15:53.410Z"
 };
 
 /**
