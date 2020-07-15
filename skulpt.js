@@ -13363,7 +13363,7 @@ Compiler.prototype.cyield = function(e)
     if (this.u.ste.blockType !== Sk.SYMTAB_CONSTS.FunctionBlock) {
         throw new Sk.builtin.SyntaxError("'yield' outside function", this.filename, e.lineno);
     }
-    var val = "null",
+    var val = "Sk.builtin.none.none$",
         nextBlock;
     if (e.value) {
         val = this.vexpr(e.value);
@@ -13372,7 +13372,7 @@ Compiler.prototype.cyield = function(e)
     // return a pair: resume target block and yielded value
     out("return [/*resume*/", nextBlock, ",/*ret*/", val, "];");
     this.setBlock(nextBlock);
-    return "$gen.gi$sentvalue"; // will either be null if none sent, or the value from gen.send(value)
+    return "$gen.gi$sentvalue"; // will either be none if none sent, or the value from gen.send(value)
 };
 
 Compiler.prototype.ccompare = function (e) {
@@ -21902,7 +21902,7 @@ Sk.builtin.generator.prototype.tp$iternext = function (canSuspend, yielded) {
     var self = this;
     this["gi$running"] = true;
     if (yielded === undefined) {
-        yielded = null;
+        yielded = Sk.builtin.none.none$;
     }
     this["gi$sentvalue"] = yielded;
 
@@ -35461,8 +35461,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "ec57888b7ffd63533c873be8eaabf9997052823e",
-    date: "2020-07-15T10:26:55.578Z"
+    githash: "b04773907029d33fb38c760adeae0a20d1709433",
+    date: "2020-07-15T19:07:27.814Z"
 };
 
 /**
