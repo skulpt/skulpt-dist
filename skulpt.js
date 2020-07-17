@@ -5614,25 +5614,14 @@ Sk.abstr.iter = function(obj) {
         };
     };
 
-    if (obj.tp$getattr) {
-        iter =  Sk.abstr.lookupSpecial(obj, Sk.builtin.str.$iter);
-        if (iter) {
-            ret = Sk.misceval.callsimArray(iter, [obj]);
-            if (ret.tp$iternext) {
-                return ret;
-            }
-        }
-    }
     if (obj.tp$iter) {
-        try {  // catch and ignore not iterable error here.
-            ret = obj.tp$iter();
-            if (ret.tp$iternext) {
-                return ret;
-            }
-        } catch (e) { }
-    }
-    getit = Sk.abstr.lookupSpecial(obj, Sk.builtin.str.$getitem);
-    if (getit) {
+        ret = obj.tp$iter();
+        if (ret.tp$iternext) {
+            return ret;
+        } else {
+            throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(obj) + "' object is not iterable");
+        }
+    } else if (Sk.abstr.lookupSpecial(obj, Sk.builtin.str.$getitem)) {
         // create internal iterobject if __getitem__
         return new seqIter(obj);
     }
@@ -16994,8 +16983,7 @@ Sk.builtin.str.$lt = new Sk.builtin.str("__lt__");
 Sk.builtin.str.$name = new Sk.builtin.str("__name__");
 Sk.builtin.str.$ne = new Sk.builtin.str("__ne__");
 Sk.builtin.str.$new = new Sk.builtin.str("__new__");
-Sk.builtin.str.$next2 = new Sk.builtin.str("next");
-Sk.builtin.str.$next3 = new Sk.builtin.str("__next__");
+Sk.builtin.str.$next = new Sk.builtin.str("__next__");
 Sk.builtin.str.$path = new Sk.builtin.str("__path__");
 Sk.builtin.str.$repr = new Sk.builtin.str("__repr__");
 Sk.builtin.str.$reversed = new Sk.builtin.str("__reversed__");
@@ -18035,7 +18023,6 @@ Sk.python2 = {
     octal_number_literal: false,
     bankers_rounding: false,
     python_version: false,
-    dunder_next: false,
     dunder_round: false,
     exceptions: false,
     no_long_type: false,
@@ -18056,7 +18043,6 @@ Sk.python3 = {
     octal_number_literal: true,
     bankers_rounding: true,
     python_version: true,
-    dunder_next: true,
     dunder_round: true,
     exceptions: true,
     no_long_type: true,
@@ -18105,7 +18091,6 @@ Sk.configure = function (options) {
     Sk.bool_check(Sk.__future__.octal_number_literal, "Sk.__future__.octal_number_literal");
     Sk.bool_check(Sk.__future__.bankers_rounding, "Sk.__future__.bankers_rounding");
     Sk.bool_check(Sk.__future__.python_version, "Sk.__future__.python_version");
-    Sk.bool_check(Sk.__future__.dunder_next, "Sk.__future__.dunder_next");
     Sk.bool_check(Sk.__future__.dunder_round, "Sk.__future__.dunder_round");
     Sk.bool_check(Sk.__future__.exceptions, "Sk.__future__.exceptions");
     Sk.bool_check(Sk.__future__.no_long_type, "Sk.__future__.no_long_type");
@@ -18192,12 +18177,14 @@ Sk.configure = function (options) {
     Sk.misceval.softspace_ = false;
 
     Sk.switch_version("round$", Sk.__future__.dunder_round);
-    Sk.switch_version("next$", Sk.__future__.dunder_next);
+    Sk.switch_version("next$", Sk.__future__.python3);
     Sk.switch_version("haskey$", Sk.__future__.python3);
     Sk.switch_version("clear$", Sk.__future__.python3);
     Sk.switch_version("copy$", Sk.__future__.python3);
 
     Sk.builtin.lng.tp$name = Sk.__future__.no_long_type ? "int" : "long";
+
+    Sk.builtin.str.$next = Sk.__future__.python3 ? new Sk.builtin.str("__next__") : new Sk.builtin.str("next");
 
     Sk.setupOperators(Sk.__future__.python3);
     Sk.setupDunderMethods(Sk.__future__.python3);
@@ -21271,7 +21258,7 @@ Sk.builtin.frozenset_iter_ = function (obj) {
         return new Sk.builtin.frozenset_iter_(obj);
     }
     this.$obj = obj;
-    this.tp$iter = this;
+    this.tp$iter = () => this;
     allkeys = [];
     buckets = obj.v.buckets;
     for (k in buckets) {
@@ -24582,7 +24569,7 @@ Sk.builtin.list_iter_ = function (lst) {
     this.$index = 0;
     this.lst = lst.v;
     this.$done = false;
-    this.tp$iter = this;
+    this.tp$iter = () => this;
     this.tp$iternext = function () {
         if (this.$done || (this.$index >= this.lst.length)) {
             this.$done = true;
@@ -31529,7 +31516,7 @@ Sk.builtin.str_iter_ = function (obj) {
     this.$index = 0;
     this.$obj = obj.v.slice();
     this.sq$length = this.$obj.length;
-    this.tp$iter = this;
+    this.tp$iter = () => this;
     this.tp$iternext = function () {
         if (this.$index >= this.sq$length) {
             return undefined;
@@ -34502,7 +34489,7 @@ Sk.builtin.tuple_iter_ = function (obj) {
     this.$index = 0;
     this.$obj = obj.v.slice();
     this.sq$length = this.$obj.length;
-    this.tp$iter = this;
+    this.tp$iter = () => this;
     this.tp$iternext = function () {
         if (this.$index >= this.sq$length) {
             return undefined;
@@ -34596,6 +34583,7 @@ Sk.dunderToSkulpt = {
     "__pow__": "nb$power",
     "__rpow__": "nb$reflected_power",
     "__contains__": "sq$contains",
+    "__iter__": "tp$iter",
     "__bool__": ["nb$bool", 1],
     "__nonzero__": ["nb$nonzero", 1],
     "__len__": ["sq$length", 1],
@@ -34868,40 +34856,25 @@ Sk.builtin.type = function (name, bases, dict) {
                 return Sk.misceval.applyOrSuspend(callf, undefined, undefined, kw, args);
             });
         };
-        klass.prototype.tp$iter = function () {
-            var iterf = this.tp$getattr(Sk.builtin.str.$iter);
-            if (iterf === undefined) {
-                throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(this) + "' object is not iterable");
-            }
-            return Sk.misceval.callsimArray(iterf);
-        };
-        klass.prototype.tp$iternext = function (canSuspend) {
-            var self = this;
-            var next;
-
-            if (Sk.__future__.dunder_next) {
-                next = Sk.builtin.str.$next3;
-            } else {
-                next = Sk.builtin.str.$next2;
-            }
-            var r = Sk.misceval.chain(self.tp$getattr(next, canSuspend), function(iternextf) {
-                if (iternextf === undefined) {
-                    throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(self) + "' object is not iterable");
-                }
-
-                return Sk.misceval.tryCatch(function() {
-                    return Sk.misceval.callsimOrSuspendArray(iternextf);
-                }, function(e) {
-                    if (e instanceof Sk.builtin.StopIteration) {
-                        return undefined;
-                    } else {
-                        throw e;
+        const iternext = dict.mp$lookup(Sk.builtin.str.$next);
+        if (iternext !== undefined) {
+            klass.prototype.tp$iternext = function (canSuspend) {
+                const self = this;
+                const r = Sk.misceval.tryCatch(
+                    () => Sk.misceval.callsimOrSuspendArray(iternext, [self]),
+                    (e) => {
+                        if (e instanceof Sk.builtin.StopIteration) {
+                            return undefined;
+                        } else {
+                            throw e;
+                        }
                     }
-                });
-            });
+                );
+                return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
+            };
+        }
 
-            return canSuspend ? r : Sk.misceval.retryOptionalSuspensionOrThrow(r);
-        };
+
 
         klass.prototype.tp$getitem = function (key, canSuspend) {
             var getf = this.tp$getattr(Sk.builtin.str.$getitem, canSuspend), r;
@@ -35461,8 +35434,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "f44e5182e780a0c8ebac00f1cdaa3055ac2169be",
-    date: "2020-07-16T20:55:36.212Z"
+    githash: "9d195cece2554591faf5ade9415365dd866aebd6",
+    date: "2020-07-17T10:29:09.612Z"
 };
 
 /**
