@@ -17518,17 +17518,7 @@ Sk.builtin.dict.prototype.py3$values = function (self) {
 
 Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$values);
 
-Sk.setupDictIterators = function (python3) {
-    if (python3) {
-        Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$keys);
-        Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$values);
-        Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$items);
-    } else {
-        Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$keys);
-        Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$values);
-        Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$items);
-    }
-};
+
 
 Sk.builtin.dict.prototype["clear"] = new Sk.builtin.func(function (self) {
     Sk.builtin.pyCheckArgsLen("clear()", arguments.length, 0, 0, false, true);
@@ -18188,7 +18178,7 @@ Sk.configure = function (options) {
 
     Sk.setupOperators(Sk.__future__.python3);
     Sk.setupDunderMethods(Sk.__future__.python3);
-    Sk.setupDictIterators(Sk.__future__.python3);
+    setupDictIterators(Sk.__future__.python3);
     Sk.setupObjects(Sk.__future__.python3);
 };
 
@@ -18376,6 +18366,19 @@ Sk.switch_version = function (method_to_map, python3) {
 
 Sk.exportSymbol("Sk.__future__", Sk.__future__);
 Sk.exportSymbol("Sk.inputfun", Sk.inputfun);
+
+function setupDictIterators (python3) {
+    if (python3) {
+        Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$keys);
+        Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$values);
+        Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py3$items);
+    } else {
+        Sk.builtin.dict.prototype["keys"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$keys);
+        Sk.builtin.dict.prototype["values"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$values);
+        Sk.builtin.dict.prototype["items"] = new Sk.builtin.func(Sk.builtin.dict.prototype.py2$items);
+    }
+};
+
 
 
 /***/ }),
@@ -35434,8 +35437,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "9d195cece2554591faf5ade9415365dd866aebd6",
-    date: "2020-07-17T10:29:09.612Z"
+    githash: "45a5c1e40b48a6760151a161f67f00e1207484a3",
+    date: "2020-07-29T09:33:27.302Z"
 };
 
 /**
