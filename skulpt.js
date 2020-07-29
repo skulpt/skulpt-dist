@@ -4704,8 +4704,8 @@ Sk.abstr.typeName = function (v) {
 };
 
 Sk.abstr.binop_type_error = function (v, w, name) {
-    var vtypename = Sk.abstr.typeName(v),
-        wtypename = Sk.abstr.typeName(w);
+    const vtypename = Sk.abstr.typeName(v);
+    const wtypename = Sk.abstr.typeName(w);
 
     throw new Sk.builtin.TypeError("unsupported operand type(s) for " + name + ": '" + vtypename + "' and '" + wtypename + "'");
 };
@@ -4713,9 +4713,9 @@ Sk.abstr.binop_type_error = function (v, w, name) {
 Sk.abstr.unop_type_error = function (v, name) {
     var vtypename = Sk.abstr.typeName(v),
         uop = {
-            "UAdd"  : "+",
-            "USub"  : "-",
-            "Invert": "~"
+            UAdd: "+",
+            USub: "-",
+            Invert: "~",
         }[name];
 
     throw new Sk.builtin.TypeError("bad operand type for unary " + uop + ": '" + vtypename + "'");
@@ -4853,14 +4853,12 @@ Sk.abstr.uoNameToSlotFunc_ = function (obj, name) {
 };
 
 Sk.abstr.binary_op_ = function (v, w, opname) {
-    var wop;
-    var ret;
-    var vop;
-
     // All Python inheritance is now enforced with Javascript inheritance
     // (see Sk.abstr.setUpInheritance). This checks if w's type is a strict
     // subclass of v's type
-    var w_is_subclass = w.constructor.prototype instanceof v.constructor;
+    const w_type = w.constructor;
+    const v_type = v.constructor;
+    const w_is_subclass = w_type !== v_type && w instanceof v_type;
 
     // From the Python 2.7 docs:
     //
@@ -4871,6 +4869,8 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
     //
     // -- https://docs.python.org/2/reference/datamodel.html#index-92
 
+    let wop;
+    let ret;
     if (w_is_subclass) {
         wop = Sk.abstr.boNameToSlotFuncRhs_(w, opname);
         if (wop !== undefined) {
@@ -4885,7 +4885,7 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
         }
     }
 
-    vop = Sk.abstr.boNameToSlotFuncLhs_(v, opname);
+    const vop = Sk.abstr.boNameToSlotFuncLhs_(v, opname);
     if (vop !== undefined) {
         if (vop.call) {
             ret = vop.call(v, w);
@@ -4914,9 +4914,8 @@ Sk.abstr.binary_op_ = function (v, w, opname) {
 };
 
 Sk.abstr.binary_iop_ = function (v, w, opname) {
-    var wop;
-    var ret;
-    var vop = Sk.abstr.iboNameToSlotFunc_(v, opname);
+    let ret;
+    const vop = Sk.abstr.iboNameToSlotFunc_(v, opname);
     if (vop !== undefined) {
         if (vop.call) {
             ret = vop.call(v, w);
@@ -4931,8 +4930,8 @@ Sk.abstr.binary_iop_ = function (v, w, opname) {
     return Sk.abstr.binary_op_(v, w, opname);
 };
 Sk.abstr.unary_op_ = function (v, opname) {
-    var ret;
-    var vop = Sk.abstr.uoNameToSlotFunc_(v, opname);
+    let ret;
+    const vop = Sk.abstr.uoNameToSlotFunc_(v, opname);
     if (vop !== undefined) {
         if (vop.call) {
             ret = vop.call(v);
@@ -4946,202 +4945,20 @@ Sk.abstr.unary_op_ = function (v, opname) {
     Sk.abstr.unop_type_error(v, opname);
 };
 
-//
-// handle upconverting a/b from number to long if op causes too big/small a
-// result, or if either of the ops are already longs
-Sk.abstr.numOpAndPromote = function (a, b, opfn) {
-    var tmp;
-    var ans;
-    if (a === null || b === null) {
-        return undefined;
-    }
-
-    if (typeof a === "number" && typeof b === "number") {
-        ans = opfn(a, b);
-        // todo; handle float   Removed RNL (bugs in lng, and it should be a question of precision, not magnitude -- this was just wrong)
-        if ((ans > Sk.builtin.int_.threshold$ || ans < -Sk.builtin.int_.threshold$) && Math.floor(ans) === ans) {
-            return [Sk.builtin.lng.fromInt$(a), Sk.builtin.lng.fromInt$(b)];
-        } else {
-            return ans;
-        }
-    } else if (a === undefined || b === undefined) {
-        throw new Sk.builtin.NameError("Undefined variable in expression");
-    }
-
-    if (a.constructor === Sk.builtin.lng) {
-        return [a, b];
-    } else if ((a.constructor === Sk.builtin.int_ ||
-                a.constructor === Sk.builtin.float_) &&
-                b.constructor === Sk.builtin.complex) {
-        // special case of upconverting nmber and complex
-        // can we use here the Sk.builtin.checkComplex() method?
-        tmp = new Sk.builtin.complex(a);
-        return [tmp, b];
-    } else if (a.constructor === Sk.builtin.int_ ||
-               a.constructor === Sk.builtin.float_) {
-        return [a, b];
-    } else if (typeof a === "number") {
-        tmp = Sk.builtin.assk$(a);
-        return [tmp, b];
-    } else {
-        return undefined;
-    }
-};
-
-Sk.abstr.boNumPromote_ = {
-    "Add"     : function (a, b) {
-        return a + b;
-    },
-    "Sub"     : function (a, b) {
-        return a - b;
-    },
-    "Mult"    : function (a, b) {
-        return a * b;
-    },
-    "Mod"     : function (a, b) {
-        var m;
-        if (b === 0) {
-            throw new Sk.builtin.ZeroDivisionError("division or modulo by zero");
-        }
-        m = a % b;
-        return ((m * b) < 0 ? (m + b) : m);
-    },
-    "Div"     : function (a, b) {
-        if (b === 0) {
-            throw new Sk.builtin.ZeroDivisionError("division or modulo by zero");
-        } else {
-            return a / b;
-        }
-    },
-    "FloorDiv": function (a, b) {
-        if (b === 0) {
-            throw new Sk.builtin.ZeroDivisionError("division or modulo by zero");
-        } else {
-            return Math.floor(a / b);
-        } // todo; wrong? neg?
-    },
-    "Pow"     : Math.pow,
-    "BitAnd"  : function (a, b) {
-        var m = a & b;
-        if (m < 0) {
-            m = m + 4294967296; // convert back to unsigned
-        }
-        return m;
-    },
-    "BitOr"   : function (a, b) {
-        var m = a | b;
-        if (m < 0) {
-            m = m + 4294967296; // convert back to unsigned
-        }
-        return m;
-    },
-    "BitXor"  : function (a, b) {
-        var m = a ^ b;
-        if (m < 0) {
-            m = m + 4294967296; // convert back to unsigned
-        }
-        return m;
-    },
-    "LShift"  : function (a, b) {
-        var m;
-        if (b < 0) {
-            throw new Sk.builtin.ValueError("negative shift count");
-        }
-        m = a << b;
-        if (m > a) {
-            return m;
-        } else {
-            // Fail, this will get recomputed with longs
-            return a * Math.pow(2, b);
-        }
-    },
-    "RShift"  : function (a, b) {
-        var m;
-        if (b < 0) {
-            throw new Sk.builtin.ValueError("negative shift count");
-        }
-        m = a >> b;
-        if ((a > 0) && (m < 0)) {
-            // fix incorrect sign extension
-            m = m & (Math.pow(2, 32 - b) - 1);
-        }
-        return m;
-    }
-};
-
 Sk.abstr.numberBinOp = function (v, w, op) {
-    var tmp;
-    var numPromoteFunc = Sk.abstr.boNumPromote_[op];
-    if (numPromoteFunc !== undefined) {
-        tmp = Sk.abstr.numOpAndPromote(v, w, numPromoteFunc);
-        if (typeof tmp === "number") {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.int_) {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.float_) {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.lng) {
-            return tmp;
-        } else if (tmp !== undefined) {
-            v = tmp[0];
-            w = tmp[1];
-        }
-    }
-
     return Sk.abstr.binary_op_(v, w, op);
 };
 Sk.exportSymbol("Sk.abstr.numberBinOp", Sk.abstr.numberBinOp);
 
 Sk.abstr.numberInplaceBinOp = function (v, w, op) {
-    var tmp;
-    var numPromoteFunc = Sk.abstr.boNumPromote_[op];
-    if (numPromoteFunc !== undefined) {
-        tmp = Sk.abstr.numOpAndPromote(v, w, numPromoteFunc);
-        if (typeof tmp === "number") {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.int_) {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.float_) {
-            return tmp;
-        } else if (tmp !== undefined && tmp.constructor === Sk.builtin.lng) {
-            return tmp;
-        } else if (tmp !== undefined) {
-            v = tmp[0];
-            w = tmp[1];
-        }
-    }
-
     return Sk.abstr.binary_iop_(v, w, op);
 };
 Sk.exportSymbol("Sk.abstr.numberInplaceBinOp", Sk.abstr.numberInplaceBinOp);
 
 Sk.abstr.numberUnaryOp = function (v, op) {
-    var value;
     if (op === "Not") {
         return Sk.misceval.isTrue(v) ? Sk.builtin.bool.false$ : Sk.builtin.bool.true$;
-    } else if (v instanceof Sk.builtin.bool) {
-        value = Sk.builtin.asnum$(v);
-        if (op === "USub") {
-            return new Sk.builtin.int_(-value);
-        }
-        if (op === "UAdd") {
-            return new Sk.builtin.int_(value);
-        }
-        if (op === "Invert") {
-            return new Sk.builtin.int_(~value);
-        }
-    } else {
-        if (op === "USub" && v.nb$negative) {
-            return v.nb$negative();
-        }
-        if (op === "UAdd" && v.nb$positive) {
-            return v.nb$positive();
-        }
-        if (op === "Invert" && v.nb$invert) {
-            return v.nb$invert();
-        }
     }
-
     return Sk.abstr.unary_op_(v, op);
 };
 Sk.exportSymbol("Sk.abstr.numberUnaryOp", Sk.abstr.numberUnaryOp);
@@ -16129,6 +15946,7 @@ Sk.builtin.complex.prototype.nb$add = function (other) {
 
     return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
 };
+Sk.builtin.complex.prototype.nb$reflected_add = Sk.builtin.complex.prototype.nb$add;
 
 /* internal subtract/diff function that calls internal float diff */
 Sk.builtin.complex._c_diff = function (a, b) {
@@ -16150,6 +15968,10 @@ Sk.builtin.complex.prototype.nb$subtract = function (other) {
 
     return result;
 };
+Sk.builtin.complex.prototype.nb$reflected_subtract = function (other) {
+    const self = this.nb$negative();
+    return self.nb$add(other);
+};
 
 Sk.builtin.complex.prototype.nb$multiply = function (other) {
     var real;
@@ -16164,6 +15986,7 @@ Sk.builtin.complex.prototype.nb$multiply = function (other) {
 
     return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
 };
+Sk.builtin.complex.prototype.nb$reflected_multiply = Sk.builtin.complex.prototype.nb$multiply;
 
 /**
  * Otherwise google closure complains about ZeroDivisionError not being
@@ -16215,6 +16038,10 @@ Sk.builtin.complex.prototype.nb$divide = function (other) {
     }
 
     return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+};
+Sk.builtin.complex.prototype.nb$reflected_divide = function (other) {
+    other = Sk.builtin.complex.check_number_or_complex(other);
+    return other.nb$divide(this);
 };
 
 Sk.builtin.complex.prototype.nb$floor_divide = function (other) {
@@ -35481,8 +35308,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "d09df532693398ea3baf875bda96a486c0a2eeab",
-    date: "2020-07-29T14:41:50.161Z"
+    githash: "429b031d0d5dc5c52a366f65796488b14392bbad",
+    date: "2020-07-29T15:07:50.619Z"
 };
 
 /**
