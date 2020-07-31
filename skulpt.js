@@ -10892,6 +10892,24 @@ Sk.builtin.bool.prototype.__format__ = new Sk.builtin.func(function(self) {
 
 Sk.exportSymbol("Sk.builtin.bool", Sk.builtin.bool);
 
+/**
+ * Python bool True constant.
+ * @type {Sk.builtin.bool}
+ * @member {Sk.builtin.bool}
+ */
+Sk.builtin.bool.true$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin.bool.prototype, {
+    v: { value: 1, enumerable: true },
+}));
+
+/**
+ * Python bool False constant.
+ * @type {Sk.builtin.bool}
+ * @member {Sk.builtin.bool}
+ */
+Sk.builtin.bool.false$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin.bool.prototype, {
+    v: { value: 0, enumerable: true },
+}));
+
 
 /***/ }),
 
@@ -10987,7 +11005,7 @@ Sk.builtin.asnum$ = function (a) {
     if (a === null) {
         return a;
     }
-    if (a instanceof Sk.builtin.none) {
+    if (a === Sk.builtin.none.none$) {
         return null;
     }
     if (a instanceof Sk.builtin.bool) {
@@ -11782,7 +11800,7 @@ Sk.builtin.isinstance = function isinstance (obj, type) {
     }
 
     if (type === Sk.builtin.none.prototype.ob$type) {
-        if (obj instanceof Sk.builtin.none) {
+        if (obj === Sk.builtin.none.none$) {
             return Sk.builtin.bool.true$;
         } else {
             return Sk.builtin.bool.false$;
@@ -12129,7 +12147,7 @@ Sk.builtin.pow = function pow (a, b, c) {
     var a_num;
     Sk.builtin.pyCheckArgsLen("pow", arguments.length, 2, 3);
 
-    if (c instanceof Sk.builtin.none) {
+    if (c === Sk.builtin.none.none$) {
         c = undefined;
     }
 
@@ -16787,19 +16805,6 @@ Sk.builtin.complex.PyOS_double_to_string.Py_DTST_NAN = 2;
 
 Sk.builtin.str.$emptystr = new Sk.builtin.str("");
 
-/**
- * Python bool True constant.
- * @type {Sk.builtin.bool}
- * @memberOf Sk.builtin.bool
- */
-Sk.builtin.bool.true$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin.bool.prototype, {v: {value: 1, enumerable: true}}));
-
-/**
- * Python bool False constant.
- * @type {Sk.builtin.bool}
- * @memberOf Sk.builtin.bool
- */
-Sk.builtin.bool.false$ = /** @type {Sk.builtin.bool} */ (Object.create(Sk.builtin.bool.prototype, {v: {value: 0, enumerable: true}}));
 
 /* Constants used for kwargs */
 
@@ -17588,7 +17593,7 @@ Sk.builtin.dict.prototype.ob$ne = function (other) {
 
     var isEqual = this.ob$eq(other);
 
-    if (isEqual instanceof Sk.builtin.NotImplemented) {
+    if (isEqual === Sk.builtin.NotImplemented.NotImplemented$) {
         return isEqual;
     } else if (isEqual.v) {
         return Sk.builtin.bool.false$;
@@ -20065,7 +20070,7 @@ Sk.builtin.float_.prototype.ob$eq = function (other) {
         other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.numberCompare(other) == 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.false$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -20078,7 +20083,7 @@ Sk.builtin.float_.prototype.ob$ne = function (other) {
         other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.numberCompare(other) != 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.true$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -21389,7 +21394,7 @@ Sk.builtin.checkBool = function (arg) {
 Sk.exportSymbol("Sk.builtin.checkBool", Sk.builtin.checkBool);
 
 Sk.builtin.checkNone = function (arg) {
-    return (arg instanceof Sk.builtin.none);
+    return (arg === Sk.builtin.none.none$);
 };
 Sk.exportSymbol("Sk.builtin.checkNone", Sk.builtin.checkNone);
 
@@ -23375,7 +23380,7 @@ Sk.builtin.int_.prototype.ob$eq = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.numberCompare(other) == 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.false$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -23387,7 +23392,7 @@ Sk.builtin.int_.prototype.ob$ne = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.numberCompare(other) != 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.true$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -25226,7 +25231,7 @@ Sk.builtin.lng.prototype.ob$eq = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.longCompare(other) == 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.false$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -25237,7 +25242,7 @@ Sk.builtin.lng.prototype.ob$ne = function (other) {
     if (other instanceof Sk.builtin.int_ || other instanceof Sk.builtin.lng ||
         other instanceof Sk.builtin.float_) {
         return new Sk.builtin.bool(this.longCompare(other) != 0); //jshint ignore:line
-    } else if (other instanceof Sk.builtin.none) {
+    } else if (other === Sk.builtin.none.none$) {
         return Sk.builtin.bool.true$;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -26167,7 +26172,7 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
 
     
     // handle special cases for comparing None with None or Bool with Bool
-    if (((v instanceof Sk.builtin.none) && (w instanceof Sk.builtin.none)) ||
+    if (((v === Sk.builtin.none.none$) && (w === Sk.builtin.none.none$)) ||
         ((v instanceof Sk.builtin.bool) && (w instanceof Sk.builtin.bool))) {
         // Javascript happens to return the same values when comparing null
         // with null or true/false with true/false as Python does when
@@ -26217,7 +26222,7 @@ Sk.exportSymbol("Sk.misceval.richCompareBool", Sk.misceval.richCompareBool);
 
 Sk.misceval.objectRepr = function (v) {
     Sk.asserts.assert(v !== undefined, "trying to repr undefined");
-    if ((v === null) || (v instanceof Sk.builtin.none)) {
+    if ((v === null) || (v === Sk.builtin.none.none$)) {
         return new Sk.builtin.str("None");
     } else if (v === true) {
         // todo; these should be consts
@@ -26861,7 +26866,7 @@ Sk.misceval.applyOrSuspend = function (func, kwdict, varargseq, kws, args) {
     var fcall;
     var it, i;
 
-    if (func === null || func instanceof Sk.builtin.none) {
+    if (func === null || func === Sk.builtin.none.none$) {
         throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(func) + "' object is not callable");
     }
 
@@ -28517,7 +28522,7 @@ Sk.builtin.object.pythonFunctions = [
  * @extends {Sk.builtin.object}
  */
 Sk.builtin.none = function () {
-    this.v = null;
+    return Sk.builtin.none.none$; // always return the same object
 };
 Sk.abstr.setUpInheritance("NoneType", Sk.builtin.none, Sk.builtin.object);
 
@@ -28530,10 +28535,13 @@ Sk.builtin.none.prototype.tp$hash = function () {
 };
 
 /**
- * Python None constant.
+ * Python None value.
  * @type {Sk.builtin.none}
+ * @member {Sk.builtin.none}
  */
-Sk.builtin.none.none$ = new Sk.builtin.none();
+Sk.builtin.none.none$ =  /** @type {Sk.builtin.none} */ (Object.create(Sk.builtin.none.prototype, {
+    v: { value: null, enumerable: true },
+}));
 
 /**
  * @constructor
@@ -28541,7 +28549,9 @@ Sk.builtin.none.none$ = new Sk.builtin.none();
  *
  * @extends {Sk.builtin.object}
  */
-Sk.builtin.NotImplemented = function() { };
+Sk.builtin.NotImplemented = function() {
+    return Sk.builtin.NotImplemented.NotImplemented$; // always return the same object
+};
 Sk.abstr.setUpInheritance("NotImplementedType", Sk.builtin.NotImplemented, Sk.builtin.object);
 
 /** @override */
@@ -28550,9 +28560,11 @@ Sk.builtin.NotImplemented.prototype["$r"] = function () { return new Sk.builtin.
 /**
  * Python NotImplemented constant.
  * @type {Sk.builtin.NotImplemented}
+ * @member {Sk.builtin.NotImplemented}
  */
-Sk.builtin.NotImplemented.NotImplemented$ = new Sk.builtin.NotImplemented();
-
+Sk.builtin.NotImplemented.NotImplemented$ =  /** @type {Sk.builtin.NotImplemented} */ (Object.create(Sk.builtin.NotImplemented.prototype, {
+    v: { value: null, enumerable: true },
+}));
 Sk.exportSymbol("Sk.builtin.none", Sk.builtin.none);
 Sk.exportSymbol("Sk.builtin.NotImplemented", Sk.builtin.NotImplemented);
 
@@ -30029,8 +30041,8 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
         throw new Sk.builtin.TypeError("an integer is required");
     }
 
-    if (key !== undefined && !(key instanceof Sk.builtin.none)) {
-        if (cmp instanceof Sk.builtin.none || cmp === undefined) {
+    if (key !== undefined && !(key === Sk.builtin.none.none$)) {
+        if (cmp === Sk.builtin.none.none$ || cmp === undefined) {
             compare_func = function (a, b) {
                 return Sk.misceval.richCompareBool(a[0], b[0], "Lt") ? new Sk.builtin.int_(-1) : new Sk.builtin.int_(0);
             };
@@ -30048,7 +30060,7 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
         }
         list = new Sk.builtin.list(arr);
     } else {
-        if (!(cmp instanceof Sk.builtin.none) && cmp !== undefined) {
+        if (!(cmp === Sk.builtin.none.none$) && cmp !== undefined) {
             compare_func = cmp;
         }
         list = new Sk.builtin.list(iterable);
@@ -30064,7 +30076,7 @@ Sk.builtin.sorted = function sorted (iterable, cmp, key, reverse) {
         list.list_reverse_(list);
     }
 
-    if (key !== undefined && !(key instanceof Sk.builtin.none)) {
+    if (key !== undefined && !(key === Sk.builtin.none.none$)) {
         iter = list.tp$iter();
         next = iter.tp$iternext();
         arr = [];
@@ -30126,7 +30138,7 @@ Sk.builtin.str = function (x) {
         ret = "True";
     } else if (x === false) {
         ret = "False";
-    } else if ((x === null) || (x instanceof Sk.builtin.none)) {
+    } else if ((x === null) || (x === Sk.builtin.none.none$)) {
         ret = "None";
     } else if (x instanceof Sk.builtin.bool) {
         if (x.v) {
@@ -30396,7 +30408,7 @@ Sk.builtin.str.prototype["split"] = new Sk.builtin.func(function (self, on, howm
     var str;
     var regex;
     Sk.builtin.pyCheckArgsLen("split", arguments.length, 1, 3);
-    if ((on === undefined) || (on instanceof Sk.builtin.none)) {
+    if ((on === undefined) || (on === Sk.builtin.none.none$)) {
         on = null;
     }
     if ((on !== null) && !Sk.builtin.checkString(on)) {
@@ -35308,8 +35320,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "429b031d0d5dc5c52a366f65796488b14392bbad",
-    date: "2020-07-29T15:07:50.619Z"
+    githash: "2c83632b5313d0b92d80fabda018abdf0ef4c2ea",
+    date: "2020-07-31T14:37:36.182Z"
 };
 
 /**
