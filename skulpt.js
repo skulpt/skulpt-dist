@@ -5239,35 +5239,18 @@ Sk.abstr.objectAdd = function (a, b) {
 
 // in Python 2.6, this behaviour seems to be defined for numbers and bools (converts bool to int)
 Sk.abstr.objectNegative = function (obj) {
-    var objtypename;
-    var obj_asnum = Sk.builtin.asnum$(obj); // this will also convert bool type to int
-
-    if (obj instanceof Sk.builtin.bool) {
-        obj = new Sk.builtin.int_(obj_asnum);
-    }
-
     if (obj.nb$negative) {
         return obj.nb$negative();
     }
-
-    objtypename = Sk.abstr.typeName(obj);
-    throw new Sk.builtin.TypeError("bad operand type for unary -: '" + objtypename + "'");
+    throw new Sk.builtin.TypeError("bad operand type for unary -: '" + Sk.abstr.typeName(obj) + "'");
 };
 
 // in Python 2.6, this behaviour seems to be defined for numbers and bools (converts bool to int)
 Sk.abstr.objectPositive = function (obj) {
-    var objtypename = Sk.abstr.typeName(obj);
-    var obj_asnum = Sk.builtin.asnum$(obj); // this will also convert bool type to int
-
-    if (obj instanceof Sk.builtin.bool) {
-        obj = new Sk.builtin.int_(obj_asnum);
-    }
-
-    if (obj.nb$negative) {
+    if (obj.nb$positive) {
         return obj.nb$positive();
     }
-
-    throw new Sk.builtin.TypeError("bad operand type for unary +: '" + objtypename + "'");
+    throw new Sk.builtin.TypeError("bad operand type for unary +: '" + Sk.abstr.typeName(obj) + "'");
 };
 
 Sk.abstr.objectDelItem = function (o, key) {
@@ -10849,8 +10832,8 @@ Sk.builtin.biginteger.prototype.isProbablePrime = Sk.builtin.biginteger.prototyp
  * Where possible, do not create a new instance but use the constants 
  * Sk.builtin.bool.true$ or Sk.builtin.bool.false$. These are defined in src/constant.js
  *
- * @extends {Sk.builtin.object}
- * 
+ * @extends {Sk.builtin.int_}
+ *
  * @param  {(Object|number|boolean)} x Value to evaluate as true or false
  * @return {Sk.builtin.bool} Sk.builtin.bool.true$ if x is true, Sk.builtin.bool.false$ otherwise
  */
@@ -35320,8 +35303,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "2c83632b5313d0b92d80fabda018abdf0ef4c2ea",
-    date: "2020-07-31T14:37:36.182Z"
+    githash: "b2c3033df079bab96204e34c9d80e3e09b1c6b4a",
+    date: "2020-07-31T14:46:26.635Z"
 };
 
 /**
