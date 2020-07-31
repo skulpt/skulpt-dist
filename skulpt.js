@@ -11509,25 +11509,9 @@ Sk.builtin.zip = function zip () {
 
 Sk.builtin.abs = function abs (x) {
     Sk.builtin.pyCheckArgsLen("abs", arguments.length, 1, 1);
-
-    if (x instanceof Sk.builtin.int_) {
-        return new Sk.builtin.int_(Math.abs(x.v));
+    if (x.nb$abs) {
+        return x.nb$abs();
     }
-    if (x instanceof Sk.builtin.float_) {
-        return new Sk.builtin.float_(Math.abs(x.v));
-    }
-    if (Sk.builtin.checkNumber(x)) {
-        return Sk.builtin.assk$(Math.abs(Sk.builtin.asnum$(x)));
-    } else if (Sk.builtin.checkComplex(x)) {
-        return Sk.misceval.callsimArray(x.__abs__, [x]);
-    }
-
-    // call custom __abs__ methods
-    if (x.tp$getattr) {
-        var f = x.tp$getattr(Sk.builtin.str.$abs);
-        return Sk.misceval.callsimArray(f);
-    }
-
     throw new TypeError("bad operand type for abs(): '" + Sk.abstr.typeName(x) + "'");
 };
 
@@ -11545,7 +11529,7 @@ Sk.builtin.ord = function ord (x) {
     } else if (x.v.length !== 1) {
         throw new Sk.builtin.TypeError("ord() expected a character, but string of length " + x.v.length + " found");
     }
-    return new Sk.builtin.int_((x.v).charCodeAt(0));
+    return new Sk.builtin.int_(x.v.charCodeAt(0));
 };
 
 Sk.builtin.chr = function chr (x) {
@@ -16457,10 +16441,10 @@ Sk.builtin.complex._is_infinity = function (val) {
 /**
  * @suppress {missingProperties}
  */
-Sk.builtin.complex.prototype.int$abs = function __abs__(self) {
+Sk.builtin.complex.prototype.nb$abs = function () {
     var result;
-    var _real = self.real.v;
-    var _imag = self.imag.v;
+    var _real = this.real.v;
+    var _imag = this.imag.v;
 
     if (!Sk.builtin.complex._is_finite(_real) || !Sk.builtin.complex._is_finite(_imag)) {
         /* C99 rules: if either the real or the imaginary part is an
@@ -16492,8 +16476,10 @@ Sk.builtin.complex.prototype.int$abs = function __abs__(self) {
 
     return new Sk.builtin.float_(result);
 };
-Sk.builtin.complex.prototype.int$abs.co_name = new Sk.builtin.str("__abs__");
-Sk.builtin.complex.prototype.__abs__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$abs);
+Sk.builtin.complex.prototype.__abs__ = new Sk.builtin.func(function __abs__(self) {
+    Sk.builtin.pyCheckArgsLen("__abs__", arguments.length, 0, 0, false, true);
+    return self.nb$abs();
+});
 
 Sk.builtin.complex.prototype.int$bool = function __bool__(self) {
     return new Sk.builtin.bool(self.tp$getattr(Sk.builtin.str.$real).v || self.tp$getattr(Sk.builtin.str.$real).v);
@@ -35303,8 +35289,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "b2c3033df079bab96204e34c9d80e3e09b1c6b4a",
-    date: "2020-07-31T14:46:26.635Z"
+    githash: "f9396b1ba657774cde0089a8a32ab0baecec6222",
+    date: "2020-07-31T22:15:10.926Z"
 };
 
 /**
