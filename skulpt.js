@@ -14777,7 +14777,7 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         var res;
         if (decos.length > 0) {
             out("$ret = new Sk.builtins['function'](", scopename, ",$gbl", frees, ");");
-            for (let decorator of decos) {
+            for (let decorator of decos.reverse()) {
                 out("$ret = Sk.misceval.callsimOrSuspendArray(", decorator, ",[$ret]);");
                 this._checkSuspension();
             }
@@ -35275,8 +35275,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "dad1dfc21ce3c6ef2d6845b9a596c11b6d581aca",
-    date: "2020-08-03T08:07:31.723Z"
+    githash: "cc29ffc2b31f8941e04d7ae6fd32aa5a37b3b8bf",
+    date: "2020-08-03T11:04:41.759Z"
 };
 
 /**
