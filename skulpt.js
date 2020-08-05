@@ -13411,9 +13411,9 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             }
             else if (e.n instanceof Sk.builtin.complex) {
                 // preserve sign of zero here too
-                var real_val = e.n.real.v === 0 && 1/e.n.real.v === -Infinity ? "-0" : e.n.real.v;
-                var imag_val = e.n.imag.v === 0 && 1/e.n.imag.v === -Infinity ? "-0" : e.n.imag.v;
-                return this.makeConstant("new Sk.builtin.complex(new Sk.builtin.float_(" + real_val + "), new Sk.builtin.float_(" + imag_val + "))");
+                var real_val = e.n.real === 0 && 1/e.n.real === -Infinity ? "-0" : e.n.real;
+                var imag_val = e.n.imag === 0 && 1/e.n.imag === -Infinity ? "-0" : e.n.imag;
+                return this.makeConstant("new Sk.builtin.complex(" + real_val + ", " + imag_val + ")");
             }
             Sk.asserts.fail("unhandled Num type");
         case Sk.astnodes.Str:
@@ -15453,6 +15453,12 @@ Sk.builtin.complex = function (real, imag) {
         return new Sk.builtin.complex(real, imag);
     }
 
+    if (typeof real === "number" && typeof imag === "number") {
+        this.real = real;
+        this.imag = imag;
+        return this;
+    }
+
 
     // check if kwargs
     // ToDo: this is only a temporary replacement
@@ -15523,8 +15529,8 @@ Sk.builtin.complex = function (real, imag) {
         /* Note that if r is of a complex subtype, we're only
         retaining its real & imag parts here, and the return
         value is (properly) of the builtin complex type. */
-        cr.real = r.real.v;
-        cr.imag = r.imag.v;
+        cr.real = r.real;
+        cr.imag = r.imag;
         cr_is_complex = true;
     } else {
         /* The "real" part really is entirely real, and contributes
@@ -15543,8 +15549,8 @@ Sk.builtin.complex = function (real, imag) {
     if (i == null) {
         ci.real = 0.0;
     } else if (Sk.builtin.complex._complex_check(i)) {
-        ci.real = i.real.v;
-        ci.imag = i.imag.v;
+        ci.real = i.real;
+        ci.imag = i.imag;
         ci_is_complex = true;
     } else {
         /* The "imag" part really is entirely imaginary, and
@@ -15573,8 +15579,8 @@ Sk.builtin.complex = function (real, imag) {
     }
 
     // save them as properties
-    this.real = new Sk.builtin.float_(cr.real);
-    this.imag = new Sk.builtin.float_(ci.real);
+    this.real = cr.real;
+    this.imag = ci.real;
 
     return this;
 };
@@ -15807,34 +15813,31 @@ Sk.builtin.complex.complex_subtype_from_string = function (val) {
     }
 
     // return here complex number parts
-    return new Sk.builtin.complex(new Sk.builtin.float_(x), new Sk.builtin.float_(y));
+    return new Sk.builtin.complex(x, y);
 };
 
 /**
     _PyHASH_IMAG refers to _PyHASH_MULTIPLIER which refers to 1000003
  */
 Sk.builtin.complex.prototype.tp$hash = function () {
-    return new Sk.builtin.int_(this.tp$getattr(Sk.builtin.str.$imag).v * 1000003 + this.tp$getattr(Sk.builtin.str.$real).v);
+    return new Sk.builtin.int_(this.imag * 1000003 + this.real);
 };
 
 Sk.builtin.complex.prototype.nb$add = function (other) {
-    var real;
-    var imag;
-
     other = Sk.builtin.complex.check_number_or_complex(other);
 
-    real = this.tp$getattr(Sk.builtin.str.$real).v + other.tp$getattr(Sk.builtin.str.$real).v;
-    imag = this.tp$getattr(Sk.builtin.str.$imag).v + other.tp$getattr(Sk.builtin.str.$imag).v;
+    const real = this.real + other.real;
+    const imag = this.imag + other.imag;
 
-    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+    return new Sk.builtin.complex(real, imag);
 };
 Sk.builtin.complex.prototype.nb$reflected_add = Sk.builtin.complex.prototype.nb$add;
 
 /* internal subtract/diff function that calls internal float diff */
 Sk.builtin.complex._c_diff = function (a, b) {
     var r, i; // Py_Float
-    r = a.real.nb$subtract.call(a.real, b.real);
-    i = a.imag.nb$subtract.call(a.imag, b.imag);
+    r = a.real - b.real;
+    i = a.imag - b.imag;
 
     return new Sk.builtin.complex(r, i);
 };
@@ -15863,10 +15866,10 @@ Sk.builtin.complex.prototype.nb$multiply = function (other) {
     a = this;
     b = Sk.builtin.complex.check_number_or_complex(other);
 
-    real = a.real.v * b.real.v - a.imag.v * b.imag.v;
-    imag = a.real.v * b.imag.v + a.imag.v * b.real.v;
+    real = a.real * b.real - a.imag * b.imag;
+    imag = a.real * b.imag + a.imag * b.real;
 
-    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+    return new Sk.builtin.complex(real, imag);
 };
 Sk.builtin.complex.prototype.nb$reflected_multiply = Sk.builtin.complex.prototype.nb$multiply;
 
@@ -15887,11 +15890,11 @@ Sk.builtin.complex.prototype.nb$divide = function (other) {
     var denom;
 
     // other == b
-    var breal = other.real.v;
-    var bimag = other.imag.v;
+    var breal = other.real;
+    var bimag = other.imag;
     // this == a
-    var areal = this.real.v;
-    var aimag = this.imag.v;
+    var areal = this.real;
+    var aimag = this.imag;
 
     var abs_breal = Math.abs(breal);
     var abs_bimag = Math.abs(bimag);
@@ -15919,7 +15922,7 @@ Sk.builtin.complex.prototype.nb$divide = function (other) {
         imag = NaN;
     }
 
-    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+    return new Sk.builtin.complex(real, imag);
 };
 Sk.builtin.complex.prototype.nb$reflected_divide = function (other) {
     other = Sk.builtin.complex.check_number_or_complex(other);
@@ -15952,8 +15955,8 @@ Sk.builtin.complex.prototype.nb$power = function (other, z) {
     b = Sk.builtin.complex.check_number_or_complex(other);
 
     exponent = b;
-    int_exponent = b.real.v | 0; // js convert to int
-    if (exponent.imag.v === 0.0 && exponent.real.v === int_exponent) {
+    int_exponent = b.real | 0; // js convert to int
+    if (exponent.imag === 0.0 && exponent.real === int_exponent) {
         p = Sk.builtin.complex.c_powi(a, int_exponent);
     } else {
         p = Sk.builtin.complex.c_pow(a, exponent);
@@ -15972,11 +15975,11 @@ Sk.builtin.complex.c_pow = function (a, b) {
     var phase;
 
     // other == b
-    var breal = b.real.v;
-    var bimag = b.imag.v;
+    var breal = b.real;
+    var bimag = b.imag;
     // this == a
-    var areal = a.real.v;
-    var aimag = a.imag.v;
+    var areal = a.real;
+    var aimag = a.imag;
 
     if (breal === 0.0 && bimag === 0.0) {
         real = 1.0;
@@ -16003,7 +16006,7 @@ Sk.builtin.complex.c_pow = function (a, b) {
         imag = len * Math.sin(phase);
     }
 
-    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+    return new Sk.builtin.complex(real, imag);
 };
 
 // power of complex x and integer exponent n
@@ -16012,13 +16015,13 @@ Sk.builtin.complex.c_powi = function (x, n) {
     var c1;
 
     if (n > 100 || n < -100) {
-        cn = new Sk.builtin.complex(new Sk.builtin.float_(n), new Sk.builtin.float_(0.0));
+        cn = new Sk.builtin.complex(n, 0.0);
         return Sk.builtin.complex.c_pow(x, cn);
     } else if (n > 0) {
         return Sk.builtin.complex.c_powu(x, n);
     } else {
         //  return c_quot(c_1,c_powu(x,-n));
-        c1 = new Sk.builtin.complex(new Sk.builtin.float_(1.0), new Sk.builtin.float_(0.0));
+        c1 = new Sk.builtin.complex(1.0, 0.0);
         return c1.nb$divide(Sk.builtin.complex.c_powu(x,-n));
     }
 };
@@ -16026,7 +16029,7 @@ Sk.builtin.complex.c_powi = function (x, n) {
 Sk.builtin.complex.c_powu = function (x, n) {
     var r, p; // Py_complex
     var mask = 1;
-    r = new Sk.builtin.complex(new Sk.builtin.float_(1.0), new Sk.builtin.float_(0.0));
+    r = new Sk.builtin.complex(1.0, 0.0);
     p = x;
 
     while (mask > 0 && n >= mask) {
@@ -16060,13 +16063,13 @@ Sk.builtin.complex.prototype.nb$negative = function () {
     var real;
     var imag;
     // this == a
-    var areal = this.real.v;
-    var aimag = this.imag.v;
+    var areal = this.real;
+    var aimag = this.imag;
 
     real = -areal;
     imag = -aimag;
 
-    return new Sk.builtin.complex(new Sk.builtin.float_(real), new Sk.builtin.float_(imag));
+    return new Sk.builtin.complex(real, imag);
 };
 
 Sk.builtin.complex.prototype.nb$positive = function () {
@@ -16081,12 +16084,7 @@ Sk.builtin.complex._complex_check = function (op) {
         return false;
     }
 
-    if (op instanceof Sk.builtin.complex || (op.tp$name && op.tp$name === "complex")) {
-        return true;
-    }
-
-    // check if type of ob is a subclass
-    if (Sk.builtin.issubclass(new Sk.builtin.type(op), Sk.builtin.complex)) {
+    if (op instanceof Sk.builtin.complex) {
         return true;
     }
 
@@ -16108,8 +16106,8 @@ Sk.builtin.complex.prototype.tp$richcompare = function (w, op) {
 
     // assert(PyComplex_Check(v)));
     i = Sk.builtin.complex.check_number_or_complex(this);
-    var _real = i.tp$getattr(Sk.builtin.str.$real).v;
-    var _imag = i.tp$getattr(Sk.builtin.str.$imag).v;
+    var _real = i.real;
+    var _imag = i.imag;
 
     if (Sk.builtin.checkInt(w)) {
         /* Check for 0.0 imaginary part first to avoid the rich
@@ -16128,8 +16126,8 @@ Sk.builtin.complex.prototype.tp$richcompare = function (w, op) {
         equal = (_real === Sk.builtin.float_.PyFloat_AsDouble(w) && _imag === 0.0);
     } else if (Sk.builtin.complex._complex_check(w)) {
         // ToDo: figure if we need to call to_complex
-        var w_real = w.tp$getattr(Sk.builtin.str.$real).v;
-        var w_imag = w.tp$getattr(Sk.builtin.str.$imag).v;
+        var w_real = w.real;
+        var w_imag = w.imag;
         equal = _real === w_real && _imag === w_imag;
     } else {
         return Sk.builtin.NotImplemented.NotImplemented$;
@@ -16186,7 +16184,7 @@ Sk.builtin.complex.prototype.__int__ = function (self) {
 };
 
 
-Sk.builtin.complex.prototype._internalGenericGetAttr = Sk.builtin.object.prototype.GenericGetAttr;
+Sk.builtin.complex.prototype.$internalGenericGetAttr = Sk.builtin.object.prototype.GenericGetAttr;
 
 /**
  * Custom getattr impl. to get the c.real and c.imag to work. Though we should
@@ -16196,40 +16194,22 @@ Sk.builtin.complex.prototype._internalGenericGetAttr = Sk.builtin.object.prototy
  *
  */
 Sk.builtin.complex.prototype.tp$getattr = function (name) {
-    if (name != null && (Sk.builtin.checkString(name) || typeof name === "string")) {
-        var _name = name;
-
-        // get javascript string
-        if (Sk.builtin.checkString(name)) {
-            _name = Sk.ffi.remapToJs(name);
-        }
-
-        if (_name === "real" || _name === "imag") {
-            return this[_name];
-        }
+    if (name === Sk.builtin.str.$real || name === Sk.builtin.str.$imag) {
+        return new Sk.builtin.float_(this[name.$jsstr()]);
     }
-
     // if we have not returned yet, try the genericgetattr
-    return this._internalGenericGetAttr(name);
+    return this.$internalGenericGetAttr(name);
 };
 
 
 Sk.builtin.complex.prototype.tp$setattr = function (name, value) {
-    if (name != null && (Sk.builtin.checkString(name) || typeof name === "string")) {
-        var _name = name;
+    if (name === Sk.builtin.str.$real || name === Sk.builtin.str.$imag) {
+        throw new Sk.builtin.AttributeError("readonly attribute");
+        // real and imag throw a different error
 
-        // get javascript string
-        if (Sk.builtin.checkString(name)) {
-            _name = Sk.ffi.remapToJs(name);
-        }
-
-        if (_name === "real" || _name === "imag") {
-            throw new Sk.builtin.AttributeError("readonly attribute");
-        }
     }
-
-    // builtin: --> all is readonly (I am not happy with this)
-    throw new Sk.builtin.AttributeError("'complex' object attribute '" + name + "' is readonly");
+    return Sk.builtin.object.prototype.tp$setattr.call(this, name, value);
+    // outsource to tp$setattr which will throw the appropriate error
 };
 
 /**
@@ -16261,18 +16241,18 @@ Sk.builtin.complex.complex_format = function (v, precision, format_code){
     var lead = "";
     var tail = "";
 
-    if (v.real.v === 0.0 && copysign(1.0, v.real.v) == 1.0) {
+    if (v.real === 0.0 && copysign(1.0, v.real) == 1.0) {
         re = "";
-        im = Sk.builtin.complex.PyOS_double_to_string(v.imag.v, format_code, precision, 0, null);
-        // im = v.imag.v;
+        im = Sk.builtin.complex.PyOS_double_to_string(v.imag, format_code, precision, 0, null);
+        // im = v.imag;
     } else {
         /* Format imaginary part with sign, real part without */
-        pre = Sk.builtin.complex.PyOS_double_to_string(v.real.v, format_code, precision, 0, null);
+        pre = Sk.builtin.complex.PyOS_double_to_string(v.real, format_code, precision, 0, null);
         re = pre;
 
-        im = Sk.builtin.complex.PyOS_double_to_string(v.imag.v, format_code, precision, Sk.builtin.complex.PyOS_double_to_string.Py_DTSF_SIGN, null);
+        im = Sk.builtin.complex.PyOS_double_to_string(v.imag, format_code, precision, Sk.builtin.complex.PyOS_double_to_string.Py_DTSF_SIGN, null);
 
-        if (v.imag.v === 0 && 1/v.imag.v === -Infinity && im && im[0] !== "-"){
+        if (v.imag === 0 && 1/v.imag === -Infinity && im && im[0] !== "-"){
             im = "-" + im; // force negative zero sign
         }
 
@@ -16340,8 +16320,8 @@ Sk.builtin.complex._is_infinity = function (val) {
  */
 Sk.builtin.complex.prototype.nb$abs = function () {
     var result;
-    var _real = this.real.v;
-    var _imag = this.imag.v;
+    var _real = this.real;
+    var _imag = this.imag;
 
     if (!Sk.builtin.complex._is_finite(_real) || !Sk.builtin.complex._is_finite(_imag)) {
         /* C99 rules: if either the real or the imaginary part is an
@@ -16379,7 +16359,7 @@ Sk.builtin.complex.prototype.__abs__ = new Sk.builtin.func(function __abs__(self
 });
 
 Sk.builtin.complex.prototype.int$bool = function __bool__(self) {
-    return new Sk.builtin.bool(self.tp$getattr(Sk.builtin.str.$real).v || self.tp$getattr(Sk.builtin.str.$real).v);
+    return new Sk.builtin.bool(self.real || self.imag);
 };
 Sk.builtin.complex.prototype.int$bool.co_name = new Sk.builtin.str("__bool__");
 Sk.builtin.complex.prototype.__bool__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$bool);
@@ -16480,10 +16460,10 @@ Sk.builtin.complex.prototype.__pos__ = new Sk.builtin.func(Sk.builtin.complex.pr
 
 Sk.builtin.complex.prototype.int$conjugate = function conjugate(self){
     Sk.builtin.pyCheckArgsLen("conjugate", arguments.length, 0, 0, true);
-    var _imag = self.imag.v;
+    var _imag = self.imag;
     _imag = -_imag;
 
-    return new Sk.builtin.complex(self.real, new Sk.builtin.float_(_imag));
+    return new Sk.builtin.complex(self.real, _imag);
 };
 Sk.builtin.complex.prototype.int$conjugate.co_name = new Sk.builtin.str("conjugate");
 Sk.builtin.complex.prototype.conjugate = new Sk.builtin.func(Sk.builtin.complex.prototype.int$conjugate);
@@ -16500,8 +16480,8 @@ Sk.builtin.complex.prototype.int$divmod = function __divmod__(self, other){
 
     div = a.nb$divide.call(a, b); // the raw divisor value
 
-    div.real = new Sk.builtin.float_(Math.floor(div.real.v));
-    div.imag = new Sk.builtin.float_(0.0);
+    div.real = Math.floor(div.real);
+    div.imag = 0.0;
 
     mod = a.nb$subtract.call(a, b.nb$multiply.call(b, div));
 
@@ -16515,7 +16495,7 @@ Sk.builtin.complex.prototype.__divmod__ = new Sk.builtin.func(Sk.builtin.complex
 Sk.builtin.complex.prototype.int$getnewargs = function __getnewargs__(self){
     Sk.builtin.pyCheckArgsLen("__getnewargs__", arguments.length, 0, 0, true);
 
-    return new Sk.builtin.tuple([self.real, self.imag]);
+    return new Sk.builtin.tuple([new Sk.builtin.float_(self.real), new Sk.builtin.float_(self.imag)]);
 };
 Sk.builtin.complex.prototype.int$getnewargs.co_name = new Sk.builtin.str("__getnewargs__");
 Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$getnewargs);
@@ -16523,7 +16503,7 @@ Sk.builtin.complex.prototype.__getnewargs__ = new Sk.builtin.func(Sk.builtin.com
 Sk.builtin.complex.prototype.int$nonzero = function __nonzero__(self){
     Sk.builtin.pyCheckArgsLen("__nonzero__", arguments.length, 0, 0, true);
 
-    if(self.real.v !== 0.0 || self.imag.v !== 0.0) {
+    if(self.real !== 0.0 || self.imag !== 0.0) {
         return Sk.builtin.bool.true$;
     } else {
         return Sk.builtin.bool.false$;
@@ -16533,11 +16513,11 @@ Sk.builtin.complex.prototype.int$nonzero.co_name = new Sk.builtin.str("__nonzero
 Sk.builtin.complex.prototype.__nonzero__ = new Sk.builtin.func(Sk.builtin.complex.prototype.int$nonzero);
 
 Sk.builtin.complex.prototype.nb$bool = function () {
-    return new Sk.builtin.bool(this.tp$getattr(Sk.builtin.str.$real).v || this.tp$getattr(Sk.builtin.str.$real).v);
+    return new Sk.builtin.bool(this.real || this.imag);
 };
 
 Sk.builtin.complex.prototype.nb$nonzero = function () {
-    return new Sk.builtin.bool(this.tp$getattr(Sk.builtin.str.$real).v || this.tp$getattr(Sk.builtin.str.$real).v);
+    return new Sk.builtin.bool(this.real || this.imag);
 };
 
 
@@ -35205,8 +35185,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "3677feb3fbdda3f44ba2050a2b6d73f82b7e8634",
-    date: "2020-08-05T09:37:11.105Z"
+    githash: "3d45ca79ab55439667460e61f2824a05396d3136",
+    date: "2020-08-05T09:43:08.189Z"
 };
 
 /**
