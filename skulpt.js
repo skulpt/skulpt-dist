@@ -5331,7 +5331,9 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     } else if (ret.$isSuspension) {
         return Sk.misceval.chain(ret, function(r) {
             if (r === undefined) {
-                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+                const error_name = obj.sk$type ? "type object '" + obj.prototype.tp$name + "'" : "'" + Sk.abstr.typeName(obj) + "' object";
+                let jsName = Sk.unfixReserved(pyName.$jsstr());
+                throw new Sk.builtin.AttributeError(error_name + "has no attribute '" + jsName + "'");
             }
             return r;
         });
@@ -12382,7 +12384,8 @@ Sk.builtin.delattr = function delattr (obj, attr) {
         }
         throw new Sk.builtin.AttributeError(Sk.abstr.typeName(obj) + " instance has no attribute '"+ attr.v+ "'");
     }
-    throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + obj.tp$name + "'");
+    // if we're here then we're a builtin type
+    throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + obj.prototype.tp$name + "'");
 };
 
 Sk.builtin.execfile = function execfile () {
@@ -17895,7 +17898,6 @@ Sk.configure = function (options) {
     Sk.switch_version("clear$", Sk.__future__.python3);
     Sk.switch_version("copy$", Sk.__future__.python3);
 
-    Sk.builtin.lng.tp$name = Sk.__future__.no_long_type ? "int" : "long";
     Sk.builtin.lng.prototype.tp$name = Sk.__future__.no_long_type ? "int" : "long";
     Sk.builtin.lng.prototype.ob$type = Sk.__future__.no_long_type ? Sk.builtin.int_ : Sk.builtin.lng;
 
@@ -21271,7 +21273,7 @@ Sk.builtin.func.prototype.$memoiseFlags = function() {
 
 Sk.builtin.func.prototype.tp$descr_get = function (obj, objtype) {
     Sk.asserts.assert(!(obj === undefined && objtype === undefined));
-    if (objtype && objtype.tp$name in Sk.builtin && Sk.builtin[objtype.tp$name] === objtype) {
+    if (objtype && objtype.prototype && objtype.prototype.tp$name in Sk.builtin && Sk.builtin[objtype.prototype.tp$name] === objtype) {
         // it's a builtin
         return new Sk.builtin.method(this, obj, objtype, true);
     }
@@ -21701,7 +21703,7 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         const bases = [];
 
         for (let base = parent; base !== undefined; base = base.prototype.tp$base) {
-            if (!base.sk$abstract && Sk.builtins[base.tp$name]) {
+            if (!base.sk$abstract && Sk.builtins[base.prototype.tp$name]) {
                 // check the base is not an abstract class and that it is in the builtins dict
                 bases.push(base);
             }
@@ -25380,10 +25382,10 @@ Sk.builtin.method.prototype["$r"] = function () {
     }
 
     if (this.im_self === Sk.builtin.none.none$) {
-        return new Sk.builtin.str("<unbound method " + Sk.abstr.typeName(this.im_class) + "." + this.tp$name + ">");
+        return new Sk.builtin.str("<unbound method " + this.im_class.prototype.tp$name + "." + this.tp$name + ">");
     }
 
-    var owner = this.im_class !== Sk.builtin.none.none$ ? Sk.abstr.typeName(this.im_class) : "?";
+    var owner = this.im_class !== Sk.builtin.none.none$ ? this.im_class.prototype.tp$name : "?";
     return new Sk.builtin.str("<bound method " + owner  + "." + this.tp$name + " of " + Sk.ffi.remapToJs(Sk.misceval.objectRepr(this.im_self)) + ">");
 };
 
@@ -27962,12 +27964,11 @@ Sk.builtin.object.prototype.GenericSetAttr = function (pyName, value, canSuspend
     dict = this["$d"] || this.constructor["$d"];
 
     if (jsName == "__class__") {
-        if (value.tp$mro === undefined || value.tp$name === undefined) {
+        if (value.tp$mro === undefined || value.sk$klass === undefined) {
             throw new Sk.builtin.TypeError(
                 "attempted to assign non-class to __class__");
         }
         this.ob$type = value;
-        this.tp$name = value.tp$name;
         return;
     }
 
@@ -34735,8 +34736,6 @@ Sk.builtin.type.makeIntoTypeObj = function (name, t) {
     Sk.asserts.assert(name !== undefined);
     Sk.asserts.assert(t !== undefined);
     Object.setPrototypeOf(t, Sk.builtin.type.prototype);
-    t.tp$name = name;
-
     return t;
 };
 
@@ -34755,10 +34754,8 @@ Sk.builtin.type.prototype["$r"] = function () {
     return new Sk.builtin.str("<" + ctype + " '" + cname + this.prototype.tp$name + "'>");
 };
 
-
 //Sk.builtin.type.prototype.tp$descr_get = function() { print("in type descr_get"); };
 
-//Sk.builtin.type.prototype.tp$name = "type";
 
 // basically the same as GenericGetAttr except looks in the proto instead
 Sk.builtin.type.prototype.tp$getattr = function (pyName, canSuspend) {
@@ -34798,7 +34795,7 @@ Sk.builtin.type.prototype.tp$getattr = function (pyName, canSuspend) {
 Sk.builtin.type.prototype.tp$setattr = function (pyName, value) {
     // class attributes are direct properties of the object
     if (this.sk$klass === undefined) {
-        throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
+        throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.prototype.tp$name + "'");
     }
     var jsName = Sk.fixReserved(pyName.$jsstr());
     this[jsName] = value;
@@ -35073,7 +35070,7 @@ Sk.builtin.super_.__init__ = new Sk.builtin.func(function(self, a_type, other_se
     self.type = a_type;
 
     if (!a_type.tp$mro) {
-        throw new Sk.builtin.TypeError("must be type, not " + a_type.ob$type.tp$name);
+        throw new Sk.builtin.TypeError("must be type, not " + Sk.abstr.typeName(a_type));
     }
 
     self.obj_type = a_type.tp$mro.v[1];
@@ -35149,10 +35146,10 @@ Sk.builtin.super_.prototype.tp$getattr = function (pyName, canSuspend) {
 
 Sk.builtin.super_.prototype["$r"] = function super_repr(self) {
     if (this.obj) {
-        return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.tp$name : "NULL") + "'>, <" + this.obj.tp$name + " object>>");
+        return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.prototype.tp$name : "NULL") + "'>, <" + Sk.abstr.typeName(this.obj) + " object>>");
     }
 
-    return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.tp$name : "NULL") + "'>, NULL>");
+    return new Sk.builtin.str("<super: <class '" + (this.type ? this.type.prototype.tp$name : "NULL") + "'>, NULL>");
 };
 
 Sk.builtin.super_.__doc__ = new Sk.builtin.str(
@@ -35178,8 +35175,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "78b7b184a45d7934512b9a2c0c935208c281c821",
-    date: "2020-08-05T10:47:27.010Z"
+    githash: "b29e3e5073f20f44ff62c8d610411e4f47f1bc1f",
+    date: "2020-08-05T15:36:02.797Z"
 };
 
 /**
