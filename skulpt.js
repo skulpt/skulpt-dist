@@ -5319,8 +5319,7 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     // Should this be an assert?
     if (obj === null || !obj.tp$getattr) {
         let objname = Sk.abstr.typeName(obj);
-        let jsName = Sk.unfixReserved(pyName.$jsstr());
-        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
+        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + pyName.$jsstr() + "'");
     }
 
     // This function is so hot that we do our own inline suspension checks
@@ -5328,13 +5327,11 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     let ret = obj.tp$getattr(pyName, canSuspend);
 
     if (ret === undefined) {
-        let jsName = Sk.unfixReserved(pyName.$jsstr());
-        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + jsName + "'");
+        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
     } else if (ret.$isSuspension) {
         return Sk.misceval.chain(ret, function(r) {
             if (r === undefined) {
-                let jsName = Sk.unfixReserved(pyName.$jsstr());
-                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + jsName + "'");
+                throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
             }
             return r;
         });
@@ -5349,15 +5346,13 @@ Sk.abstr.sattr = function (obj, pyName, data, canSuspend) {
     var objname = Sk.abstr.typeName(obj), r, setf;
 
     if (obj === null) {
-        let jsName = Sk.unfixReserved(pyName.$jsstr());
-        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
+        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + pyName.$jsstr() + "'");
     }
 
     if (obj.tp$setattr !== undefined) {
         return obj.tp$setattr(pyName, data, canSuspend);
     } else {
-        let jsName = Sk.unfixReserved(pyName.$jsstr());
-        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + jsName + "'");
+        throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + pyName.$jsstr() + "'");
     }
 };
 Sk.exportSymbol("Sk.abstr.sattr", Sk.abstr.sattr);
@@ -11878,37 +11873,33 @@ Sk.builtin.hash = function hash (value) {
 };
 
 Sk.builtin.getattr = function getattr (obj, pyName, default_) {
-    var ret, mangledName, jsName;
+    var ret;
     Sk.builtin.pyCheckArgsLen("getattr", arguments.length, 2, 3);
     if (!Sk.builtin.checkString(pyName)) {
         throw new Sk.builtin.TypeError("attribute name must be string");
     }
 
-    jsName = pyName.$jsstr();
-    mangledName = new Sk.builtin.str(Sk.fixReserved(jsName));
-    ret = obj.tp$getattr(mangledName);
+    ret = obj.tp$getattr(pyName);
     if (ret === undefined) {
         if (default_ !== undefined) {
             return default_;
         } else {
-            throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + jsName + "'");
+            throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
         }
     }
     return ret;
 };
 
 Sk.builtin.setattr = function setattr (obj, pyName, value) {
-    var jsName;
     Sk.builtin.pyCheckArgsLen("setattr", arguments.length, 3, 3);
     // cannot set or del attr from builtin type
     if (!Sk.builtin.checkString(pyName)) {
         throw new Sk.builtin.TypeError("attribute name must be string");
     }
-    jsName = pyName.$jsstr();
     if (obj.tp$setattr) {
-        obj.tp$setattr(new Sk.builtin.str(Sk.fixReserved(jsName)), value);
+        obj.tp$setattr(pyName, value);
     } else {
-        throw new Sk.builtin.AttributeError("object has no attribute " + jsName);
+        throw new Sk.builtin.AttributeError("object has no attribute " + pyName.$jsstr());
     }
     return Sk.builtin.none.none$;
 };
@@ -12105,7 +12096,6 @@ Sk.builtin.filter = function filter (fun, iterable) {
 
 Sk.builtin.hasattr = function hasattr (obj, attr) {
     Sk.builtin.pyCheckArgsLen("hasattr", arguments.length, 2, 2);
-    var special, ret;
     if (!Sk.builtin.checkString(attr)) {
         throw new Sk.builtin.TypeError("hasattr(): attribute name must be string");
     }
@@ -12261,10 +12251,11 @@ Sk.builtin.issubclass = function issubclass (c1, c2) {
 };
 
 Sk.builtin.globals = function globals () {
-    var i;
+    var i, unmangled;
     var ret = new Sk.builtin.dict([]);
     for (i in Sk["globals"]) {
-        ret.mp$ass_subscript(new Sk.builtin.str(i), Sk["globals"][i]);
+        unmangled = Sk.unfixReserved(i);
+        ret.mp$ass_subscript(new Sk.builtin.str(unmangled), Sk["globals"][i]);
     }
 
     return ret;
@@ -12576,7 +12567,7 @@ Sk.builtins = {
     "bytearray" : Sk.builtin.bytearray,
     "callable"  : Sk.builtin.callable,
     "delattr"   : Sk.builtin.delattr,
-    "eval_$rn$" : Sk.builtin.eval_,
+    "eval_$rw$" : Sk.builtin.eval_,
     "execfile"  : Sk.builtin.execfile,
     "frozenset" : Sk.builtin.frozenset,
     "help"      : Sk.builtin.help,
@@ -12590,7 +12581,7 @@ Sk.builtins = {
     "unichr"    : Sk.builtin.unichr,
     "vars"      : Sk.builtin.vars,
     "xrange"    : Sk.builtin.xrange,
-    "apply_$rn$": Sk.builtin.apply_,
+    "apply_$rw$": Sk.builtin.apply_,
     "buffer"    : Sk.builtin.buffer,
     "coerce"    : Sk.builtin.coerce,
     "intern"    : Sk.builtin.intern
@@ -12755,123 +12746,18 @@ Compiler.prototype.niceName = function (roughName) {
     return this.gensym(roughName.replace("<", "").replace(">", "").replace(" ", "_"));
 };
 
-var reservedWords_ = {
-    "abstract": true,
-    "as": true,
-    "boolean": true,
-    "break": true,
-    "byte": true,
-    "case": true,
-    "catch": true,
-    "char": true,
-    "class": true,
-    "continue": true,
-    "const": true,
-    "debugger": true,
-    "default": true,
-    "delete": true,
-    "do": true,
-    "double": true,
-    "else": true,
-    "enum": true,
-    "export": true,
-    "extends": true,
-    "false": true,
-    "final": true,
-    "finally": true,
-    "float": true,
-    "for": true,
-    "function": true,
-    "goto": true,
-    "if": true,
-    "implements": true,
-    "import": true,
-    "in": true,
-    "instanceof": true,
-    "int": true,
-    "interface": true,
-    "is": true,
-    "long": true,
-    "namespace": true,
-    "native": true,
-    "new": true,
-    "null": true,
-    "package": true,
-    "private": true,
-    "protected": true,
-    "public": true,
-    "return": true,
-    "short": true,
-    "static": true,
-    "super": false,
-    "switch": true,
-    "synchronized": true,
-    "this": true,
-    "throw": true,
-    "throws": true,
-    "transient": true,
-    "true": true,
-    "try": true,
-    "typeof": true,
-    "use": true,
-    "var": true,
-    "void": true,
-    "volatile": true,
-    "while": true,
-    "with": true
-};
+var reservedWords_ = Sk.builtin.str.reservedWords_; // defined in str.js
 
-/**
- * Fix reserved words
- *
- * @param {string} name
- */
-function fixReservedWords(name) {
-    if (reservedWords_[name] !== true) {
+
+function fixReserved(name) {
+    if (reservedWords_[name] === undefined) {
         return name;
     }
     return name + "_$rw$";
 }
 
-var reservedNames_ = {
-    "__defineGetter__": true,
-    "__defineSetter__": true,
-    "apply": true,
-    "arguments": true,
-    "call": true,
-    "caller": true, 
-    "eval": true,
-    "hasOwnProperty": true,
-    "isPrototypeOf": true,
-    "__lookupGetter__": true,
-    "__lookupSetter__": true,
-    "__noSuchMethod__": true,
-    "propertyIsEnumerable": true,
-    "prototype": true,
-    "toSource": true,
-    "toLocaleString": true,
-    "toString": true,
-    "unwatch": true,
-    "valueOf": true,
-    "watch": true,
-    "length": true,
-    "name": true,
-};
-
-function fixReservedNames (name) {
-    if (reservedNames_[name]) {
-        return name + "_$rn$";
-    }
-    return name;
-}
-
-function fixReserved (name) {
-    name = fixReservedNames(fixReservedWords(name));
-    return name;
-}
-
 function unfixReserved(name) {
-    return name.replace(/_\$r[wn]\$$/, "");
+    return name.replace(/_\$rw\$$/, "");
 }
 
 function mangleName (priv, ident) {
@@ -12928,7 +12814,7 @@ Compiler.prototype.makeConstant = function (rest) {
     v = this.u.scopename + "." + this.gensym("const");
     this.u.consts[v] = val;
     return v;
-}
+};
 
 /**
  * @param {string} hint basename for gensym
@@ -12953,7 +12839,7 @@ Compiler.prototype._gr = function (hint, rest) {
 Compiler.prototype.outputInterruptTest = function () { // Added by RNL
     var output = "";
     if (Sk.execLimit !== null || Sk.yieldLimit !== null && this.u.canSuspend) {
-            output += "var $dateNow = Date.now();";
+        output += "var $dateNow = Date.now();";
         if (Sk.execLimit !== null) {
             output += "if ($dateNow - Sk.execStart > Sk.execLimit) {throw new Sk.builtin.TimeLimitError(Sk.timeoutMsg())}";
         }
@@ -13049,7 +12935,7 @@ Compiler.prototype.cunpackstarstoarray = function(elts, permitEndOnly) {
         // Fast path
         return "[" + elts.map((expr) => this.vexpr(expr)).join(",") + "]";
     }
-}
+};
 
 Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
     var i;
@@ -13539,7 +13425,6 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             mangled = e.attr["$r"]().v;
             mangled = mangled.substring(1, mangled.length - 1);
             mangled = mangleName(this.u.private_, new Sk.builtin.str(mangled)).v;
-            mangled = fixReserved(mangled);
             mname = this.makeConstant("new Sk.builtin.str('" + mangled + "')");
             switch (e.ctx) {
                 case Sk.astnodes.AugLoad:
@@ -14405,7 +14290,7 @@ Compiler.prototype.cfromimport = function (s) {
         level = -1;
     }
     for (i = 0; i < n; ++i) {
-        names[i] = "'" + fixReservedWords(s.names[i].name.v) + "'";
+        names[i] = "'" + fixReserved(s.names[i].name.v) + "'";
     }
     out("$ret = Sk.builtin.__import__(", s.module["$r"]().v, ",$gbl,$loc,[", names, "],",level,");");
 
@@ -14416,7 +14301,7 @@ Compiler.prototype.cfromimport = function (s) {
     mod = this._gr("module", "$ret");
     for (i = 0; i < n; ++i) {
         alias = s.names[i];
-        aliasOut = "'" + fixReservedWords(alias.name.v) + "'";
+        aliasOut = "'" + alias.name.v + "'";
         if (i === 0 && alias.name.v === "*") {
             Sk.asserts.assert(n === 1);
             out("Sk.importStar(", mod, ",$loc, $gbl);");
@@ -14657,17 +14542,20 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     for (i = 0; args && i < args.args.length; ++i) {
         id = args.args[i].arg;
         if (this.isCell(id)) {
-            this.u.varDeclsCode += "$cell." + id.v + "=" + id.v + ";";
+            let mangled = fixReserved(mangleName(this.u.private_, id).v);
+            this.u.varDeclsCode += "$cell." + mangled + "=" + mangled + ";";
         }
     }
     for (i = 0; args && args.kwonlyargs && i < args.kwonlyargs.length; ++i) {
         id = args.kwonlyargs[i].arg;
         if (this.isCell(id)) {
-            this.u.varDeclsCode += "$cell." + id.v + "=" + id.v + ";";
+            let mangled = fixReserved(mangleName(this.u.private_, id).v);
+            this.u.varDeclsCode += "$cell." + mangled + "=" + mangled + ";";
         }
     }
     if (vararg && this.isCell(vararg.arg)) {
-        this.u.varDeclsCode += "$cell." + vararg.arg.v + "=" + vararg.arg.v + ";";
+        let mangled = fixReserved(mangleName(this.u.private_, vararg.arg).v);
+        this.u.varDeclsCode += "$cell." + mangled + "=" + mangled + ";";
     }
 
     //
@@ -14677,7 +14565,8 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         this.u.localnames.push(kwarg.arg.v);
         this.u.varDeclsCode += kwarg.arg.v + "=new Sk.builtins['dict']($kwa);";
         if (this.isCell(kwarg.arg)) {
-            this.u.varDeclsCode += "$cell." + kwarg.arg.v + "=" + kwarg.arg.v + ";";
+            let mangled = fixReserved(mangleName(this.u.private_, kwarg.arg).v);
+            this.u.varDeclsCode += "$cell." + mangled + "=" + mangled + ";";
         }
     }
 
@@ -15153,7 +15042,7 @@ var D_FREEVARS = 1;
 var D_CELLVARS = 2;
 
 Compiler.prototype.isCell = function (name) {
-    var mangled = mangleName(this.u.private_, name).v;
+    var mangled = fixReserved(mangleName(this.u.private_, name).v);
     var scope = this.u.ste.getScope(mangled);
     var dict = null;
     return scope === Sk.SYMTAB_CONSTS.CELL;
@@ -15184,7 +15073,7 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
 
     mangled = mangleName(this.u.private_, name).v;
     // Have to do this before looking it up in the scope
-    mangled = fixReservedNames(mangled);
+    mangled = fixReserved(mangled);
     op = 0;
     optype = OP_NAME;
     scope = this.u.ste.getScope(mangled);
@@ -15215,8 +15104,6 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
             break;
     }
 
-    // have to do this after looking it up in the scope
-    mangled = fixReservedWords(mangled);
 
     //print("mangled", mangled);
     // TODO TODO TODO todo; import * at global scope failing here
@@ -15336,8 +15223,7 @@ Compiler.prototype.exitScope = function () {
     this.nestlevel--;
     if (this.stack.length - 1 >= 0) {
         this.u = this.stack.pop();
-    }
-    else {
+    } else {
         this.u = null;
     }
     if (this.u) {
@@ -15347,7 +15233,6 @@ Compiler.prototype.exitScope = function () {
     if (prev.name.v !== "<module>") {// todo; hacky
         mangled = prev.name["$r"]().v;
         mangled = mangled.substring(1, mangled.length - 1);
-        mangled = fixReserved(mangled);
         out(prev.scopename, ".co_name=new Sk.builtins['str']('", mangled, "');");
     }
     for (var constant in prev.consts) {
@@ -15504,12 +15389,6 @@ Sk.resetCompiler = function () {
 };
 
 Sk.exportSymbol("Sk.resetCompiler", Sk.resetCompiler);
-
-Sk.fixReservedWords = fixReservedWords;
-Sk.exportSymbol("Sk.fixReservedWords", Sk.fixReservedWords);
-
-Sk.fixReservedNames = fixReservedNames;
-Sk.exportSymbol("Sk.fixReservedNames", Sk.fixReservedNames);
 
 Sk.fixReserved = fixReserved;
 Sk.exportSymbol("Sk.fixReserved", Sk.fixReserved);
@@ -27977,7 +27856,6 @@ Sk.builtin.object.prototype.GenericGetAttr = function (pyName, canSuspend) {
     var tp;
     var dict;
     var getf;
-    var jsName = pyName.$jsstr();
 
     tp = this.ob$type;
     Sk.asserts.assert(tp !== undefined, "object has no ob$type!");
@@ -27992,11 +27870,12 @@ Sk.builtin.object.prototype.GenericGetAttr = function (pyName, canSuspend) {
         } else if (dict.mp$subscript) {
             res = Sk.builtin._tryGetSubscript(dict, pyName);
         } else if (typeof dict === "object") {
-            res = dict[jsName];
+            const mangled = pyName.$mangled;
+            res = dict[mangled];
         }
         if (res !== undefined) {
             return res;
-        } else if (jsName == "__dict__" && dict instanceof Sk.builtin.dict) {
+        } else if (pyName.$jsstr() == "__dict__" && dict instanceof Sk.builtin.dict) {
             return dict;
         }
     }
@@ -28098,11 +27977,12 @@ Sk.builtin.object.prototype.GenericSetAttr = function (pyName, value, canSuspend
         if (this instanceof Sk.builtin.object && !(this.ob$type.sk$klass) &&
             dict.mp$lookup(pyName) === undefined) {
             // Cannot add new attributes to a builtin object
-            throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + Sk.unfixReserved(jsName) + "'");
+            throw new Sk.builtin.AttributeError("'" + objname + "' object has no attribute '" + pyName.$jsstr() + "'");
         }
         dict.mp$ass_subscript(pyName, value);
     } else if (typeof dict === "object") {
-        dict[jsName] = value;
+        const mangled = pyName.$mangled;
+        dict[mangled] = value;
     }
 };
 Sk.exportSymbol("Sk.builtin.object.prototype.GenericSetAttr", Sk.builtin.object.prototype.GenericSetAttr);
@@ -30078,6 +29958,7 @@ Sk.builtin.str = function (x) {
     this.v = ret;
     this["v"] = this.v;
     setInterned(ret, this);
+    this.$mangled = fixReserved(ret);
     return this;
 
 };
@@ -31336,6 +31217,107 @@ Sk.builtin.str_iter_.prototype.next$ = function (self) {
 };
 
 
+var reservedWords_ = {
+    "abstract": true,
+    "as": true,
+    "boolean": true,
+    "break": true,
+    "byte": true,
+    "case": true,
+    "catch": true,
+    "char": true,
+    "class": true,
+    "continue": true,
+    "const": true,
+    "debugger": true,
+    "default": true,
+    "delete": true,
+    "do": true,
+    "double": true,
+    "else": true,
+    "enum": true,
+    "export": true,
+    "extends": true,
+    "false": true,
+    "final": true,
+    "finally": true,
+    "float": true,
+    "for": true,
+    "function": true,
+    "goto": true,
+    "if": true,
+    "implements": true,
+    "import": true,
+    "in": true,
+    "instanceof": true,
+    "int": true,
+    "interface": true,
+    "is": true,
+    "long": true,
+    "namespace": true,
+    "native": true,
+    "new": true,
+    "null": true,
+    "package": true,
+    "private": true,
+    "protected": true,
+    "public": true,
+    "return": true,
+    "short": true,
+    "static": true,
+    // "super": false,
+    "switch": true,
+    "synchronized": true,
+    "this": true,
+    "throw": true,
+    "throws": true,
+    "transient": true,
+    "true": true,
+    "try": true,
+    "typeof": true,
+    "use": true,
+    "var": true,
+    "void": true,
+    "volatile": true,
+    "while": true,
+    "with": true,
+    // reserved Names
+    "__defineGetter__": true,
+    "__defineSetter__": true,
+    "apply": true,
+    "arguments": true,
+    "call": true,
+    "caller": true, 
+    "eval": true,
+    "hasOwnProperty": true,
+    "isPrototypeOf": true,
+    "__lookupGetter__": true,
+    "__lookupSetter__": true,
+    "__noSuchMethod__": true,
+    "propertyIsEnumerable": true,
+    "prototype": true,
+    "toSource": true,
+    "toLocaleString": true,
+    "toString": true,
+    "unwatch": true,
+    "valueOf": true,
+    "watch": true,
+    "length": true,
+    "name": true,
+};
+
+Sk.builtin.str.reservedWords_ = reservedWords_;
+
+function fixReserved(name) {
+    if (reservedWords_[name] === undefined) {
+        return name;
+    }
+    return name + "_$rw$";
+}
+
+
+
+
 /***/ }),
 
 /***/ "./src/structseq.js":
@@ -31813,7 +31795,7 @@ SymbolTable.prototype.SEQExpr = function (nodes) {
 
 SymbolTable.prototype.enterBlock = function (name, blockType, ast, lineno) {
     var prev;
-    name = Sk.fixReservedNames(name);
+    name = Sk.fixReserved(name);
     //print("enterBlock:", name);
     prev = null;
     if (this.cur) {
@@ -31878,8 +31860,8 @@ SymbolTable.prototype.newTmpname = function (lineno) {
 SymbolTable.prototype.addDef = function (name, flag, lineno) {
     var fromGlobal;
     var val;
-    var mangled = Sk.mangleName(this.curClass, new Sk.builtin.str(name)).v;
-    mangled = Sk.fixReservedNames(mangled);
+    var mangled = Sk.mangleName(this.curClass, name).v;
+    mangled = Sk.fixReserved(mangled);
     val = this.cur.symFlags[mangled];
     if (val !== undefined) {
         if ((flag & DEF_PARAM) && (val & DEF_PARAM)) {
@@ -31985,7 +31967,7 @@ SymbolTable.prototype.visitStmt = function (s) {
             if (s.target.constructor == Sk.astnodes.Name) {
                 e_name = s.target;
                 name = Sk.mangleName(this.curClass, e_name.id).v;
-                name = Sk.fixReservedNames(name);
+                name = Sk.fixReserved(name);
                 cur = this.cur.symFlags[name];
                 if ((cur & (DEF_GLOBAL | DEF_NONLOCAL) )
                     && (this.global != this.cur.symFlags) // TODO
@@ -32067,7 +32049,7 @@ SymbolTable.prototype.visitStmt = function (s) {
             nameslen = s.names.length;
             for (i = 0; i < nameslen; ++i) {
                 name = Sk.mangleName(this.curClass, s.names[i]).v;
-                name = Sk.fixReservedNames(name);
+                name = Sk.fixReserved(name);
                 cur = this.cur.symFlags[name];
                 if (cur & (DEF_LOCAL | USE)) {
                     if (cur & DEF_LOCAL) {
@@ -34843,7 +34825,7 @@ Sk.builtin.type.typeLookup = function (type, pyName) {
     var base;
     var res;
     var i;
-    var jsName = pyName.$jsstr();
+    var jsName = pyName.$mangled;
 
     // todo; probably should fix this, used for builtin types to get stuff
     // from prototype
@@ -35223,8 +35205,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "de1fec32233ccf96f49aa3d66e84a7c2261e7ff3",
-    date: "2020-08-05T09:25:45.436Z"
+    githash: "3677feb3fbdda3f44ba2050a2b6d73f82b7e8634",
+    date: "2020-08-05T09:37:11.105Z"
 };
 
 /**
