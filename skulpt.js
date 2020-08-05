@@ -17896,6 +17896,8 @@ Sk.configure = function (options) {
     Sk.switch_version("copy$", Sk.__future__.python3);
 
     Sk.builtin.lng.tp$name = Sk.__future__.no_long_type ? "int" : "long";
+    Sk.builtin.lng.prototype.tp$name = Sk.__future__.no_long_type ? "int" : "long";
+    Sk.builtin.lng.prototype.ob$type = Sk.__future__.no_long_type ? Sk.builtin.int_ : Sk.builtin.lng;
 
     Sk.builtin.str.$next = Sk.__future__.python3 ? new Sk.builtin.str("__next__") : new Sk.builtin.str("next");
 
@@ -21687,8 +21689,6 @@ Sk.importSearchPathForName = function (name, ext, searchPath) {
  * @return {undefined}
  */
 Sk.doOneTimeInitialization = function (canSuspend) {
-    var proto, name, i, x, func, typesWithFunctionsToWrap, builtin_type, j;
-
     // can't fill these out when making the type because tuple/dict aren't
     // defined yet.
     Sk.builtin.type.basesStr_ = new Sk.builtin.str("__bases__");
@@ -21697,11 +21697,10 @@ Sk.doOneTimeInitialization = function (canSuspend) {
     // Register a Python class with an internal dictionary, which allows it to
     // be subclassed
     var setUpClass = function (child) {
-        var parent = child.prototype.tp$base;
-        var bases = [];
-        var base;
+        const parent = child.prototype.tp$base;
+        const bases = [];
 
-        for (base = parent; base !== undefined; base = base.prototype.tp$base) {
+        for (let base = parent; base !== undefined; base = base.prototype.tp$base) {
             if (!base.sk$abstract && Sk.builtins[base.tp$name]) {
                 // check the base is not an abstract class and that it is in the builtins dict
                 bases.push(base);
@@ -21709,35 +21708,31 @@ Sk.doOneTimeInitialization = function (canSuspend) {
         }
 
         child.tp$mro = new Sk.builtin.tuple([child].concat(bases));
-        if (!child.tp$base){
+        if (!child.hasOwnProperty("tp$base")){
             child.tp$base = bases[0];
         }
         child["$d"] = new Sk.builtin.dict([]);
         child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, child.tp$base ? new Sk.builtin.tuple([child.tp$base]) : new Sk.builtin.tuple([]));
         child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, child.tp$mro);
         child["$d"].mp$ass_subscript(new Sk.builtin.str("__name__"), new Sk.builtin.str(child.prototype.tp$name));
-        child.tp$setattr = function(pyName, value, canSuspend) {
-            throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
-        };
     };
 
-    for (x in Sk.builtin) {
-        func = Sk.builtin[x];
-        if ((func.prototype instanceof Sk.builtin.object ||
-             func === Sk.builtin.object) && !func.sk$abstract) {
-            setUpClass(func);
+    for (let x in Sk.builtin) {
+        const type = Sk.builtin[x];
+        if (type instanceof Sk.builtin.type && type.sk$abstract === undefined) {
+            setUpClass(type);
         }
     }
 
     // Wrap the inner Javascript code of Sk.builtin.object's Python methods inside
     // Sk.builtin.func, as that class was undefined when these functions were declared
-    typesWithFunctionsToWrap = [Sk.builtin.object, Sk.builtin.type, Sk.builtin.func, Sk.builtin.method];
+    const typesWithFunctionsToWrap = [Sk.builtin.object, Sk.builtin.type, Sk.builtin.func, Sk.builtin.method];
 
-    for (i = 0; i < typesWithFunctionsToWrap.length; i++) {
-        builtin_type = typesWithFunctionsToWrap[i];
-        proto = builtin_type.prototype;
-        for (j = 0; j < builtin_type.pythonFunctions.length; j++) {
-            name = builtin_type.pythonFunctions[j];
+    for (let i = 0; i < typesWithFunctionsToWrap.length; i++) {
+        const builtin_type = typesWithFunctionsToWrap[i];
+        const proto = builtin_type.prototype;
+        for (let j = 0; j < builtin_type.pythonFunctions.length; j++) {
+            const name = builtin_type.pythonFunctions[j];
 
             if (proto[name] instanceof Sk.builtin.func) {
                 // If functions have already been initialized, do not wrap again.
@@ -27797,6 +27792,50 @@ Sk.builtin.object = function () {
     return this;
 };
 
+Object.defineProperties(Sk.builtin.object.prototype, /**@lends {Sk.builtin.object.prototype}*/ {
+    ob$type: { value: Sk.builtin.object, writable: true },
+    tp$name: { value: "object", writable: true },
+    tp$base: { value: undefined, writable: true },
+    sk$object: { value: true },
+});
+
+/**
+ * @description
+ * We aim to match python and javascript inheritance like
+ * type   instanceof object => true
+ * object instanceof type   => true
+ * type   instanceof type   => true
+ * object instanceof object => true
+ *
+ * type   subclassof object => type.prototype   instanceof object => true
+ * object subclassof type   => object.prototype instanceof type   => false
+ * 
+ * this algorithm achieves the equivalent with the following prototypical chains
+ * using `Object.setPrototypeOf`
+ *
+ * ```
+ * type.__proto__             = type.prototype   (type   instanceof type  )
+ * type.__proto__.__proto__   = object.prototype (type   instanceof object)
+ * type.prototype.__proto__   = object.prototype (type   subclassof object)
+ * object.__proto__           = type.prototype   (object instanceof type  )
+ * object.__proto__.__proto__ = object.prototype (object instanceof object)
+ * ```
+ *
+ * while `Object.setPrototypeOf` is not considered [good practice](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/setPrototypeOf)
+ * this is a particularly unique use case and creates a lot of prototypical benefits
+ * all single inheritance classes (i.e. all builtins) now follow prototypical inheritance
+ * similarly it makes metclasses that much easier to implement
+ * Object.setPrototypeOf is also a feature built into the javascript language
+ *
+ * @ignore
+ */
+(function setUpBaseInheritance () {
+    Object.setPrototypeOf(Sk.builtin.type.prototype, Sk.builtin.object.prototype);
+    Object.setPrototypeOf(Sk.builtin.type, Sk.builtin.type.prototype);
+    Object.setPrototypeOf(Sk.builtin.object, Sk.builtin.type.prototype);
+    Sk.builtin.type.prototype.tp$base = Sk.builtin.object;
+})();
+
 Sk.builtin.object.prototype.__init__ = function __init__() {
     return Sk.builtin.none.none$;
 };
@@ -27973,18 +28012,6 @@ Sk.builtin.object.prototype.tp$setattr = Sk.builtin.object.prototype.GenericSetA
 Sk.builtin.object.prototype["__getattribute__"] = Sk.builtin.object.prototype.GenericPythonGetAttr;
 Sk.builtin.object.prototype["__setattr__"] = Sk.builtin.object.prototype.GenericPythonSetAttr;
 
-/**
- * The name of this class.
- * @type {string}
- */
-Sk.builtin.object.prototype.tp$name = "object";
-
-/**
- * The type object of this class.
- * @type {Sk.builtin.type|Object}
- */
-Sk.builtin.object.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj("object", Sk.builtin.object);
-Sk.builtin.object.prototype.ob$type.sk$klass = undefined;   // Nonsense for closure compiler
 Sk.builtin.object.prototype.tp$descr_set = undefined;   // Nonsense for closure compiler
 
 /** Default implementations of dunder methods found in all Python objects */
@@ -34657,7 +34684,7 @@ Sk.builtin.type = function (name, bases, dict) {
         // https://docs.python.org/2/reference/datamodel.html#special-method-lookup-for-old-style-classes
         var dunder;
         for (dunder in Sk.dunderToSkulpt) {
-            if (klass[dunder]) {
+            if (klass.hasOwnProperty(dunder)) {
                 Sk.builtin.type.$allocateSlot(klass, dunder);
             }
         }
@@ -34691,6 +34718,15 @@ Sk.builtin.type = function (name, bases, dict) {
 
 };
 
+Object.defineProperties(Sk.builtin.type.prototype, /**@lends {Sk.builtin.type.prototype}*/ {
+    call: { value: Function.prototype.call },
+    apply: { value: Function.prototype.apply },
+    ob$type: { value: Sk.builtin.type, writable: true },
+    tp$name: { value: "type", writable: true },
+    tp$base: { value: Sk.builtin.object, writable: true },
+    sk$type: { value: true },
+});
+
 /**
  *
  */
@@ -34702,43 +34738,27 @@ Sk.builtin.type.makeTypeObj = function (name, newedInstanceOfType) {
 Sk.builtin.type.makeIntoTypeObj = function (name, t) {
     Sk.asserts.assert(name !== undefined);
     Sk.asserts.assert(t !== undefined);
-    t.ob$type = Sk.builtin.type;
+    Object.setPrototypeOf(t, Sk.builtin.type.prototype);
     t.tp$name = name;
-    t["$r"] = function () {
-        var ctype;
-        var mod = t.__module__;
-        var cname = "";
-        if (mod) {
-            cname = mod.v + ".";
-        }
-        ctype = "class";
-        if (!mod && !t.sk$klass && !Sk.__future__.class_repr) {
-            ctype = "type";
-        }
-        return new Sk.builtin.str("<" + ctype + " '" + cname + t.tp$name + "'>");
-    };
-    t.tp$str = undefined;
-    t.tp$getattr = Sk.builtin.type.prototype.tp$getattr;
-    t.tp$setattr = Sk.builtin.object.prototype.GenericSetAttr;
-    t.tp$richcompare = Sk.builtin.type.prototype.tp$richcompare;
-    t.sk$type = true;
 
     return t;
 };
 
-Sk.builtin.type.ob$type = Sk.builtin.type;
-Sk.builtin.type.tp$name = "type";
-Sk.builtin.type.sk$type = true;
-Sk.builtin.type["$r"] = function () {
-    if(Sk.__future__.class_repr) {
-        return new Sk.builtin.str("<class 'type'>");
+Sk.builtin.type.prototype["$r"] = function () {
+    let mod = this.prototype.__module__;
+    let cname = "";
+    let ctype = "class";
+    if (mod && Sk.builtin.checkString(mod)) {
+        cname = mod.v + ".";
     } else {
-        return new Sk.builtin.str("<type 'type'>");
+        mod = null;
     }
+    if (!mod && !this.sk$klass && !Sk.__future__.class_repr) {
+        ctype = "type";
+    }
+    return new Sk.builtin.str("<" + ctype + " '" + cname + this.prototype.tp$name + "'>");
 };
-Sk.builtin.type.tp$setattr = function(pyName, value, canSuspend) {
-    throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
-};
+
 
 //Sk.builtin.type.prototype.tp$descr_get = function() { print("in type descr_get"); };
 
@@ -34781,6 +34801,9 @@ Sk.builtin.type.prototype.tp$getattr = function (pyName, canSuspend) {
 
 Sk.builtin.type.prototype.tp$setattr = function (pyName, value) {
     // class attributes are direct properties of the object
+    if (this.sk$klass === undefined) {
+        throw new Sk.builtin.TypeError("can't set attributes of built-in/extension type '" + this.tp$name + "'");
+    }
     var jsName = Sk.fixReserved(pyName.$jsstr());
     this[jsName] = value;
     this.prototype[jsName] = value;
@@ -34937,21 +34960,6 @@ Sk.builtin.type.buildMRO = function (klass) {
     return new Sk.builtin.tuple(Sk.builtin.type.buildMRO_(klass));
 };
 
-Sk.builtin.type.prototype.tp$richcompare = function (other, op) {
-    var r2;
-    var r1;
-    if (other.ob$type != Sk.builtin.type) {
-        return undefined;
-    }
-    if (!this["$r"] || !other["$r"]) {
-        return undefined;
-    }
-
-    r1 = this["$r"]();
-    r2 = other["$r"]();
-
-    return r1.tp$richcompare(r2, op);
-};
 
 Sk.builtin.type.prototype["__format__"] = function(self, format_spec) {
     Sk.builtin.pyCheckArgsLen("__format__", arguments.length, 1, 2);
@@ -35174,8 +35182,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "cb33334cb88cf40fa84b681f1e605f48d1caa1b6",
-    date: "2020-08-05T10:33:01.458Z"
+    githash: "7959c3edc16a3908b031e7e6a8c3161e0aaf3bcd",
+    date: "2020-08-05T10:44:37.244Z"
 };
 
 /**
