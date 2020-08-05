@@ -23557,49 +23557,21 @@ Sk.exportSymbol("Sk.builtin.iterator", Sk.builtin.iterator);
  * @extends Sk.builtin.object
  */
 Sk.builtin.list = function (L, canSuspend) {
-    var v, it, thisList;
-    var canSusp;
-
-    if (this instanceof Sk.builtin.list) {
-        canSusp = canSuspend || false;
-    } else {
+    if (!(this instanceof Sk.builtin.list)) {
         // Called from Python
         Sk.builtin.pyCheckArgsLen("list", arguments.length, 0, 1);
         return new Sk.builtin.list(L, true);
     }
-
     if (L === undefined) {
-        v = [];
-    } else if (Object.prototype.toString.apply(L) === "[object Array]") {
-        v = L;
-    } else if (L.sk$asarray) {
-        v = L.sk$asarray();
-    } else if (Sk.builtin.checkIterable(L)) {
-        v = [];
-        it = Sk.abstr.iter(L);
-
-        thisList = this;
-
-        return (function next(i) {
-            while(true) {
-                if (i instanceof Sk.misceval.Suspension) {
-                    return new Sk.misceval.Suspension(next, i);
-                } else if (i === undefined) {
-                    // done!
-                    thisList.v = v;
-                    return thisList;
-                } else {
-                    v.push(i);
-                    i = it.tp$iternext(canSusp);
-                }
-            }
-        })(it.tp$iternext(canSusp));
+        this.v = [];
+    } else if (Array.isArray(L)) {
+        this.v = L;
     } else {
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L) + "' " + "object is not iterable");
+        return Sk.misceval.chain(Sk.misceval.arrayFromIterable(L, canSuspend), (v) => {
+            this.v = v;
+            return this;
+        });
     }
-
-    this.v = v;
-    return this;
 };
 
 Sk.abstr.setUpInheritance("list", Sk.builtin.list, Sk.builtin.seqtype);
@@ -26587,6 +26559,35 @@ Sk.misceval.iterFor = function (iter, forFn, initialValue) {
 };
 Sk.exportSymbol("Sk.misceval.iterFor", Sk.misceval.iterFor);
 
+/**
+ * @function
+ *
+ * @description
+ * Convert a Python iterable into a javascript array
+ *
+ * @param {*} iterable
+ * @param {boolean=} canSuspend - Can this function suspend
+ *
+ * @returns {!Array}
+ */
+Sk.misceval.arrayFromIterable = function (iterable, canSuspend) {
+    if (iterable === undefined) {
+        return [];
+    }
+    const hptype = iterable.hp$type || undefined;
+    if (hptype === undefined && iterable.sk$asarray !== undefined) {
+        // use sk$asarray only if we're a builtin
+        return iterable.sk$asarray();
+    }
+    const L = [];
+    const ret = Sk.misceval.chain(
+        Sk.misceval.iterFor(Sk.abstr.iter(iterable), (i) => {
+            L.push(i);
+        }),
+        () => L
+    );
+    return canSuspend ? ret : Sk.misceval.retryOptionalSuspensionOrThrow(ret);
+};
 /**
  * A special value to return from an iterFor() function,
  * to abort the iteration. Optionally supply a value for iterFor() to return
@@ -33987,31 +33988,25 @@ Sk.exportSymbol("Sk._tokenize", Sk._tokenize);
 /**
  * @constructor
  * @param {Array.<Object>|Object} L
+ * @param {boolean=} canSuspend
  */
-Sk.builtin.tuple = function (L) {
-    var v, it, i;
+Sk.builtin.tuple = function (L, canSuspend) {
     if (!(this instanceof Sk.builtin.tuple)) {
+        // called from python
         Sk.builtin.pyCheckArgsLen("tuple", arguments.length, 0, 1);
-        return new Sk.builtin.tuple(L);
+        return new Sk.builtin.tuple(L, true);
     }
 
     if (L === undefined) {
-        v = [];
-    } else if (Object.prototype.toString.apply(L) === "[object Array]") {
-        v = L;
-    } else if (L.sk$asarray) {
-        v = L.sk$asarray();
-    } else if (Sk.builtin.checkIterable(L)) {
-        v = [];
-        for (it = Sk.abstr.iter(L), i = it.tp$iternext(); i !== undefined; i = it.tp$iternext()) {
-            v.push(i);
-        }
+        this.v = [];
+    } else if (Array.isArray(L)) {
+        this.v = L;
     } else {
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(L) + "' " + "object is not iterable");
+        return Sk.misceval.chain(Sk.misceval.arrayFromIterable(L, canSuspend), (v) => {
+            this.v = v;
+            return this;
+        });
     }
-
-    this.v = v;
-    return this;
 };
 
 Sk.abstr.setUpInheritance("tuple", Sk.builtin.tuple, Sk.builtin.seqtype);
@@ -34561,6 +34556,7 @@ Sk.builtin.type = function (name, bases, dict) {
         klass["__class__"] = klass;
         klass["__name__"] = name;
         klass.sk$klass = true;
+        klass.prototype.hp$type = true;
         klass.prototype["$r"] = function () {
             const reprf = Sk.abstr.lookupSpecial(this, Sk.builtin.str.$repr);
             if (reprf !== undefined && reprf !== Sk.builtin.object.prototype["__repr__"]) {
@@ -35182,8 +35178,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "7959c3edc16a3908b031e7e6a8c3161e0aaf3bcd",
-    date: "2020-08-05T10:44:37.244Z"
+    githash: "78b7b184a45d7934512b9a2c0c935208c281c821",
+    date: "2020-08-05T10:47:27.010Z"
 };
 
 /**
