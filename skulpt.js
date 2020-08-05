@@ -8487,7 +8487,7 @@ function ast_for_atom(c, n)
             }
         }
         default:
-            Sk.assert.fail("unhandled atom " + TYPE(ch));
+            Sk.asserts.fail("unhandled atom " + TYPE(ch));
             return null;
     }
 }
@@ -11932,16 +11932,8 @@ Sk.builtin.raw_input = function (prompt) {
 Sk.builtin.input = Sk.builtin.raw_input;
 
 Sk.builtin.jseval = function jseval (evalcode) {
-    var result = Sk.global["eval"](Sk.ffi.remapToJs(evalcode));
-    try {
-        return Sk.ffi.remapToPy(result);
-    } catch (err) {
-        if (err.constructor === Sk.asserts.AssertionError) {
-            return Sk.builtin.none.none$;
-        }
-
-        throw err;
-    }
+    const result = Sk.global["eval"](Sk.ffi.remapToJs(evalcode));
+    return Sk.ffi.remapToPy(result);
 };
 
 Sk.builtin.jsmillis = function jsmillis () {
@@ -35286,8 +35278,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "a1595aa79e05d8f4faf86b8c3032d9aa0d1f75cd",
-    date: "2020-08-03T14:09:47.642Z"
+    githash: "caa2b6f8a8de96622f4b305f78985feb357e5a0c",
+    date: "2020-08-05T09:17:35.839Z"
 };
 
 /**
