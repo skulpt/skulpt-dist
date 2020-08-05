@@ -16702,6 +16702,7 @@ Sk.builtin.str.$gt = new Sk.builtin.str("__gt__");
 Sk.builtin.str.$le = new Sk.builtin.str("__le__");
 Sk.builtin.str.$len = new Sk.builtin.str("__len__");
 Sk.builtin.str.$lt = new Sk.builtin.str("__lt__");
+Sk.builtin.str.$module = new Sk.builtin.str("__module__");
 Sk.builtin.str.$name = new Sk.builtin.str("__name__");
 Sk.builtin.str.$ne = new Sk.builtin.str("__ne__");
 Sk.builtin.str.$new = new Sk.builtin.str("__new__");
@@ -28141,7 +28142,16 @@ Sk.builtin.object.prototype["__ge__"] = function (self, other) {
  * @return {Sk.builtin.str} The Python string representation of this instance.
  */
 Sk.builtin.object.prototype["$r"] = function () {
-    return new Sk.builtin.str("<object>");
+    const mod = Sk.abstr.lookupSpecial(this, Sk.builtin.str.$module);
+    let cname = "";
+    if (mod && Sk.builtin.checkString(mod)) {
+        cname = mod.v + ".";
+    }
+    return new Sk.builtin.str("<" + cname + Sk.abstr.typeName(this) + " object>");
+};
+
+Sk.builtin.object.prototype.tp$str = function () {
+    return this.$r();
 };
 
 Sk.builtin.hashCount = 1;
@@ -34505,9 +34515,8 @@ Sk.builtin.type = function (name, bases, dict) {
         klass.prototype.ob$type = Sk.builtin.type.makeIntoTypeObj(_name, klass);
 
         // set __module__ if not present (required by direct type(name, bases, dict) calls)
-        var module_lk = new Sk.builtin.str("__module__");
-        if(dict.mp$lookup(module_lk) === undefined) {
-            dict.mp$ass_subscript(module_lk, Sk.globals["__name__"]);
+        if(dict.mp$lookup(Sk.builtin.str.$module) === undefined) {
+            dict.mp$ass_subscript(Sk.builtin.str.$module, Sk.globals["__name__"]);
         }
 
         // copy properties into our klass object
@@ -34526,26 +34535,18 @@ Sk.builtin.type = function (name, bases, dict) {
         klass["__name__"] = name;
         klass.sk$klass = true;
         klass.prototype["$r"] = function () {
-            var cname;
-            var mod;
-            var reprf = this.tp$getattr(Sk.builtin.str.$repr);
-            if (reprf !== undefined && reprf.im_func !== Sk.builtin.object.prototype["__repr__"]) {
-                return Sk.misceval.apply(reprf, undefined, undefined, undefined, []);
+            const reprf = Sk.abstr.lookupSpecial(this, Sk.builtin.str.$repr);
+            if (reprf !== undefined && reprf !== Sk.builtin.object.prototype["__repr__"]) {
+                return Sk.misceval.callsimArray(reprf, [this]);
             }
 
             if ((klass.prototype.tp$base !== undefined) &&
-                (klass.prototype.tp$base !== Sk.builtin.object) &&
                 (klass.prototype.tp$base.prototype["$r"] !== undefined)) {
-                // If subclass of a builtin which is not object, use that class' repr
+                // use superclass $r
                 return klass.prototype.tp$base.prototype["$r"].call(this);
             } else {
-                // Else, use default repr for a user-defined class instance
-                mod = dict.mp$subscript(module_lk); // lookup __module__
-                cname = "";
-                if (mod) {
-                    cname = mod.v + ".";
-                }
-                return new Sk.builtin.str("<" + cname + _name + " object>");
+                // Else, use object repr for a user-defined class instance
+                return Sk.builtin.object.prototype["$r"].call(this);
             }
         };
 
@@ -34569,9 +34570,9 @@ Sk.builtin.type = function (name, bases, dict) {
         // __getattribute__, rather than checking on every tp$getattr() call
 
         klass.prototype.tp$str = function () {
-            var strf = this.tp$getattr(Sk.builtin.str.$str);
-            if (strf !== undefined && strf.im_func !== Sk.builtin.object.prototype["__str__"]) {
-                return Sk.misceval.apply(strf, undefined, undefined, undefined, []);
+            const strf = Sk.abstr.lookupSpecial(this, Sk.builtin.str.$str);
+            if (strf !== undefined && strf !== Sk.builtin.object.prototype["__str__"]) {
+                return Sk.misceval.callsimArray(strf, [this]);
             }
             if ((klass.prototype.tp$base !== undefined) &&
                 (klass.prototype.tp$base !== Sk.builtin.object) &&
@@ -35173,8 +35174,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "581c3c790653e7b3f1d2e266d69860a6f6819d4e",
-    date: "2020-08-05T10:02:56.497Z"
+    githash: "bdebb92a56315ac6091779fc184b33fb08b50d88",
+    date: "2020-08-05T10:08:42.776Z"
 };
 
 /**
