@@ -5325,15 +5325,15 @@ Sk.abstr.gattr = function (obj, pyName, canSuspend) {
     // This function is so hot that we do our own inline suspension checks
 
     let ret = obj.tp$getattr(pyName, canSuspend);
-
+    let error_name;
     if (ret === undefined) {
-        throw new Sk.builtin.AttributeError("'" + Sk.abstr.typeName(obj) + "' object has no attribute '" + pyName.$jsstr() + "'");
+        error_name = obj.sk$type ? "type object '" + obj.prototype.tp$name + "'" : "'" + Sk.abstr.typeName(obj) + "' object";
+        throw new Sk.builtin.AttributeError(error_name + " has no attribute '" + pyName.$jsstr() + "'");
     } else if (ret.$isSuspension) {
         return Sk.misceval.chain(ret, function(r) {
             if (r === undefined) {
-                const error_name = obj.sk$type ? "type object '" + obj.prototype.tp$name + "'" : "'" + Sk.abstr.typeName(obj) + "' object";
-                let jsName = Sk.unfixReserved(pyName.$jsstr());
-                throw new Sk.builtin.AttributeError(error_name + "has no attribute '" + jsName + "'");
+                error_name = obj.sk$type ? "type object '" + obj.prototype.tp$name + "'" : "'" + Sk.abstr.typeName(obj) + "' object";
+                throw new Sk.builtin.AttributeError(error_name + " has no attribute '" + pyName.$jsstr() + "'");
             }
             return r;
         });
@@ -18143,7 +18143,7 @@ Sk.builtin.BaseException = function (...args) {
     // If args[0] is a string then we're an internal call
     if (typeof args[0] === "string") {
         this.args = new Sk.builtin.tuple([new Sk.builtin.str(args[0])]);
-        if (args.length === 3) {
+        if (args.length >= 3) {
             // For errors occurring during normal execution, the line/col/etc
             // of the error are populated by each stack frame of the runtime code,
             // but we can seed it with the supplied parameters.
@@ -35157,8 +35157,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "e87e5eb68f264314c5e3cdbec30b6d7b3c9b1ce0",
-    date: "2020-08-05T16:03:18.927Z"
+    githash: "73534465f5c074823039ee40ac03474dfb98de9b",
+    date: "2020-08-10T14:57:24.356Z"
 };
 
 /**
