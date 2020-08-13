@@ -12702,7 +12702,7 @@ Sk.setupObjects = function (py3) {
         delete Sk.builtins["StandardError"];
         delete Sk.builtins["unicode"];
         delete Sk.builtins["basestring"];
-        delete Sk.builtin.str.decode;
+        delete Sk.builtin.str.prototype.decode;
         Sk.builtins["bytes"] = Sk.builtin.bytes;
         Sk.builtins["ascii"] = new Sk.builtin.func(Sk.builtin.ascii);
     } else {
@@ -12714,7 +12714,7 @@ Sk.setupObjects = function (py3) {
         Sk.builtins["StandardError"] = Sk.builtin.Exception;
         Sk.builtins["unicode"] = Sk.builtin.str;
         Sk.builtins["basestring"] = Sk.builtin.str;
-        Sk.builtin.str.decode = Sk.builtin.str.$py2decode;
+        Sk.builtin.str.prototype.decode = Sk.builtin.str.$py2decode;
         delete Sk.builtins["bytes"];
         delete Sk.builtins["ascii"];
     }
@@ -37177,8 +37177,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "79ec5171b3bcd4ab3bf377a652b2e4a7783001b6",
-    date: "2020-08-12T12:43:29.118Z"
+    githash: "bc5431895bc8786518621ae5284bb85b8d975c8f",
+    date: "2020-08-13T09:36:00.566Z"
 };
 
 /**
