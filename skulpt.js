@@ -23755,13 +23755,12 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
         topLevelModuleToReturn = topLevelModuleToReturn_;
 
         // if leaf is already in sys.modules, early out
-        try {
-            prev = Sk.sysmodules.mp$subscript(modname);
+        prev = Sk.sysmodules.mp$lookup(modname);
+        if (prev !== undefined) {
             // if we're a dotted module, return the top level, otherwise ourselves
             return topLevelModuleToReturn || prev;
-        } catch (x) {
-            // not in sys.modules, continue
         }
+        // not in sys.modules, continue
 
         return Sk.misceval.chain(undefined, function() {
             var codeAndPath, co, googClosure;
@@ -24042,11 +24041,7 @@ Sk.builtin.__import__ = function (name, globals, locals, fromlist, level) {
             relativeToPackageNames.length -= level-1;
             relativeToPackageName = relativeToPackageNames.join(".");
         }
-        try {
-            relativeToPackage = Sk.sysmodules.mp$subscript(relativeToPackageName);
-        } catch(e) {
-            relativeToPackageName = undefined;
-        }
+        relativeToPackage = Sk.sysmodules.mp$lookup(relativeToPackageName);
     }
 
     if (level > 0 && relativeToPackage === undefined) {
@@ -37177,8 +37172,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "bc5431895bc8786518621ae5284bb85b8d975c8f",
-    date: "2020-08-13T09:36:00.566Z"
+    githash: "44c2b3c1313aaed60707983c82e5e510869f9a71",
+    date: "2020-08-14T10:52:24.813Z"
 };
 
 /**
