@@ -19796,7 +19796,7 @@ Sk.configure = function (options) {
     Sk.inputfunTakesPrompt = options["inputfunTakesPrompt"] || false;
     Sk.asserts.assert(typeof Sk.inputfunTakesPrompt === "boolean");
 
-    Sk.retainGlobals = options["retainglobals"] || false;
+    Sk.retainGlobals = options["retainglobals"] || options["retainGlobals"] || false;
     Sk.asserts.assert(typeof Sk.retainGlobals === "boolean");
 
     Sk.debugging = options["debugging"] || false;
@@ -19923,11 +19923,16 @@ Sk.output = function (x) {
 };
 
 /*
- * Replacable function to load modules with (called via import, etc.)
+ * Replaceable function to load modules with (called via import, etc.)
  * todo; this should be an async api
  */
 Sk.read = function (x) {
-    throw "Sk.read has not been implemented";
+    if (Sk.builtinFiles === undefined) {
+        throw "skulpt-stdlib.js has not been loaded";
+    } else if (Sk.builtinFiles.files[x] === undefined) {
+        throw "File not found: '" + x + "'";
+    }
+    return Sk.builtinFiles.files[x];
 };
 
 /*
@@ -37256,8 +37261,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "443d1edbc31d0c5b14f394856420e2aca477eabd",
-    date: "2020-09-07T09:50:12.322Z"
+    githash: "d6abc5a38f4efe6d175c34c1e89ab4e6aadb72de",
+    date: "2020-09-07T10:20:24.799Z"
 };
 
 /**
