@@ -22663,6 +22663,25 @@ Sk.builtin.frozenset.prototype["$r"] = function () {
     }
 };
 
+Sk.builtin.frozenset.prototype.sk$asarray = function () {
+    return this.v.sk$asarray();
+};
+
+Sk.builtin.frozenset.prototype.tp$hash = function () {
+    // numbers taken from Cpython 2.7 hash function
+    let hash = 1927868237;
+    const entries = this.sk$asarray();
+    hash *= entries.length + 1;
+    for (let i = 0; i < entries.length; i++) {
+        const h = Sk.builtin.hash(entries[i]).v;
+        hash ^= (h ^ (h << 16) ^ 89869747) * 3644798167;
+    }
+    hash = hash * 69069 + 907133923;
+    hash = new Sk.builtin.int_(hash);
+    this.$savedHash_ = hash;
+    return hash;
+};
+
 Sk.builtin.frozenset.prototype.ob$eq = function (other) {
 
     if (this === other) {
@@ -31196,6 +31215,10 @@ Sk.builtin.set.prototype["$r"] = function () {
     }
 };
 
+Sk.builtin.set.prototype.sk$asarray = function () {
+    return this.v.sk$asarray();
+};
+
 Sk.builtin.set.prototype.ob$eq = function (other) {
 
     if (this === other) {
@@ -37261,8 +37284,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "4e731b1fd900a8ba3cc2c69a76478f7a8558fc43",
-    date: "2020-09-07T10:39:39.670Z"
+    githash: "1e9d4ea2e8a3b2d5d3df1843dd71fd952058f793",
+    date: "2020-09-07T10:42:58.801Z"
 };
 
 /**
