@@ -25872,10 +25872,8 @@ Sk.builtin.list.prototype.__contains__ = new Sk.builtin.func(function(self, item
  */
 
 Sk.builtin.list.prototype.list_subscript_ = function (index) {
-    var ret;
-    var i;
     if (Sk.misceval.isIndex(index)) {
-        i = Sk.misceval.asIndex(index);
+        let i = Sk.misceval.asIndex(index);
         if (typeof i !== "number") {
             throw new Sk.builtin.IndexError("cannot fit '" + Sk.abstr.typeName(index) + "' into an index-sized integer");
         }
@@ -25889,9 +25887,9 @@ Sk.builtin.list.prototype.list_subscript_ = function (index) {
             return this.v[i];
         }
     } else if (index instanceof Sk.builtin.slice) {
-        ret = [];
-        index.sssiter$(this, function (i, wrt) {
-            ret.push(wrt.v[i]);
+        const ret = [];
+        index.sssiter$(this.v.length, (i) => {
+            ret.push(this.v[i]);
         });
         return new Sk.builtin.list(ret, false);
     }
@@ -25900,12 +25898,8 @@ Sk.builtin.list.prototype.list_subscript_ = function (index) {
 };
 
 Sk.builtin.list.prototype.list_ass_subscript_ = function (index, value) {
-    var i;
-    var j;
-    var tosub;
-    var indices;
     if (Sk.misceval.isIndex(index)) {
-        i = Sk.misceval.asIndex(index);
+        let i = Sk.misceval.asIndex(index);
         if (typeof i !== "number") {
             throw new Sk.builtin.IndexError("cannot fit '" + Sk.abstr.typeName(index) + "' into an index-sized integer");
         }
@@ -25917,19 +25911,19 @@ Sk.builtin.list.prototype.list_ass_subscript_ = function (index, value) {
             return;
         }
     } else if (index instanceof Sk.builtin.slice) {
-        indices = index.slice_indices_(this.v.length);
+        const indices = index.slice_indices_(this.v.length);
         if (indices[2] === 1) {
             this.list_ass_slice_(indices[0], indices[1], value);
         } else {
-            tosub = [];
-            index.sssiter$(this, function (i, wrt) {
+            const tosub = [];
+            index.sssiter$(this.v.length, (i) => {
                 tosub.push(i);
             });
-            j = 0;
+            let j = 0;
             if (tosub.length !== value.v.length) {
                 throw new Sk.builtin.ValueError("attempt to assign sequence of size " + value.v.length + " to extended slice of size " + tosub.length);
             }
-            for (i = 0; i < tosub.length; ++i) {
+            for (let i = 0; i < tosub.length; ++i) {
                 this.v.splice(tosub[i], 1, value.v[j]);
                 j += 1;
             }
@@ -25941,13 +25935,8 @@ Sk.builtin.list.prototype.list_ass_subscript_ = function (index, value) {
 };
 
 Sk.builtin.list.prototype.list_del_subscript_ = function (index) {
-    var offdir;
-    var dec;
-    var self;
-    var indices;
-    var i;
     if (Sk.misceval.isIndex(index)) {
-        i = Sk.misceval.asIndex(index);
+        let i = Sk.misceval.asIndex(index);
         if (i !== undefined) {
             if (i < 0) {
                 i = this.v.length + i;
@@ -25956,15 +25945,15 @@ Sk.builtin.list.prototype.list_del_subscript_ = function (index) {
             return;
         }
     } else if (index instanceof Sk.builtin.slice) {
-        indices = index.slice_indices_(this.v.length);
+        const indices = index.slice_indices_(this.v.length);
         if (indices[2] === 1) {
             this.list_del_slice_(indices[0], indices[1]);
         } else {
-            self = this;
-            dec = 0; // offset of removal for next index (because we'll have removed, but the iterator is giving orig indices)
-            offdir = indices[2] > 0 ? 1 : 0;
-            index.sssiter$(this, function (i, wrt) {
-                self.v.splice(i - dec, 1);
+            const lst = this.v;
+            let dec = 0; // offset of removal for next index (because we'll have removed, but the iterator is giving orig indices)
+            const offdir = indices[2] > 0 ? 1 : 0;
+            index.sssiter$(lst.length, (i) => {
+                lst.splice(i - dec, 1);
                 dec += offdir;
             });
         }
@@ -31824,23 +31813,24 @@ Sk.builtin.slice.prototype["indices"] = new Sk.builtin.func(function (self, leng
     ]);
 });
 
-Sk.builtin.slice.prototype.sssiter$ = function (wrt, f) {
-    var i;
-    var wrtv = Sk.builtin.asnum$(wrt);
-    var sss = this.slice_indices_(typeof wrtv === "number" ? wrtv : wrt.v.length);
-    if (sss[2] > 0) {
-        for (i = sss[0]; i < sss[1]; i += sss[2]) {
-            if (f(i, wrtv) === false) {
-                return;
-            }
-        }	//	wrt or wrtv? RNL
+/**
+ * used by objects like str, list, tuple that can return a slice
+ * @param {number} len
+ * @param {Function} f
+ */
+Sk.builtin.slice.prototype.sssiter$ = function (len, f) {
+    const sss = this.slice_indices_(len);
+    const start = sss[0];
+    const stop = sss[1];
+    const step = sss[2];
+    if (step > 0) {
+        for (let i = start; i < stop; i += step) {
+            f(i);
+        }
     } else {
-        for (i = sss[0]; i > sss[1]; i += sss[2]) {
-            if (f(i, wrtv) === false) {
-                return;
-            }
-        }	//	wrt or wrtv? RNL
-
+        for (let i = start; i > stop; i += step) {
+            f(i);
+        }
     }
 };
 
@@ -36177,8 +36167,7 @@ Sk.builtin.tuple.prototype["$r"] = function () {
 };
 
 Sk.builtin.tuple.prototype.mp$subscript = function (index) {
-    var ret;
-    var i;
+    let i;
     if (Sk.misceval.isIndex(index)) {
         i = Sk.misceval.asIndex(index);
         if (typeof i !== "number") {
@@ -36194,9 +36183,9 @@ Sk.builtin.tuple.prototype.mp$subscript = function (index) {
             return this.v[i];
         }
     } else if (index instanceof Sk.builtin.slice) {
-        ret = [];
-        index.sssiter$(this, function (i, wrt) {
-            ret.push(wrt.v[i]);
+        const ret = [];
+        index.sssiter$(this.v.length, (i) => {
+            ret.push(this.v[i]);
         });
         return new Sk.builtin.tuple(ret);
     }
@@ -37314,8 +37303,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "818b8599c76091c16f648809ca99ba251edd514c",
-    date: "2020-09-07T10:48:11.135Z"
+    githash: "f5eb3338aa68147bdec68112a09e88a1cf9fbecb",
+    date: "2020-09-07T10:52:30.069Z"
 };
 
 /**
