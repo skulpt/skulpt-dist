@@ -12793,7 +12793,18 @@ Sk.builtin.bytes = function (source, encoding, errors) {
         Sk.asserts.assert(source.every((x) => x >= 0 && x < 256), "bad internal call to bytes with array");
         this.v = Uint8ArrayFromArray(source);
     } else if (typeof source === "string") {
-        this.v = Encoder.encode(source);
+        // fast path must be binary string https://developer.mozilla.org/en-US/docs/Web/API/DOMString/Binary
+        // i.e. the reverse of this.$jsstr();
+        let cc;
+        const arr = [];
+        for (let i in source) {
+            cc = source.charCodeAt(i);
+            if (cc > 0xff) {
+                throw new Sk.builtin.UnicodeDecodeError("invalid string (possibly contains a unicode character)");
+            }
+            arr.push(cc);
+        }
+        this.v = Uint8ArrayFromArray(arr);
     } else if (typeof source === "number") {
         this.v = new Uint8Array(source);
     } else {
@@ -12810,6 +12821,8 @@ Sk.builtin.bytes = function (source, encoding, errors) {
 Sk.abstr.setUpInheritance("bytes", Sk.builtin.bytes, Sk.builtin.seqtype);
 
 Sk.builtin.bytes.prototype.__class__ = Sk.builtin.bytes;
+
+Sk.builtin.bytes.prototype.sk$builtinBase = Sk.builtin.bytes;
 
 function strEncode(pyStr, encoding, errors) {
     const source = pyStr.$jsstr();
@@ -12936,13 +12949,16 @@ function makehexform(num) {
 };
 
 Sk.builtin.bytes.prototype.$jsstr = function () {
-    // returns binary string - not bidirectional for non ascii characters - use with caution
-    // i.e. new Sk.builtin.bytes(x.$jsstr()).v  may be different to x.v;
+    // returns binary string - https://developer.mozilla.org/en-US/docs/Web/API/DOMString/Binary
     let ret = "";
     for (let i = 0; i < this.v.byteLength; i++) {
         ret += String.fromCharCode(this.v[i]);
     }
     return ret;
+};
+
+Sk.builtin.bytes.prototype.tp$hash = function () {
+    return Sk.builtin.hash(new Sk.builtin.str(this.$jsstr()));
 };
 
 Sk.builtin.bytes.prototype["$r"] = function () {
@@ -13132,6 +13148,8 @@ Sk.builtin.bytes.prototype.sq$contains = function (item) {
 
     return false;
 };
+
+Sk.builtin.bytes.prototype.nb$remainder = Sk.builtin.str.prototype.nb$remainder;
 
 Sk.builtin.bytes.$decode = function (self, encoding, errors) {
     var i;
@@ -14459,7 +14477,6 @@ Sk.builtin.bytes_iter_.prototype.next$ = function (self) {
     }
     return ret;
 };
-
 
 Sk.exportSymbol("Sk.builtin.bytes", Sk.builtin.bytes);
 
@@ -32010,6 +32027,8 @@ Sk.exportSymbol("Sk.builtin.str", Sk.builtin.str);
 
 Sk.abstr.setUpInheritance("str", Sk.builtin.str, Sk.builtin.seqtype);
 
+// a flag for instances of subclasses of str
+Sk.builtin.str.prototype.sk$builtinBase = Sk.builtin.str;
 
 Sk.builtin.str.prototype.$hasAstralCodePoints = function() {
     // If a string has astral code points, we have to work
@@ -32972,18 +32991,7 @@ Sk.builtin.str.prototype["encode"] = new Sk.builtin.func(function (self, encodin
 
 Sk.builtin.str.$py2decode = new Sk.builtin.func(function (self, encoding, errors) {
     Sk.builtin.pyCheckArgsLen("decode", arguments.length, 1, 3);
-    let bytesStrAsArray = [];
-    let cc;
-    const str = self.v;
-    for (let i in str) {
-        cc = str.charCodeAt(i);
-        if (cc <= 0xff) {
-            bytesStrAsArray.push(cc);
-        } else {
-            throw new Sk.builtin.UnicodeDecodeError("invalid string (possibly contains a unicode character)");
-        }
-    }
-    const pyBytes = new Sk.builtin.bytes(bytesStrAsArray);
+    const pyBytes = new Sk.builtin.bytes(self.$jsstr());
     return Sk.builtin.bytes.$decode(pyBytes, encoding, errors);
 });
 
@@ -33006,15 +33014,17 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
     var index;
     var regex;
     var val;
+    const strBytesConstructor = this.sk$builtinBase;
+    // distinguish between bytes and str
 
-    if (rhs.constructor !== Sk.builtin.tuple && (rhs.mp$subscript === undefined || rhs.constructor === Sk.builtin.str)) {
+    if (rhs.constructor !== Sk.builtin.tuple && (rhs.mp$subscript === undefined || rhs.constructor === strBytesConstructor)) {
         rhs = new Sk.builtin.tuple([rhs]);
     }
     // general approach is to use a regex that matches the format above, and
     // do an re.sub with a function as replacement to make the subs.
 
     //           1 2222222222222222   33333333   444444444   5555555555555  66666  777777777777777777
-    regex = /%(\([a-zA-Z0-9]+\))?([#0 +\-]+)?(\*|[0-9]+)?(\.(\*|[0-9]+))?[hlL]?([diouxXeEfFgGcrs%])/g;
+    regex = /%(\([a-zA-Z0-9]+\))?([#0 +\-]+)?(\*|[0-9]+)?(\.(\*|[0-9]+))?[hlL]?([diouxXeEfFgGcrsb%])/g;
     index = 0;
     replFunc = function (substring, mappingKey, conversionFlags, fieldWidth, precision, precbody, conversionType) {
         var result;
@@ -33167,7 +33177,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
         } else if (rhs.mp$subscript !== undefined && mappingKey !== undefined) {
             mk = mappingKey.substring(1, mappingKey.length - 1);
             //print("mk",mk);
-            value = rhs.mp$subscript(new Sk.builtin.str(mk));
+            value = rhs.mp$subscript(new strBytesConstructor(mk));
         } else if (rhs.constructor === Sk.builtin.dict || rhs.constructor === Sk.builtin.list) {
             // new case where only one argument is provided
             value = rhs;
@@ -33258,7 +33268,7 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                 return r.v.substr(0, precision);
             }
             return r.v;
-        } else if (conversionType === "s") {
+        } else if (conversionType === "s" && strBytesConstructor === Sk.builtin.str) {
             r = new Sk.builtin.str(value);
             r = r.$jsstr();
             if (precision) {
@@ -33268,12 +33278,32 @@ Sk.builtin.str.prototype.nb$remainder = function (rhs) {
                 r = handleWidth([" ", r]);
             }
             return r;
+        } else if (conversionType === "b" || conversionType === "s") {
+            if (strBytesConstructor === Sk.builtin.str) {
+                throw new Sk.builtin.ValueError("unsupported format character 'b'");
+            }
+            let func;
+            if (!(value instanceof Sk.builtin.bytes) && (func = Sk.abstr.lookupSpecial(value, Sk.builtin.str.$bytes)) === undefined) {
+                throw new Sk.builtin.TypeError("%b requires a bytes-like object, or an object that implements __bytes__, not '" + Sk.abstr.typeName(value) + "'");
+            }
+            if (func !== undefined) {
+                value = new Sk.builtin.bytes(value);
+                // raises the appropriate error message if __bytes__ does not return bytes
+            }
+            r = value.$jsstr();
+            if (precision) {
+                return r.substr(0, precision);
+            }
+            if (fieldWidth) {
+                r = handleWidth([" ", r]);
+            }
+            return r;
         } else if (conversionType === "%") {
             return "%";
         }
     };
-    ret = this.v.replace(regex, replFunc);
-    return new Sk.builtin.str(ret);
+    ret = this.$jsstr().replace(regex, replFunc);
+    return new strBytesConstructor(ret);
 };
 
 /**
@@ -37284,8 +37314,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "1e9d4ea2e8a3b2d5d3df1843dd71fd952058f793",
-    date: "2020-09-07T10:42:58.801Z"
+    githash: "818b8599c76091c16f648809ca99ba251edd514c",
+    date: "2020-09-07T10:48:11.135Z"
 };
 
 /**
