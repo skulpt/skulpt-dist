@@ -27609,14 +27609,10 @@ Sk.exportSymbol("Sk.misceval.arrayFromArguments", Sk.misceval.arrayFromArguments
 Sk.misceval.swappedOp_ = {
     "Eq"   : "Eq",
     "NotEq": "NotEq",
-    "Lt"   : "GtE",
-    "LtE"  : "Gt",
-    "Gt"   : "LtE",
-    "GtE"  : "Lt",
-    "Is"   : "IsNot",
-    "IsNot": "Is",
-    "In_"  : "NotIn",
-    "NotIn": "In_"
+    "Lt"   : "Gt",
+    "LtE"  : "GtE",
+    "Gt"   : "Lt",
+    "GtE"  : "LtE",
 };
 
 Sk.misceval.opSymbols = {
@@ -37260,8 +37256,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "6578a7d88340542087ffae1cc4dd355873a804b9",
-    date: "2020-09-07T09:42:40.677Z"
+    githash: "443d1edbc31d0c5b14f394856420e2aca477eabd",
+    date: "2020-09-07T09:50:12.322Z"
 };
 
 /**
