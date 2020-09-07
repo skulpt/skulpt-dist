@@ -21023,7 +21023,7 @@ Sk.builtin.file.$readline = function (self, size, prompt) {
 
         x = Sk.inputfun(lprompt);
 
-        if (x instanceof Promise) {
+        if (x instanceof Promise || (x && typeof x.then === "function")) {
             susp = new Sk.misceval.Suspension();
 
             susp.resume = function() {
@@ -37261,8 +37261,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "779cf3804572a1251b32a6f8b6746ea03d4eda0c",
-    date: "2020-09-07T10:35:48.075Z"
+    githash: "4e731b1fd900a8ba3cc2c69a76478f7a8558fc43",
+    date: "2020-09-07T10:39:39.670Z"
 };
 
 /**
