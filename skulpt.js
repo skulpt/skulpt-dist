@@ -18862,7 +18862,6 @@ Sk.builtin.dict.prototype.mp$lookup = function (key) {
 
 Sk.builtin.dict.prototype.mp$subscript = function (key) {
     Sk.builtin.pyCheckArgsLen("[]", arguments.length, 1, 2, false, false);
-    var s;
     var res = this.mp$lookup(key);
 
     if (res !== undefined) {
@@ -18870,8 +18869,7 @@ Sk.builtin.dict.prototype.mp$subscript = function (key) {
         return res;
     } else {
         // Not found in dictionary
-        s = new Sk.builtin.str(key);
-        throw new Sk.builtin.KeyError(s.v);
+        throw new Sk.builtin.KeyError(key);
     }
 };
 
@@ -18958,7 +18956,7 @@ Sk.builtin.dict.prototype.pop$bucket_item = function (key, hash_value) {
 Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
     Sk.builtin.pyCheckArgsLen("del", arguments.length, 1, 1, false, false);
     const hash = kf(key);
-    let item, s;
+    let item;
     if (typeof hash === "string") {
         // key is a string so remove from entries directly
         item = this.entries[hash];
@@ -18972,8 +18970,7 @@ Sk.builtin.dict.prototype.mp$del_subscript = function (key) {
         return;
     }
     // Not found in dictionary
-    s = new Sk.builtin.str(key);
-    throw new Sk.builtin.KeyError(s.v);
+    throw new Sk.builtin.KeyError(key);
 };
 
 Sk.builtin.dict.prototype["$r"] = function () {
@@ -19023,7 +19020,7 @@ Sk.builtin.dict.prototype["get"] = new Sk.builtin.func(function (self, k, d) {
 Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
     Sk.builtin.pyCheckArgsLen("pop()", arguments.length, 1, 2, false, true);
     const hash = kf(key);
-    let item, value, s;
+    let item, value;
     if (typeof hash === "string") {
         item = self.entries[hash];
         if (item !== undefined) {
@@ -19046,8 +19043,7 @@ Sk.builtin.dict.prototype["pop"] = new Sk.builtin.func(function (self, key, d) {
         return d;
     }
 
-    s = new Sk.builtin.str(key);
-    throw new Sk.builtin.KeyError(s.v);
+    throw new Sk.builtin.KeyError(key);
 });
 
 Sk.builtin.dict.prototype.haskey$ = function (self, k) {
@@ -20279,6 +20275,23 @@ Sk.abstr.setUpInheritance("IndexError", Sk.builtin.IndexError, Sk.builtin.Except
  * @extends Sk.builtin.Exception
  * @param {...*} args
  */
+Sk.builtin.LookupError = function (args) {
+    var o;
+    if (!(this instanceof Sk.builtin.LookupError)) {
+        o = Object.create(Sk.builtin.LookupError.prototype);
+        o.constructor.apply(o, arguments);
+        return o;
+    }
+    Sk.builtin.Exception.apply(this, arguments);
+};
+Sk.abstr.setUpInheritance("LookupError", Sk.builtin.LookupError, Sk.builtin.Exception);
+Sk.exportSymbol("Sk.builtin.LookupError", Sk.builtin.LookupError);
+
+/**
+ * @constructor
+ * @extends Sk.builtin.Exception
+ * @param {...*} args
+ */
 Sk.builtin.KeyError = function (args) {
     var o;
     if (!(this instanceof Sk.builtin.KeyError)) {
@@ -20286,9 +20299,9 @@ Sk.builtin.KeyError = function (args) {
         o.constructor.apply(o, arguments);
         return o;
     }
-    Sk.builtin.Exception.apply(this, arguments);
+    Sk.builtin.LookupError.apply(this, arguments);
 };
-Sk.abstr.setUpInheritance("KeyError", Sk.builtin.KeyError, Sk.builtin.Exception);
+Sk.abstr.setUpInheritance("KeyError", Sk.builtin.KeyError, Sk.builtin.LookupError);
 
 /**
  * @constructor
@@ -20620,22 +20633,6 @@ Sk.builtin.UnicodeEncodeError = function (args) {
 Sk.abstr.setUpInheritance("UnicodeEncodeError", Sk.builtin.UnicodeEncodeError, Sk.builtin.Exception);
 Sk.exportSymbol("Sk.builtin.UnicodeEncodeError", Sk.builtin.UnicodeEncodeError);
 
-/**
- * @constructor
- * @extends Sk.builtin.Exception
- * @param {...*} args
- */
-Sk.builtin.LookupError = function (args) {
-    var o;
-    if (!(this instanceof Sk.builtin.LookupError)) {
-        o = Object.create(Sk.builtin.LookupError.prototype);
-        o.constructor.apply(o, arguments);
-        return o;
-    }
-    Sk.builtin.Exception.apply(this, arguments);
-};
-Sk.abstr.setUpInheritance("LookupError", Sk.builtin.LookupError, Sk.builtin.Exception);
-Sk.exportSymbol("Sk.builtin.LookupError", Sk.builtin.LookupError);
 
 /**
  * @constructor
@@ -37264,8 +37261,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "353152eb180fa6ab828a9e8bb97c11e075a13ca1",
-    date: "2020-09-07T10:33:14.185Z"
+    githash: "779cf3804572a1251b32a6f8b6746ea03d4eda0c",
+    date: "2020-09-07T10:35:48.075Z"
 };
 
 /**
