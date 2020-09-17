@@ -8269,12 +8269,27 @@ function parsestrplus (c, n) {
     }
 }
 
+const invalidSyntax = /_[eE]|[eE]_|\._|j_/;
+const invalidDecimalLiteral = /_\.|[+-]_|^0_\D|_j/;
+const validUnderscores = /_(?=[^_])/g;
 function parsenumber (c, s, lineno) {
     var neg;
     var val;
     var tmp;
     var end = s.charAt(s.length - 1);
-
+    
+    if (s.indexOf("_") !== -1) {
+        if (invalidSyntax.test(s)) {
+            throw new Sk.builtin.SyntaxError("invalid syntax", c.c_filename, lineno);
+        }
+    
+        if (invalidDecimalLiteral.test(s)) {
+            throw new Sk.builtin.SyntaxError("invalid decimal literal", c.c_filename, lineno);
+        }
+        
+        s = s.replace(validUnderscores, "");
+    }
+    
     // call internal complex type constructor for complex strings
     if (end === "j" || end === "J") {
         return Sk.builtin.complex.complex_subtype_from_string(s);
@@ -17556,6 +17571,8 @@ Sk.builtin.complex.check_number_or_complex = function (other) {
     return other;
 };
 
+const invalidUnderscores = /_[eE]|[eE]_|\._|_\.|[+-]_|_j|j_/;
+const validUnderscores = /_(?=[^_])/g;
 /**
     Parses a string repr of a complex number
  */
@@ -17583,7 +17600,7 @@ Sk.builtin.complex.complex_subtype_from_string = function (val) {
     if (val.indexOf("\0") !== -1 || val.length === 0 || val === "") {
         throw new Sk.builtin.ValueError("complex() arg is a malformed string");
     }
-
+    
     // transform to unicode
     // ToDo: do we need this?
     index = 0; // first char
@@ -17605,6 +17622,14 @@ Sk.builtin.complex.complex_subtype_from_string = function (val) {
         while (val[index] === " ") {
             index++;
         }
+    }
+
+    if (val.indexOf("_") !== -1) {
+        if (invalidUnderscores.test(val)) {
+            throw new Sk.builtin.ValueError("could not convert string to complex: '" + val + "'");
+        }
+
+        val = val.charAt(0) + val.substring(1).replace(validUnderscores, "");
     }
 
     /* a valid complex string usually takes one of the three forms:
@@ -21273,16 +21298,28 @@ Sk.builtin.float_ = function (x) {
 
 Sk.abstr.setUpInheritance("float", Sk.builtin.float_, Sk.builtin.numtype);
 
+const invalidUnderscores = /_[eE]|[eE]_|\._|_\.|[+-]_|__/;
+const validUnderscores = /_(?=[^_])/g;
 function _str_to_float(str) {
     let ret;
+    let tmp = str;
+    
+    if (str.indexOf("_") !== -1) {
+        if (invalidUnderscores.test(str)) {
+            throw new Sk.builtin.ValueError("could not convert string to float: '" + str + "'");
+        }
+    
+        tmp = str.charAt(0) + str.substring(1).replace(validUnderscores, "");
+    }
+    
     if (str.match(/^-inf$/i)) {
         ret = -Infinity;
     } else if (str.match(/^[+]?inf$/i)) {
         ret = Infinity;
     } else if (str.match(/^[-+]?nan$/i)) {
         ret = NaN;
-    } else if (!isNaN(str)) {
-        ret = parseFloat(str);
+    } else if (!isNaN(tmp)) {
+        ret = parseFloat(tmp);
     } else {
         throw new Sk.builtin.ValueError("float: Argument: " + str + " is not number");
     }
@@ -25313,6 +25350,8 @@ Sk.builtin.int_.prototype.str$ = function (base, sign) {
     return tmp;
 };
 
+
+const validUnderscores = /_(?=[^_])/g;
 /**
  * Takes a JavaScript string and returns a number using the parser and negater
  *  functions (for int/long right now)
@@ -25390,6 +25429,20 @@ Sk.str2number = function (s, base, parser, negater, fname) {
 
     if (base === 0) {
         base = 10;
+    }
+
+    if (s.indexOf("_") !== -1) {
+        if (s.indexOf("__") !== -1) {
+            throw new Sk.builtin.ValueError("invalid literal for " + fname + "() with base " + base + ": '" + origs + "'");
+        }
+
+        if (base !== 10) {
+            s = s.replace(validUnderscores, "");
+        } else {
+            // avoid replacing initial `_` if present
+            // workaround since closure-compiler errors on lookbehinds
+            s = s.charAt(0) + s.substring(1).replace(validUnderscores, "");
+        }
     }
 
     if (s.length === 0) {
@@ -37275,8 +37328,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "f81be786f7c32d3d40ff991559f02ee6a0e30ae7",
-    date: "2020-09-08T11:52:46.982Z"
+    githash: "db808b6ad459f696067301dbd5fad1d4bc519179",
+    date: "2020-09-17T11:20:08.014Z"
 };
 
 /**
