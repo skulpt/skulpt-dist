@@ -5173,31 +5173,75 @@ Sk.abstr.sequenceSetSlice = function (seq, i1, i2, x) {
     }
 };
 
-// seq - Python object to unpack
-// n   - JavaScript number of items to unpack
-Sk.abstr.sequenceUnpack = function (seq, n) {
-    var res = [];
-    var it, i;
-
+/**
+ * 
+ * @param {*} seq the iterable to unpack
+ * @param {*} breakIdx either the starred index or the number of elements to unpack if no star
+ * @param {*} numvals the total number of un-starred indices
+ * @param {*} hasStar is there a starred index
+ * 
+ * this function is used in compile code to unpack a sequence to an assignment statement
+ * e.g.
+ * a, b, c = 1, 2, 3 # seq is the tuple 1,2,3
+ * // Sk.abstr.sequenceUncpack(seq, 3, 3, false)
+ * // return [int_(1), int_(2), int_(3)]
+ * 
+ * 
+ * a, *b, c = 1,2,3,4 
+ * // Sk.abstr.sequenceUncpack(seq, 1, 2, true)
+ * // return [int_(1), list(int_(2), int_(3)), int_(4)]
+ * 
+ */
+Sk.abstr.sequenceUnpack = function (seq, breakIdx, numvals, hasStar) {
     if (!Sk.builtin.checkIterable(seq)) {
-        throw new Sk.builtin.TypeError("'" + Sk.abstr.typeName(seq) + "' object is not iterable");
+        throw new Sk.builtin.TypeError("cannot unpack non-iterable " + Sk.abstr.typeName(seq) + " object");
+    }
+    const it = Sk.abstr.iter(seq);
+    const res = [];
+    let i = 0;
+    let upToStar;
+    if (breakIdx > 0) {
+        // iterator up to but not including the breakIdx
+        upToStar = Sk.misceval.iterFor(it, (nxt) => {
+            res.push(nxt);
+            if (++i === breakIdx) {
+                return new Sk.misceval.Break();
+            }
+        });
     }
 
-    for (it = Sk.abstr.iter(seq), i = it.tp$iternext();
-        (i !== undefined) && (res.length < n);
-        i = it.tp$iternext()) {
-        res.push(i);
-    }
-
-    if (res.length < n) {
-        throw new Sk.builtin.ValueError("need more than " + res.length + " values to unpack");
-    }
-    if (i !== undefined) {
-        throw new Sk.builtin.ValueError("too many values to unpack");
-    }
-
-    // Return Javascript array of items
-    return res;
+    return Sk.misceval.chain(upToStar, () => {
+        if (res.length < breakIdx) {
+            throw new Sk.builtin.ValueError("not enough values to unpack (expected at least " + numvals + ", got " + res.length + ")");
+        }
+        if (!hasStar) {
+            // check we've consumed the iterator
+            return Sk.misceval.chain(it.tp$iternext(true), (nxt) => {
+                if (nxt !== undefined) {
+                    throw new Sk.builtin.ValueError("too many values to unpack (expected " + breakIdx + ")");
+                }
+                return res;
+            });
+        }
+        const starred = [];
+        return Sk.misceval.chain(
+            Sk.misceval.iterFor(it, (nxt) => {
+                starred.push(nxt);
+            }),
+            () => {
+                const starred_end = starred.length + breakIdx - numvals;
+                if (starred_end < 0) {
+                    throw new Sk.builtin.ValueError(
+                        "not enough values to unpack (expected at least " + numvals + ", got " + (numvals + starred_end) + ")"
+                    );
+                }
+                res.push(new Sk.builtin.list(starred.slice(0, starred_end)));
+                res.push(...starred.slice(starred_end));
+                // Return Javascript array of items
+                return res;
+            }
+        );
+    });
 };
 
 // Unpack mapping into a JS array of alternating keys/values, possibly suspending
@@ -5755,6 +5799,10 @@ function setContext (c, e, ctx, n) {
                 forbiddenCheck(c, n, e.attr, n.lineno);
             }
             e.ctx = ctx;
+            break;
+        case Sk.astnodes.Starred:
+            e.ctx = ctx;
+            setContext(c, e.value, ctx, n);
             break;
         case Sk.astnodes.Subscript:
             e.ctx = ctx;
@@ -14832,21 +14880,41 @@ Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
     Sk.asserts.assert(tuporlist === "tuple" || tuporlist === "list" || tuporlist === "set");
 
     let hasStars = false;
-    for (let elt of e.elts) {
-        if (elt.constructor === Sk.astnodes.Starred) { hasStars = true; break; }
+    let starIdx;
+    for (i = 0; i < e.elts.length; i++) {
+        if (e.elts[i].constructor === Sk.astnodes.Starred) {
+            hasStars = true;
+            starIdx = i;
+            break;
+        }
     }
 
     if (e.ctx === Sk.astnodes.Store) {
         if (hasStars) {
-            // TODO support this in Python 3 mode
-            throw new Sk.builtin.SyntaxError("Tuple unpacking with stars is not supported");
+            if (!Sk.__future__.python3) {
+                throw new Sk.builtin.SyntaxError("assignment unpacking with stars is not supported in Python 2", this.filename, e.lineno);
+            }
+            for (i = starIdx + 1; i < e.elts.length; i++) {
+                if (e.elts[i].constructor === Sk.astnodes.Starred) {
+                    throw new Sk.builtin.SyntaxError("multiple starred expressions in assignment", this.filename, e.lineno);
+                }
+            }
         }
-        items = this._gr("items", "Sk.abstr.sequenceUnpack(" + data + "," + e.elts.length + ")");
+        const breakIdx = hasStars ? starIdx : e.elts.length;
+        const numvals = hasStars ? e.elts.length - 1 : breakIdx;
+        out("$ret = Sk.abstr.sequenceUnpack(" + data + "," + breakIdx + "," + numvals + ", " + hasStars + ");");
+        this._checkSuspension();
+        items = this._gr("items", "$ret");
+        
         for (i = 0; i < e.elts.length; ++i) {
-            this.vexpr(e.elts[i], items + "[" + i + "]");
+            if (i === starIdx) {
+                this.vexpr(e.elts[i].value, items + "[" + i + "]");
+            } else {
+                this.vexpr(e.elts[i], items + "[" + i + "]");
+            }
         }
-    }
-    else if (e.ctx === Sk.astnodes.Load || tuporlist === "set") { //because set's can't be assigned to.
+    } else if (e.ctx === Sk.astnodes.Load || tuporlist === "set") {
+        //because set's can't be assigned to.
 
         if (hasStars) {
             if (!Sk.__future__.python3) {
@@ -15424,7 +15492,14 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
         case Sk.astnodes.Set:
             return this.ctuplelistorset(e, data, 'set');
         case Sk.astnodes.Starred:
-            break;
+            switch (e.ctx) {
+                case Sk.astnodes.Store:
+                    /* In all legitimate cases, the Starred node was already replaced
+                     * by compiler_list/compiler_tuple. XXX: is that okay? */
+                    throw new Sk.builtin.SyntaxError("starred assignment target must be in a list or tuple", this.filename, e.lineno);
+                default:
+                    throw new Sk.builtin.SyntaxError("can't use starred expression here", this.filename, e.lineno);
+            }
         case Sk.astnodes.JoinedStr:
             return this.cjoinedstr(e);
         case Sk.astnodes.FormattedValue:
@@ -37328,8 +37403,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "57450ede5f07d9992305b109347ebae222b604ca",
-    date: "2020-09-17T11:45:46.534Z"
+    githash: "4b86a6f1f3cf684f7e5ca17042fc5d6bd302df60",
+    date: "2020-09-17T16:10:29.010Z"
 };
 
 /**
