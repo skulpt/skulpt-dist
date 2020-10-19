@@ -19992,6 +19992,7 @@ Sk.configure = function (options) {
     Sk.setupDunderMethods(Sk.__future__.python3);
     setupDictIterators(Sk.__future__.python3);
     Sk.setupObjects(Sk.__future__.python3);
+    Sk.token.setupTokens(Sk.__future__.python3);
 };
 
 Sk.exportSymbol("Sk.configure", Sk.configure);
@@ -35634,53 +35635,54 @@ var tokens = {
 // #--end constants--
 
 var EXACT_TOKEN_TYPES = {
-    "!=": tokens.NOTEQUAL,
-    "%": tokens.PERCENT,
-    "%=": tokens.PERCENTEQUAL,
-    "&": tokens.AMPER,
-    "&=": tokens.AMPEREQUAL,
-    "(": tokens.LPAR,
-    ")": tokens.RPAR,
-    "*": tokens.STAR,
-    "**": tokens.DOUBLESTAR,
-    "**=": tokens.DOUBLESTAREQUAL,
-    "*=": tokens.STAREQUAL,
-    "+": tokens.PLUS,
-    "+=": tokens.PLUSEQUAL,
-    ",": tokens.COMMA,
-    "-": tokens.MINUS,
-    "-=": tokens.MINEQUAL,
-    "->": tokens.RARROW,
-    ".": tokens.DOT,
-    "...": tokens.ELLIPSIS,
-    "/": tokens.SLASH,
-    "//": tokens.DOUBLESLASH,
-    "//=": tokens.DOUBLESLASHEQUAL,
-    "/=": tokens.SLASHEQUAL,
-    ":": tokens.COLON,
-    ":=": tokens.COLONEQUAL,
-    ";": tokens.SEMI,
-    "<": tokens.LESS,
-    "<<": tokens.LEFTSHIFT,
-    "<<=": tokens.LEFTSHIFTEQUAL,
-    "<=": tokens.LESSEQUAL,
-    "=": tokens.EQUAL,
-    "==": tokens.EQEQUAL,
-    ">": tokens.GREATER,
-    ">=": tokens.GREATEREQUAL,
-    ">>": tokens.RIGHTSHIFT,
-    ">>=": tokens.RIGHTSHIFTEQUAL,
-    "@": tokens.AT,
-    "@=": tokens.ATEQUAL,
-    "[": tokens.LSQB,
-    "]": tokens.RSQB,
-    "^": tokens.CIRCUMFLEX,
-    "^=": tokens.CIRCUMFLEXEQUAL,
-    "{": tokens.LBRACE,
-    "|": tokens.VBAR,
-    "|=": tokens.VBAREQUAL,
-    "}": tokens.RBRACE,
-    "~": tokens.TILDE,
+    // "<>": tokens.T_NOTEQUAL, Only in py2
+    "!=": tokens.T_NOTEQUAL,
+    "%": tokens.T_PERCENT,
+    "%=": tokens.T_PERCENTEQUAL,
+    "&": tokens.T_AMPER,
+    "&=": tokens.T_AMPEREQUAL,
+    "(": tokens.T_LPAR,
+    ")": tokens.T_RPAR,
+    "*": tokens.T_STAR,
+    "**": tokens.T_DOUBLESTAR,
+    "**=": tokens.T_DOUBLESTAREQUAL,
+    "*=": tokens.T_STAREQUAL,
+    "+": tokens.T_PLUS,
+    "+=": tokens.T_PLUSEQUAL,
+    ",": tokens.T_COMMA,
+    "-": tokens.T_MINUS,
+    "-=": tokens.T_MINEQUAL,
+    "->": tokens.T_RARROW,
+    ".": tokens.T_DOT,
+    "...": tokens.T_ELLIPSIS,
+    "/": tokens.T_SLASH,
+    "//": tokens.T_DOUBLESLASH,
+    "//=": tokens.T_DOUBLESLASHEQUAL,
+    "/=": tokens.T_SLASHEQUAL,
+    ":": tokens.T_COLON,
+    // ":=": tokens.T_COLONEQUAL, // currently not listed in tokens
+    ";": tokens.T_SEMI,
+    "<": tokens.T_LESS,
+    "<<": tokens.T_LEFTSHIFT,
+    "<<=": tokens.T_LEFTSHIFTEQUAL,
+    "<=": tokens.T_LESSEQUAL,
+    "=": tokens.T_EQUAL,
+    "==": tokens.T_EQEQUAL,
+    ">": tokens.T_GREATER,
+    ">=": tokens.T_GREATEREQUAL,
+    ">>": tokens.T_RIGHTSHIFT,
+    ">>=": tokens.T_RIGHTSHIFTEQUAL,
+    "@": tokens.T_AT,
+    "@=": tokens.T_ATEQUAL,
+    "[": tokens.T_LSQB,
+    "]": tokens.T_RSQB,
+    "^": tokens.T_CIRCUMFLEX,
+    "^=": tokens.T_CIRCUMFLEXEQUAL,
+    "{": tokens.T_LBRACE,
+    "|": tokens.T_VBAR,
+    "|=": tokens.T_VBAREQUAL,
+    "}": tokens.T_RBRACE,
+    "~": tokens.T_TILDE,
 };
 
 var tok_name = {};
@@ -35901,9 +35903,32 @@ var String_ = group(StringPrefix + "'[^\\n'\\\\]*(?:\\\\.[^\\n'\\\\]*)*'",
 // Sorting in reverse order puts the long operators before their prefixes.
 // Otherwise if = came before ==, == would get recognized as two instances
 // of =.
-var EXACT_TOKENS_SORTED = Object.keys(Sk.token.EXACT_TOKEN_TYPES).sort();
-var Special = group.apply(this, EXACT_TOKENS_SORTED.reverse().map(function (t) { return regexEscape(t); }));
-var Funny = group('\\r?\\n', Special);
+var EXACT_TOKENS_SORTED;
+var Special;
+var Funny;
+
+function setupTokens(py3) {
+    // recompute the above two lines
+    // <> should be included in py2 mode
+    if (py3) {
+        delete Sk.token.EXACT_TOKEN_TYPES["<>"];
+    } else {
+        Sk.token.EXACT_TOKEN_TYPES["<>"] = Sk.token.tokens.T_NOTEQUAL;
+    }
+    EXACT_TOKENS_SORTED = Object.keys(Sk.token.EXACT_TOKEN_TYPES).sort();
+    Special = group.apply(
+        this,
+        EXACT_TOKENS_SORTED.reverse().map(function (t) {
+            return regexEscape(t);
+        })
+    );
+    Funny = group("\\r?\\n", Special);
+}
+setupTokens(true);
+
+Sk.token.setupTokens = setupTokens;
+
+
 
 // these aren't actually used
 // var PlainToken = group(Number_, Funny, String_, Name);
@@ -37403,8 +37428,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "6914c4c00d49cb9b27d90c6393168e7151d4c71f",
-    date: "2020-10-19T11:52:39.561Z"
+    githash: "b763d3e24860a8e3d303878e0035d8bad9f55578",
+    date: "2020-10-19T16:57:53.796Z"
 };
 
 /**
