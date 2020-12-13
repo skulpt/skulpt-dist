@@ -22434,6 +22434,9 @@ let formatNumber = function(num, formatSpec, isFractional) {
                     result += ".0";
                 }
             }
+            if (conversionType.toLowerCase()==="e") {
+                result = result.replace(/^([-+]?[0-9]*\.?[0-9]+[eE][-+]?)([0-9])?$/, "$10$2");
+            }
             if (m[FMT.COMMA]){
                 var parts = result.toString().split(".");
                 parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -37430,8 +37433,8 @@ Sk.builtin.super_.__doc__ = new Sk.builtin.str(
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "a1f28fef0375aea6bdd0144637f79b9c917df930",
-    date: "2020-12-01T18:20:54.521Z"
+    githash: "c6c9eedfb8e149fad14b233c1992efd46955e3e5",
+    date: "2020-12-13T23:00:15.430Z"
 };
 
 /**
