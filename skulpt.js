@@ -14926,6 +14926,13 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
     }
 
     //
+    // Skulpt doesn't have "co_consts", so record the docstring (or
+    // None) in the "co_docstring" property of the code object, ready
+    // for use by the Sk.builtin.func constructor.
+    //
+    out(scopename, ".co_docstring=", this.cDocstringOfCode(n), ";");
+
+    //
     // attach flags
     //
     if (kwarg) {
@@ -14974,7 +14981,6 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
                             "\",arguments.length,0,0);return new Sk.builtins['generator'](", scopename, ",$gbl,[]", frees, ");}))");
         }
     } else {
-        var res;
         if (decos.length > 0) {
             out("$ret = new Sk.builtins['function'](", scopename, ",$gbl", frees, ");");
             for (let decorator of decos.reverse()) {
@@ -14987,6 +14993,47 @@ Compiler.prototype.buildcodeobj = function (n, coname, decorator_list, args, cal
         return this._gr("funcobj", "new Sk.builtins['function'](", scopename, ",$gbl", frees, ")");
     }
 };
+
+/** JavaScript for the docstring of the given body, or null if the
+ * body has no docstring.
+ */
+Compiler.prototype.maybeCDocstringOfBody = function(body) {
+    if (body.length === 0)  // Don't think this can happen?
+        return null;
+
+    const stmt_0 = body[0];
+    if (stmt_0.constructor !== Sk.astnodes.Expr)
+        return null;
+
+    const expr = stmt_0.value;
+    if (expr.constructor !== Sk.astnodes.Str)
+        return null;
+
+    return this.vexpr(expr);
+};
+
+/** JavaScript for the docstring of the given node.  Only called from
+ * buildcodeobj(), and expects a FunctionDef, Lambda, or GeneratorExp
+ * node.  We give a "None" docstring to a GeneratorExp node, although
+ * it is not carried over to the final generator; this is harmless.
+ */
+Compiler.prototype.cDocstringOfCode = function(node) {
+    switch (node.constructor) {
+    case Sk.astnodes.AsyncFunctionDef:  // For when it's supported
+    case Sk.astnodes.FunctionDef:
+        return (
+            this.maybeCDocstringOfBody(node.body)
+            || "Sk.builtin.none.none$"
+        );
+
+    case Sk.astnodes.Lambda:
+    case Sk.astnodes.GeneratorExp:
+        return "Sk.builtin.none.none$";
+
+    default:
+        Sk.asserts.fail(`unexpected node kind ${node.constructor.name}`);
+    }
+}
 
 Compiler.prototype.cfunction = function (s, class_for_super) {
     var funcorgen;
@@ -15528,8 +15575,19 @@ Compiler.prototype.exitScope = function () {
  * @param {Sk.builtin.str=} class_for_super
  */
 Compiler.prototype.cbody = function (stmts, class_for_super) {
-    var i;
-    for (i = 0; i < stmts.length; ++i) {
+    var i = 0;
+
+    // If we have a docstring, then assign it to __doc__, and skip over
+    // the expression when properly compiling the rest of the body.  This
+    // happens for class and module bodies.
+    //
+    const maybeDocstring = this.maybeCDocstringOfBody(stmts);
+    if (maybeDocstring !== null) {
+        out("$loc.__doc__ = ", maybeDocstring, ";");
+        i = 1;
+    }
+
+    for (; i < stmts.length; ++i) {
         this.vstmt(stmts[i], class_for_super);
     }
 };
@@ -20471,7 +20529,7 @@ Sk.builtin.func = Sk.abstr.buildNativeClass("function", {
 
         this.$name = (code.co_name && code.co_name.v) || code.name || "<native JS>";
         this.$d = Sk.builtin.dict ? new Sk.builtin.dict() : undefined;
-        this.$doc = code.$doc;
+        this.$doc = code.co_docstring || Sk.builtin.none.none$;
         this.$module = (Sk.globals && Sk.globals["__name__"]) || Sk.builtin.none.none$;
         this.$qualname = (code.co_qualname && code.co_qualname.v) || this.$name;
 
@@ -20564,7 +20622,13 @@ Sk.builtin.func = Sk.abstr.buildNativeClass("function", {
         },
         __doc__: {
             $get() {
-                return new Sk.builtin.str(this.$doc);
+                return this.$doc;
+            },
+            $set(v) {
+                // The value the user is setting __doc__ to can be any Python
+                // object.  If we receive 'undefined' then the user is deleting
+                // __doc__, which is allowed and results in __doc__ being None.
+                this.$doc = v || Sk.builtin.none.none$;
             },
         },
     },
@@ -34925,8 +34989,8 @@ function check_special_type_attr(type, value, pyName) {
 var Sk = {}; // jshint ignore:line
 
 Sk.build = {
-    githash: "1a8950ea907e28c8ba4a28ec78486c1242f34391",
-    date: "2021-02-16T22:23:34.493Z"
+    githash: "dc5d29466f92e6f6acf0f19644f86400bbdb70ee",
+    date: "2021-02-18T19:43:42.409Z"
 };
 
 /**
