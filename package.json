@@ -1,0 +1,19 @@
+{
+  "name": "skulpt-dist",
+  "version": "1.0.0",
+  "description": "Skulpt is a Javascript implementation of Python 2.x. Python that runs in your browser!",
+  "keywords": ["skulpt"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skulpt/skulpt-dist.git"
+  },
+  "bugs": {
+    "url": "https://github.com/skulpt/skulpt-dist/issues"
+  },
+  "homepage": "http://www.skulpt.org/",
+  "author": {
+    "name": "Brad Miller"
+  },
+  "license": "MIT",
+  "private": true
+}
